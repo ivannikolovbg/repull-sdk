@@ -1,0 +1,37 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root { color-scheme: dark; }
+html, body {
+  background: #050505;
+  color: rgba(255,255,255,0.92);
+  -webkit-font-smoothing: antialiased;
+}
+body {
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+.input {
+  display: block; width: 100%;
+  padding: 8px 10px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 6px; color: white; font-size: 13px;
+}
+.input:focus { outline: none; border-color: rgba(255,122,43,0.6); }
+
+.btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 8px 12px; border-radius: 6px; font-size: 13px;
+  border: 1px solid rgba(255,255,255,0.1);
+  background: rgba(255,255,255,0.04);
+  color: white; cursor: pointer;
+}
+.btn:hover { background: rgba(255,255,255,0.08); }
+.btn-primary {
+  background: linear-gradient(135deg, #ff5757, #ff7a2b);
+  border-color: rgba(255,122,43,0.55);
+}
+.card { border: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.02); border-radius: 12px; }
+.muted { color: rgba(255,255,255,0.5); }
