@@ -75,3 +75,4 @@ Inquiries: `licensing@vanio.ai`.
 This is **Phase A / MVP** from the SDK proposal. In scope today: SDK + demo with Connect / Reservations / Properties / Health / Airbnb listings. Out of scope (Phase B+): Booking/Plumguide/VRBO panels, AI streaming, webhook playground, `@repull/connect-react`, multi-language SDKs.
 
 **Do not consider this production-ready.** API surface may break before v1.0.
+
