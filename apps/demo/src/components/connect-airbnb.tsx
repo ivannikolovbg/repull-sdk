@@ -144,8 +144,8 @@ const session = await repull.connect.airbnb.create({
             </div>
             <p className="text-xs muted">
               {accessType === 'full_access'
-                ? 'Full host scopes — listings, calendar, pricing, messaging.'
-                : 'Calendar-only. Useful for pure availability sync without write access.'}
+                ? 'Read all data, send messages, manage listings (pricing, calendar, content).'
+                : 'Read all data and send guest messages. Cannot manage listings (no pricing, calendar, or content writes).'}
             </p>
           </div>
 
