@@ -22,7 +22,7 @@ You need a paid commercial license **only if BOTH** of the following are true:
    - You manage **more than 100 active listings** at any one time (across all third-party clients combined), or
    - **$1M+ ARR** of your product comes from, or materially uses, the Repull SDK.
 
-If you cross either threshold, email `licensing@vanio.ai` with the subject `Repull SDK Commercial License — [your company]` and tell us: your company, what you're building, current listing count, projected ARR, timeline. We'll work out terms.
+If you cross either threshold, email `hello@repull.dev` with the subject `Repull SDK Commercial License — [your company]` and tell us: your company, what you're building, current listing count, projected ARR, timeline. We'll work out terms.
 
 ## The "Powered by Repull" badge
 
@@ -48,6 +48,6 @@ Because the SDK is free to use, but the underlying API at `api.repull.dev` is wh
 
 ## Questions
 
-- **Licensing**: `licensing@vanio.ai`
-- **Abuse / TOS**: `abuse@vanio.ai`
+- **Licensing**: `hello@repull.dev`
+- **Abuse / TOS**: `hello@repull.dev`
 - **Engineering / GitHub issues**: open in this repo

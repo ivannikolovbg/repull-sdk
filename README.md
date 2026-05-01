@@ -68,7 +68,7 @@ Server-side proxy at `/api/repull-proxy` so API keys never ship in the client bu
 
 This SDK is **NOT** MIT-licensed. See [`LICENSE.md`](./LICENSE.md). Free for personal use, research, evaluation, and operating against your own listings up to **100 active listings under management**. Commercial license required if you operate a service against third-party listings AND exceed 100 listings or $1M ARR derived from the SDK. Pattern modeled on Meta's Llama 3 Community License. See [`COMMERCIAL.md`](./COMMERCIAL.md) for the plain-English summary.
 
-Inquiries: `licensing@vanio.ai`.
+Inquiries: `hello@repull.dev`.
 
 ## Status & roadmap
 
