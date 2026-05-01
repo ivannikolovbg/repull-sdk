@@ -1,9 +1,12 @@
 {
   "name": "@repull/types",
-  "version": "0.1.0-alpha.0",
+  "version": "0.1.0",
   "description": "TypeScript types for the Repull API, generated from openapi.json.",
   "license": "SEE LICENSE.md",
   "type": "module",
+  "publishConfig": {
+    "access": "public"
+  },
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
