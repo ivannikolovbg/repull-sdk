@@ -27,11 +27,13 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Typecheck
-        run: pnpm -r typecheck
-
+      # Build first so workspace package dist/ outputs exist for the
+      # downstream typecheck (sdk depends on @repull/types via workspace:*).
       - name: Build packages
         run: pnpm run build:packages
+
+      - name: Typecheck
+        run: pnpm -r typecheck
 
       - name: Publish @repull/types
         working-directory: packages/types
