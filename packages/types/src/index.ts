@@ -26,11 +26,44 @@ export interface ConnectSession {
   expiresAt: string;
 }
 
+/**
+ * Public-facing host metadata returned alongside a connection status.
+ *
+ * Currently populated for Airbnb only — the host's first name + Airbnb avatar
+ * pulled from the partner-API host record. Email is intentionally NOT
+ * included: Airbnb does not expose host email through their partner API,
+ * and the customer's own login email is what they already know.
+ *
+ * For non-Airbnb providers `host` is `null` until per-provider enrichment
+ * lands.
+ */
+export interface ConnectHost {
+  /** Short display name (e.g. Airbnb first name). */
+  displayName: string | null;
+  /** Preferred long-form name; falls back to displayName when no preferred form is set. */
+  displayNameLong: string | null;
+  /** Profile picture URL (small). */
+  avatarUrl: string | null;
+  /** Profile picture URL (large). */
+  avatarUrlLarge: string | null;
+  /** Per-provider activation/onboarding status. */
+  activationStatus: string | null;
+}
+
 export interface ConnectStatus {
   connected: boolean;
   provider: string;
+  /** Repull-side connection ID. Stable across token refreshes. Present when `connected` is true. */
+  id?: number;
   externalAccountId?: string | null;
   status?: 'active' | 'inactive' | 'error';
+  createdAt?: string;
+  /**
+   * Host metadata for the linked account. Populated for Airbnb when the
+   * host row exists; null for other providers. Use this to render an
+   * account-level confirmation card (avatar + name) instead of just an ID.
+   */
+  host?: ConnectHost | null;
   [key: string]: unknown;
 }
 

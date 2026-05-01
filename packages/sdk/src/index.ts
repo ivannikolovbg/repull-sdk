@@ -24,6 +24,7 @@ export type {
   AIOperation,
   ConnectSession,
   ConnectStatus,
+  ConnectHost,
   AirbnbAccessType,
   ListResponse,
   HealthResponse,

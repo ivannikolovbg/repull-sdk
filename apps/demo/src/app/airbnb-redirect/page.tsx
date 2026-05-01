@@ -6,6 +6,100 @@ import { makeClient, getStoredKey } from '@/lib/repull-client';
 import type { ConnectStatus } from '@repull/sdk';
 import Link from 'next/link';
 
+function formatCreatedAt(value: unknown): string | null {
+  if (!value || typeof value !== 'string') return null;
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
+function HostInitial({ name }: { name: string | null | undefined }) {
+  const initial = (name ?? '?').trim().charAt(0).toUpperCase() || '?';
+  return (
+    <div
+      className="flex items-center justify-center text-sm font-semibold text-white/85"
+      style={{
+        width: 56,
+        height: 56,
+        borderRadius: 999,
+        background: 'rgba(255, 122, 43, 0.18)',
+        border: '1px solid rgba(255, 122, 43, 0.45)',
+      }}
+    >
+      {initial}
+    </div>
+  );
+}
+
+function HostCard({ status }: { status: ConnectStatus }) {
+  const host = status.host ?? null;
+  const displayName = host?.displayNameLong || host?.displayName || null;
+  const avatar = host?.avatarUrlLarge || host?.avatarUrl || null;
+  const externalId = String(status.externalAccountId ?? '');
+  const createdAt = formatCreatedAt(status.createdAt);
+  const profileUrl = externalId
+    ? `https://www.airbnb.com/users/show/${encodeURIComponent(externalId)}`
+    : null;
+
+  return (
+    <div
+      className="rounded-2xl p-5"
+      style={{
+        background: 'rgba(62, 207, 142, 0.06)',
+        border: '1px solid rgba(62, 207, 142, 0.45)',
+      }}
+    >
+      <div className="flex items-center gap-4">
+        {avatar ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={avatar}
+            alt={displayName ?? 'Airbnb host avatar'}
+            width={56}
+            height={56}
+            style={{
+              width: 56,
+              height: 56,
+              borderRadius: 999,
+              objectFit: 'cover',
+              border: '1px solid rgba(255, 255, 255, 0.12)',
+            }}
+          />
+        ) : (
+          <HostInitial name={displayName} />
+        )}
+        <div className="flex-1 min-w-0">
+          <div className="text-base font-semibold text-white/95 truncate">
+            {displayName ?? 'Airbnb host connected'}
+          </div>
+          <div className="text-xs muted mt-0.5 truncate">
+            Connected to Repull
+            {externalId ? <> · ID {externalId}</> : null}
+            {createdAt ? <> · {createdAt}</> : null}
+          </div>
+          {profileUrl ? (
+            <a
+              href={profileUrl}
+              target="_blank"
+              rel="noreferrer noopener"
+              className="inline-flex items-center gap-1 text-xs mt-2 underline decoration-dotted"
+              style={{ color: '#ff7a2b' }}
+            >
+              View on Airbnb ↗
+            </a>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function AirbnbRedirectInner() {
   const params = useSearchParams();
   const sessionId = params?.get('sessionId') ?? params?.get('session_id') ?? null;
@@ -79,6 +173,8 @@ function AirbnbRedirectInner() {
         </div>
       ) : null}
 
+      {status?.connected ? <HostCard status={status} /> : null}
+
       <div className="card p-5 space-y-3">
         <div className="text-xs uppercase tracking-wide text-white/45">Connection status</div>
         {loading && !status ? (
@@ -92,14 +188,6 @@ function AirbnbRedirectInner() {
         ) : (
           <p className="muted text-sm">No status yet.</p>
         )}
-        {status?.connected ? (
-          <div
-            className="rounded-md text-xs p-3 font-mono"
-            style={{ background: 'rgba(62, 207, 142, 0.08)', border: '1px solid rgba(62, 207, 142, 0.45)' }}
-          >
-            ✓ Linked Airbnb account: <strong>{String(status.externalAccountId ?? '(unknown id)')}</strong>
-          </div>
-        ) : null}
       </div>
     </main>
   );
