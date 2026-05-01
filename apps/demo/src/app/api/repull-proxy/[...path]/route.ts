@@ -21,6 +21,21 @@ const UPSTREAM = process.env.REPULL_API_BASE_URL ?? 'https://api.repull.dev';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
+/**
+ * Public upstream endpoints that don't require an API key. These are safe to
+ * proxy unauthenticated because they expose no customer data — health is a
+ * heartbeat, providers is a static catalog of supported channels.
+ *
+ * Pinning a small allowlist (instead of "anything starting with /v1/connect")
+ * keeps the surface tight: future authenticated endpoints under the same
+ * prefix don't accidentally become public.
+ */
+function isPublicUpstreamPath(upstreamPath: string): boolean {
+  if (upstreamPath === '/v1/health') return true;
+  if (upstreamPath === '/v1/connect/providers') return true;
+  return false;
+}
+
 async function handle(req: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
   const { path } = await params;
   const upstreamPath = '/' + (path ?? []).join('/');
@@ -28,10 +43,11 @@ async function handle(req: NextRequest, { params }: { params: Promise<{ path: st
   const url = `${UPSTREAM}${upstreamPath}${search}`;
 
   const supplied = req.headers.get('x-repull-key') ?? '';
+  const isPublic = isPublicUpstreamPath(upstreamPath);
   let bearer: string | undefined;
   if (supplied === '__sandbox__') {
     bearer = process.env.REPULL_SANDBOX_API_KEY;
-    if (!bearer) {
+    if (!bearer && !isPublic) {
       return NextResponse.json(
         {
           error: {
@@ -47,7 +63,7 @@ async function handle(req: NextRequest, { params }: { params: Promise<{ path: st
     bearer = supplied;
   }
 
-  if (!bearer) {
+  if (!bearer && !isPublic) {
     return NextResponse.json(
       {
         error: {
@@ -61,7 +77,7 @@ async function handle(req: NextRequest, { params }: { params: Promise<{ path: st
   }
 
   const headers = new Headers();
-  headers.set('authorization', `Bearer ${bearer}`);
+  if (bearer) headers.set('authorization', `Bearer ${bearer}`);
   headers.set('accept', 'application/json');
   if (req.headers.get('content-type')) {
     headers.set('content-type', req.headers.get('content-type')!);

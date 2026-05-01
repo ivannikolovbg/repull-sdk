@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { makeClient } from '@/lib/repull-client';
 import { CodePanel, type CodeSnippet } from './code-panel';
 import type { AuthState } from './auth-bar';
@@ -20,9 +20,15 @@ const CONNECT_HOST = 'https://connect.repull.dev';
 
 /**
  * Primary CTA for the demo. Mints a multi-channel Connect picker session,
- * opens connect.repull.dev in an iframe modal, and listens for the
- * `repull:connect:completed` postMessage event so we can refresh the
- * "Your connections" list inline.
+ * opens connect.repull.dev in a popup window (Plaid pattern), and listens
+ * for the `repull:connect:completed` postMessage event so we can refresh
+ * the "Your connections" list inline.
+ *
+ * Why a popup window, not an iframe: every OAuth provider (Airbnb,
+ * BookingSync, Hospitable's hosted page) sets `X-Frame-Options: sameorigin`
+ * or `Content-Security-Policy: frame-ancestors`, which kills any iframe-
+ * based flow at the consent step. A popup window can navigate top-level to
+ * the OAuth provider AND postMessage back to the opener via window.opener.
  */
 export function ConnectPicker({
   auth,
@@ -33,8 +39,8 @@ export function ConnectPicker({
 }) {
   const [redirectUrl, setRedirectUrl] = useState('');
   const [flow, setFlow] = useState<FlowState>({ phase: 'idle' });
-  const [showInline, setShowInline] = useState(true); // open in iframe modal vs new tab
-  const closeRef = useRef<() => void>(() => {});
+  const popupRef = useRef<Window | null>(null);
+  const popupWatchRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Default redirect to this demo page so the user sees a clean roundtrip.
   useEffect(() => {
@@ -43,27 +49,48 @@ export function ConnectPicker({
     }
   }, [redirectUrl]);
 
-  // Listen for the picker's postMessage so we can close the modal + refresh.
+  const cleanupWatcher = useCallback(() => {
+    if (popupWatchRef.current) {
+      clearInterval(popupWatchRef.current);
+      popupWatchRef.current = null;
+    }
+  }, []);
+
+  // Listen for the picker's postMessage so we can refresh + close the popup.
   useEffect(() => {
     function onMessage(ev: MessageEvent) {
       if (ev.origin !== CONNECT_HOST) return;
-      const data = ev.data as { type?: string; provider?: string } | null;
+      const data = ev.data as { type?: string; provider?: string; error?: string } | null;
       if (!data || typeof data !== 'object') return;
-      // Tolerant of either event name — the hosted picker can emit either.
-      if (data.type === 'repull:connect:completed' || data.type === 'repull:connect:close') {
+      if (data.type === 'repull:connect:completed') {
         setFlow((prev) => ({
           ...prev,
-          phase: data.type === 'repull:connect:completed' ? 'connected' : prev.phase,
+          phase: 'connected',
           completedProvider: data.provider ?? prev.completedProvider,
         }));
-        if (data.type === 'repull:connect:completed') {
-          onConnected?.();
+        onConnected?.();
+        cleanupWatcher();
+        try {
+          popupRef.current?.close();
+        } catch {
+          /* cross-origin close may throw on some browsers — popup self-closes anyway */
         }
+      } else if (data.type === 'repull:connect:error' || data.type === 'repull:connect:close') {
+        setFlow((prev) => ({
+          ...prev,
+          phase: data.type === 'repull:connect:error' ? 'error' : 'idle',
+          error: data.error,
+        }));
+        cleanupWatcher();
       }
     }
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
-  }, [onConnected]);
+  }, [onConnected, cleanupWatcher]);
+
+  // Detect the user closing the popup manually so we don't get stuck on
+  // "awaiting selection" forever.
+  useEffect(() => () => cleanupWatcher(), [cleanupWatcher]);
 
   const ready = Boolean(auth.apiKey || auth.useSandbox);
 
@@ -72,6 +99,20 @@ export function ConnectPicker({
       setFlow({ phase: 'error', error: 'Add a Repull API key (or click "Use sandbox") above first.' });
       return;
     }
+    // Open the popup synchronously inside the click handler so popup blockers
+    // recognize this as user-initiated. We swap its location once the session
+    // mints — opening with the URL straight away would block on the slow
+    // network roundtrip.
+    const features = popupFeatures();
+    const popup = window.open('about:blank', 'repull-connect', features);
+    if (!popup) {
+      setFlow({
+        phase: 'error',
+        error: 'Popup blocked. Allow popups for this site, then try again.',
+      });
+      return;
+    }
+    popupRef.current = popup;
     setFlow({ phase: 'creating' });
     const client = makeClient({ apiKey: auth.apiKey, useSandbox: auth.useSandbox });
     try {
@@ -79,28 +120,33 @@ export function ConnectPicker({
         redirectUrl: redirectUrl.trim(),
       });
       setFlow({ phase: 'open', session });
-      if (!showInline) {
-        window.open(session.url, '_blank', 'noopener,noreferrer');
+      try {
+        popup.location.href = session.url;
+        popup.focus();
+      } catch {
+        // Cross-origin location set is allowed during initial about:blank phase,
+        // but if the browser is paranoid, fall back to a full reload via name.
+        window.open(session.url, 'repull-connect', features);
       }
+
+      // Watch for the user manually closing the popup so we don't sit on
+      // "awaiting selection" indefinitely. Stops once we get a completed
+      // postMessage (cleanupWatcher) or the popup is gone.
+      popupWatchRef.current = setInterval(() => {
+        if (!popupRef.current || popupRef.current.closed) {
+          cleanupWatcher();
+          setFlow((prev) => (prev.phase === 'open' ? { ...prev, phase: 'idle' } : prev));
+        }
+      }, 750);
     } catch (err) {
+      try {
+        popup.close();
+      } catch {
+        /* noop */
+      }
       setFlow({ phase: 'error', error: (err as Error).message ?? 'Unknown error' });
     }
   }
-
-  function closeModal() {
-    setFlow((prev) => (prev.phase === 'open' ? { ...prev, phase: 'idle' } : prev));
-  }
-  closeRef.current = closeModal;
-
-  // ESC to dismiss the iframe modal.
-  useEffect(() => {
-    if (flow.phase !== 'open' || !showInline) return;
-    function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') closeRef.current();
-    }
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [flow.phase, showInline]);
 
   const snippets = useMemo<CodeSnippet[]>(() => {
     const ts = `import { Repull } from '@repull/sdk';
@@ -116,7 +162,21 @@ const session = await repull.connect.createSession({
 // session.url        -> hosted picker on connect.repull.dev/{sessionId}
 // session.sessionId  -> stable handle for follow-ups
 // session.expiresAt  -> ISO timestamp
-window.location.href = session.url;
+
+// Open the picker in a popup window — OAuth providers (Airbnb, BookingSync,
+// etc) set X-Frame-Options: sameorigin so iframes won't work for OAuth.
+const popup = window.open(
+  session.url,
+  'repull-connect',
+  'width=480,height=720,popup=yes',
+);
+
+window.addEventListener('message', (ev) => {
+  if (ev.origin !== 'https://connect.repull.dev') return;
+  if (ev.data?.type === 'repull:connect:completed') {
+    // Refresh your "Your connections" list here.
+  }
+});
 `;
     const curl = `curl -X POST https://api.repull.dev/v1/connect \\
   -H 'Authorization: Bearer $REPULL_API_KEY' \\
@@ -163,19 +223,6 @@ window.location.href = session.url;
             <p className="text-xs muted">
               Where the user lands after they finish a connection in the picker.
             </p>
-          </div>
-
-          <div className="flex items-center gap-2 text-xs muted">
-            <input
-              id="inline-modal"
-              type="checkbox"
-              checked={showInline}
-              onChange={(e) => setShowInline(e.target.checked)}
-              className="accent-[#ff7a2b]"
-            />
-            <label htmlFor="inline-modal" className="cursor-pointer">
-              Open in inline modal (uncheck to open in a new tab)
-            </label>
           </div>
 
           <div className="flex flex-wrap gap-2">
@@ -263,50 +310,24 @@ window.location.href = session.url;
           </p>
         </div>
       </div>
-
-      {/* Iframe modal */}
-      {flow.phase === 'open' && showInline && flow.session ? (
-        <PickerModal url={flow.session.url} onClose={closeModal} />
-      ) : null}
     </section>
   );
 }
 
-function PickerModal({ url, onClose }: { url: string; onClose: () => void }) {
-  return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label="Repull Connect picker"
-      onClick={onClose}
-      className="fixed inset-0 z-[200] flex items-center justify-center"
-      style={{ background: 'rgba(0,0,0,0.72)', backdropFilter: 'blur(4px)' }}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className="relative rounded-2xl overflow-hidden border border-white/[0.12] bg-[#0a0a0a] shadow-2xl"
-        style={{ width: 'min(480px, 92vw)', height: 'min(720px, 88vh)' }}
-      >
-        <div className="absolute top-0 left-0 right-0 flex items-center justify-between px-3 py-2 z-10 bg-gradient-to-b from-black/90 to-transparent">
-          <div className="text-[11px] uppercase tracking-wider text-white/55">connect.repull.dev</div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="text-white/65 hover:text-white text-xs px-2 py-1 rounded-md border border-white/[0.1] bg-white/[0.04] hover:bg-white/[0.08]"
-            aria-label="Close picker"
-          >
-            Close
-          </button>
-        </div>
-        <iframe
-          src={url}
-          title="Repull Connect picker"
-          className="w-full h-full block"
-          allow="clipboard-write"
-        />
-      </div>
-    </div>
-  );
+function popupFeatures(): string {
+  // Center the popup over the current viewport so it's obvious it came from
+  // this page (and so it lines up with the launching button instead of
+  // appearing on a different monitor).
+  const w = 480;
+  const h = 720;
+  if (typeof window === 'undefined') return `width=${w},height=${h},popup=yes`;
+  const dualLeft = window.screenLeft ?? window.screenX ?? 0;
+  const dualTop = window.screenTop ?? window.screenY ?? 0;
+  const ww = window.innerWidth || document.documentElement.clientWidth || screen.width;
+  const wh = window.innerHeight || document.documentElement.clientHeight || screen.height;
+  const left = Math.max(0, dualLeft + (ww - w) / 2);
+  const top = Math.max(0, dualTop + (wh - h) / 2);
+  return `width=${w},height=${h},left=${left},top=${top},popup=yes,noopener=no,noreferrer=no,scrollbars=yes`;
 }
 
 function Spinner() {

@@ -16,23 +16,14 @@ export function HealthPill() {
     async function tick() {
       setState((s) => (s.status === 'idle' ? { status: 'loading' } : s));
       try {
-        // Health doesn't need a key, but pass sandbox so the proxy is happy
-        // even on a fresh visitor.
-        const client = makeClient({ useSandbox: true });
+        // /v1/health is a public endpoint on api.repull.dev — the demo proxy
+        // forwards it without an API key. No sandbox key needed.
+        const client = makeClient();
         const data = await client.health.check();
         if (!mounted) return;
         setState({ status: 'ok', data });
       } catch {
         if (!mounted) return;
-        // Even without a key, /v1/health on api.repull.dev is public, so try direct.
-        try {
-          const r = await fetch('https://api.repull.dev/v1/health', { mode: 'cors' });
-          if (r.ok) {
-            const data = (await r.json()) as HealthResponse;
-            if (mounted) setState({ status: 'ok', data });
-            return;
-          }
-        } catch { /* fall through */ }
         setState({ status: 'down' });
       }
     }
