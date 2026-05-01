@@ -52,7 +52,7 @@ export function AuthBar({
   }
 
   const status = state.useSandbox
-    ? { label: 'Sandbox', detail: 'Vanio-controlled demo key', tone: 'sandbox' as const }
+    ? { label: 'Sandbox', detail: 'Demo key (sk_test_)', tone: 'sandbox' as const }
     : state.apiKey
       ? { label: 'Connected', detail: shortKey(state.apiKey), tone: 'live' as const }
       : { label: 'No key', detail: 'Paste your Repull API key', tone: 'idle' as const };
