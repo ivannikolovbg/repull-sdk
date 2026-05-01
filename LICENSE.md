@@ -12,7 +12,7 @@
 
 "**Repull SDK Materials**" means, collectively, Vanio's proprietary Repull SDK and Documentation (and any portion thereof) made available under this Agreement.
 
-"**Vanio**" or "**we**" means Vanio AI, Inc. (or its successor entity).
+"**Vanio**" or "**we**" means Divanova Inc. (or its successor entity).
 
 By clicking "I Accept" below, by accessing or using any portion of the Repull SDK Materials, or by installing the SDK from any package registry, you agree to be bound by this Agreement.
 
@@ -26,7 +26,7 @@ By clicking "I Accept" below, by accessing or using any portion of the Repull SD
 
    ii. If you receive Repull SDK Materials, or any derivative works thereof, from a Licensee as part of an integrated end user product, then Section 1.b.i of this Agreement will not apply to you.
 
-   iii. You must retain in all copies of the Repull SDK Materials that you distribute the following attribution notice within a "Notice" text file distributed as a part of such copies: "Repull SDK is licensed under the Repull SDK Community License, Copyright Vanio AI, Inc. All Rights Reserved."
+   iii. You must retain in all copies of the Repull SDK Materials that you distribute the following attribution notice within a "Notice" text file distributed as a part of such copies: "Repull SDK is licensed under the Repull SDK Community License, Copyright Divanova Inc. All Rights Reserved."
 
    iv. Your use of the Repull SDK Materials must comply with applicable laws and regulations (including trade compliance laws and regulations) and adhere to the **Acceptable Use Policy** for the Repull SDK (available at `https://repull.dev/use-policy`), which is hereby incorporated by reference into this Agreement.
 
@@ -87,4 +87,4 @@ Reports of suspected abuse: `abuse@vanio.ai`.
 
 ---
 
-**Copyright 2026 Vanio AI, Inc. All Rights Reserved.**
+**Copyright 2026 Divanova Inc. All Rights Reserved.**
