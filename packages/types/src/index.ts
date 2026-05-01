@@ -27,6 +27,38 @@ export interface ConnectSession {
 }
 
 /**
+ * Multi-channel picker session, returned by `POST /v1/connect` (no provider).
+ *
+ * `url` points at the hosted picker on connect.repull.dev — the user picks
+ * a channel, completes the per-pattern handoff, then bounces back to the
+ * `redirectUrl` you supplied.
+ */
+export interface ConnectPickerSession {
+  sessionId: string;
+  url: string;
+  expiresAt: string;
+  /** Echo of the opaque `state` you passed in, or null. */
+  state: string | null;
+}
+
+export type ConnectPattern = 'oauth' | 'credentials' | 'claim' | 'activation';
+export type ConnectChannelCategory = 'ota' | 'pms';
+export type ConnectChannelStatus = 'live' | 'beta' | 'coming_soon';
+
+/** A single channel as returned by `GET /v1/connect/providers`. */
+export interface ConnectProvider {
+  id: string;
+  displayName: string;
+  category: ConnectChannelCategory;
+  connectPattern: ConnectPattern;
+  status: ConnectChannelStatus;
+  logoUrl: string | null;
+  description: string | null;
+  docsUrl: string | null;
+  aliases?: string[];
+}
+
+/**
  * Public-facing host metadata returned alongside a connection status.
  *
  * Currently populated for Airbnb only — the host's first name + Airbnb avatar

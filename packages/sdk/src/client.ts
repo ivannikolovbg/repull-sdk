@@ -15,6 +15,8 @@
 
 import type {
   ConnectSession,
+  ConnectPickerSession,
+  ConnectProvider,
   ConnectStatus,
   Connection,
   HealthResponse,
@@ -180,6 +182,39 @@ class ConnectNamespace {
   /** GET /v1/connect — list every connection on this workspace. */
   list(): Promise<Connection[]> {
     return this.client.request<Connection[]>('GET', '/v1/connect');
+  }
+
+  /**
+   * POST /v1/connect — mint a multi-channel picker session.
+   *
+   * The user is sent to a hosted picker (`session.url`) where they choose
+   * one of the available channels (Airbnb OAuth, Booking.com claim, PMS
+   * credentials, etc) and complete the per-pattern handoff. They land on
+   * your `redirectUrl` once finished.
+   *
+   * Pass `allowedProviders` to scope the picker to a subset (e.g. only show
+   * PMSes). Pass `state` for any opaque value you want echoed back.
+   */
+  createSession(opts: {
+    redirectUrl: string;
+    allowedProviders?: string[];
+    state?: string;
+  }): Promise<ConnectPickerSession> {
+    return this.client.request<ConnectPickerSession>('POST', '/v1/connect', {
+      body: {
+        redirectUrl: opts.redirectUrl,
+        ...(opts.allowedProviders ? { allowed_providers: opts.allowedProviders } : {}),
+        ...(opts.state ? { state: opts.state } : {}),
+      },
+    });
+  }
+
+  /**
+   * GET /v1/connect/providers — list every channel currently wired into the
+   * picker (OTA + PMS, OAuth + credentials + claim + activation patterns).
+   */
+  providers(): Promise<{ data: ConnectProvider[] }> {
+    return this.client.request<{ data: ConnectProvider[] }>('GET', '/v1/connect/providers');
   }
 
   /** Generic provider creator for non-Airbnb providers (PMS keys, OAuth). */

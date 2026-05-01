@@ -1,7 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { AuthBar, type AuthState } from '@/components/auth-bar';
+import { ConnectPicker } from '@/components/connect-picker';
+import { ChannelGrid } from '@/components/channel-grid';
+import { ConnectionsList } from '@/components/connections-list';
 import { ConnectAirbnb } from '@/components/connect-airbnb';
 import { ReservationsTable } from '@/components/reservations-table';
 import { PropertiesList } from '@/components/properties-list';
@@ -10,6 +13,11 @@ import { HealthPill } from '@/components/health-pill';
 
 export default function Home() {
   const [auth, setAuth] = useState<AuthState>({ apiKey: null, useSandbox: false });
+  const [connectionsRefreshKey, setConnectionsRefreshKey] = useState(0);
+
+  const handleConnected = useCallback(() => {
+    setConnectionsRefreshKey((n) => n + 1);
+  }, []);
 
   return (
     <main className="max-w-6xl mx-auto px-4 md:px-6 py-6 md:py-10 space-y-6">
@@ -30,9 +38,9 @@ export default function Home() {
             Build vacation-rental tech in TypeScript.
           </h1>
           <p className="muted text-sm md:text-base mt-2 max-w-2xl">
-            One SDK over <span className="kbd">api.repull.dev</span> — Airbnb, Booking.com, VRBO, Plumguide,
-            50+ PMS connectors, white-label OAuth, listings, reservations, calendars, messaging. Try the
-            flagship Airbnb OAuth flow below against a real key.
+            One SDK over <span className="kbd">api.repull.dev</span> — Airbnb, Booking.com, VRBO, Plum Guide,
+            and 9 PMS connectors behind a single hosted Connect picker. Mint a session, send the user, get
+            a connection back.
           </p>
         </div>
         <HealthPill />
@@ -40,7 +48,23 @@ export default function Home() {
 
       <AuthBar state={auth} onChange={setAuth} />
 
-      <ConnectAirbnb auth={auth} />
+      <ChannelGrid auth={auth} />
+
+      <ConnectPicker auth={auth} onConnected={handleConnected} />
+
+      <ConnectionsList auth={auth} refreshKey={connectionsRefreshKey} />
+
+      <section className="space-y-3">
+        <div>
+          <h2 className="section-h2">Direct integrations</h2>
+          <p className="text-xs muted mt-0.5 max-w-xl">
+            Most apps use the multi-channel picker above. Direct OAuth is for apps that only need
+            Airbnb and want to skip the chooser screen entirely.
+          </p>
+        </div>
+        <ConnectAirbnb auth={auth} />
+      </section>
+
       <AirbnbListings auth={auth} />
       <ReservationsTable auth={auth} />
       <PropertiesList auth={auth} />
