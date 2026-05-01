@@ -21,6 +21,8 @@ import type {
   Connection,
   HealthResponse,
   ListResponse,
+  MarketsResponse,
+  PricingResponse,
   Property,
   Reservation,
   AirbnbAccessType,
@@ -58,6 +60,8 @@ export class Repull {
   readonly properties: PropertiesNamespace;
   readonly health: HealthNamespace;
   readonly channels: ChannelsNamespace;
+  readonly markets: MarketsNamespace;
+  readonly listings: ListingsNamespace;
 
   private readonly opts: {
     apiKey?: string;
@@ -102,6 +106,8 @@ export class Repull {
     this.properties = new PropertiesNamespace(this);
     this.health = new HealthNamespace(this);
     this.channels = new ChannelsNamespace(this);
+    this.markets = new MarketsNamespace(this);
+    this.listings = new ListingsNamespace(this);
   }
 
   /** @internal */
@@ -343,6 +349,86 @@ class AirbnbListingsNamespace {
   /** GET /v1/channels/airbnb/listings/{id}. */
   get(id: string | number): Promise<unknown> {
     return this.client.request<unknown>('GET', `/v1/channels/airbnb/listings/${encodeURIComponent(String(id))}`);
+  }
+}
+
+/**
+ * Atlas market intelligence — every market the workspace operates in plus
+ * KPIs (own ADR vs market ADR, occupancy, ratings, share). Backed by Atlas,
+ * Vanio's market-intelligence fleet of 660 live workers.
+ */
+class MarketsNamespace {
+  constructor(private readonly client: Repull) {}
+
+  /**
+   * GET /v1/markets — overview of every market the customer has listings
+   * in, plus discovery list of nearby Atlas-tracked markets.
+   *
+   * Response is intentionally typed loosely (`unknown`) until the upstream
+   * shape stabilises — sandbox + live keys may return slightly different
+   * field sets while the endpoint is in beta.
+   */
+  list(): Promise<MarketsResponse> {
+    return this.client.request<MarketsResponse>('GET', '/v1/markets');
+  }
+}
+
+/**
+ * Atlas pricing recommendations + apply/decline action. Recommendations
+ * are pre-computed by the model and stored in `pricing_recommendations`;
+ * this surface reads them and writes back the user's response.
+ */
+class ListingsNamespace {
+  readonly pricing: ListingsPricingNamespace;
+
+  constructor(client: Repull) {
+    this.pricing = new ListingsPricingNamespace(client);
+  }
+}
+
+class ListingsPricingNamespace {
+  constructor(private readonly client: Repull) {}
+
+  /**
+   * GET /v1/listings/{id}/pricing — recommendations + factors for a
+   * listing's calendar window.
+   */
+  get(
+    listingId: string | number,
+    query: { startDate?: string; endDate?: string } = {},
+  ): Promise<PricingResponse> {
+    return this.client.request<PricingResponse>(
+      'GET',
+      `/v1/listings/${encodeURIComponent(String(listingId))}/pricing`,
+      { query },
+    );
+  }
+
+  /**
+   * Convenience alias matching the marketing copy
+   * (`repull.listings.pricing.recommendations(id)`).
+   */
+  recommendations(
+    listingId: string | number,
+    query: { startDate?: string; endDate?: string } = {},
+  ): Promise<PricingResponse> {
+    return this.get(listingId, query);
+  }
+
+  /**
+   * POST /v1/listings/{id}/pricing — apply or decline pending
+   * recommendations for one or more dates. Apply syncs the new price to
+   * the listing's calendar (and to the OTAs via fan-out).
+   */
+  action(
+    listingId: string | number,
+    body: { dates: string[]; action: 'apply' | 'decline' },
+  ): Promise<unknown> {
+    return this.client.request(
+      'POST',
+      `/v1/listings/${encodeURIComponent(String(listingId))}/pricing`,
+      { body },
+    );
   }
 }
 

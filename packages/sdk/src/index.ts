@@ -33,4 +33,11 @@ export type {
   AirbnbAccessType,
   ListResponse,
   HealthResponse,
+  MarketSummary,
+  MarketListingPin,
+  BrowseMarket,
+  MarketsResponse,
+  PricingRecommendation,
+  PricingRecommendationStatus,
+  PricingResponse,
 } from '@repull/types';

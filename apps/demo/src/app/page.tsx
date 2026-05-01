@@ -4,6 +4,7 @@ import { useCallback, useState } from 'react';
 import { AuthBar, type AuthState } from '@/components/auth-bar';
 import { ConnectPicker } from '@/components/connect-picker';
 import { ChannelGrid } from '@/components/channel-grid';
+import { MarketIntelligence } from '@/components/market-intelligence';
 import { ConnectionsList } from '@/components/connections-list';
 import { ConnectAirbnb } from '@/components/connect-airbnb';
 import { ReservationsTable } from '@/components/reservations-table';
@@ -49,6 +50,8 @@ export default function Home() {
       <AuthBar state={auth} onChange={setAuth} />
 
       <ChannelGrid auth={auth} />
+
+      <MarketIntelligence auth={auth} />
 
       <ConnectPicker auth={auth} onConnected={handleConnected} />
 

@@ -130,5 +130,108 @@ export interface HealthResponse {
   timestamp: string;
 }
 
+// ============================================================================
+// Atlas market intelligence (`GET /v1/markets`)
+// ============================================================================
+
+/**
+ * One market (city) the customer operates in, with KPIs derived from the
+ * customer's own listings and Atlas's competitor index.
+ *
+ * `priceDiffPct` is positive when the customer's ADR is above the market
+ * average — i.e. they're priced higher than competitors.
+ */
+export interface MarketSummary {
+  city: string;
+  myListings: number;
+  totalListings: number;
+  marketSharePct: number | null;
+  myAvgAdr: number | null;
+  marketAvgAdr: number | null;
+  priceDiffPct: number | null;
+  myAvgRating: number | null;
+  marketAvgRating: number | null;
+  myOccupancyPct: number | null;
+  marketOccupancyPct: number | null;
+  propertyTypes: number;
+}
+
+/** Customer listing pin for the markets map view (lat/lng + ADR). */
+export interface MarketListingPin {
+  id: number;
+  name: string | null;
+  city: string | null;
+  lat: number;
+  lng: number;
+  thumbnail: string | null;
+  todayPrice: number | null;
+  blocked: boolean;
+  bookedNights: number;
+  availableNights: number;
+  type: 'mine';
+}
+
+/** A market the customer doesn't yet operate in but Atlas has comp coverage for. */
+export interface BrowseMarket {
+  city: string;
+  listings: number;
+}
+
+export interface MarketsResponse {
+  markets: MarketSummary[];
+  totals: {
+    myListings: number;
+    markets: number;
+    totalCompetitors?: number;
+  };
+  myListings?: MarketListingPin[];
+  browseMarkets?: BrowseMarket[];
+}
+
+// ============================================================================
+// Atlas pricing recommendations (`GET /v1/listings/{id}/pricing`)
+// ============================================================================
+
+export type PricingRecommendationStatus = 'pending' | 'applied' | 'declined' | 'expired' | string;
+
+/**
+ * One day's pricing recommendation. `factors` is a free-form structure the
+ * model emits (e.g. `{ event: 'F1 Grand Prix', demand: 'high' }`) — render
+ * its keys as chips.
+ */
+export interface PricingRecommendation {
+  date: string;
+  currentPrice: number | null;
+  recommendedPrice: number;
+  minPrice: number | null;
+  maxPrice: number | null;
+  currency: string | null;
+  confidence: number;
+  bookingProbability: number | null;
+  expectedRevenue: number | null;
+  factors: Record<string, unknown> | null;
+  status: PricingRecommendationStatus;
+  modelVersion: string | null;
+  generatedAt: string | null;
+}
+
+export interface PricingResponse {
+  recommendations: PricingRecommendation[];
+  listing?: {
+    aiBasePrice?: number | null;
+    aiBasePriceFactors?: Record<string, unknown> | null;
+    aiQualityTier?: string | null;
+    aiSegment?: string | null;
+    currency?: string | null;
+  } | null;
+  compSummary?: {
+    compCount: number;
+    compAvg: number | null;
+    compMin: number | null;
+    compMax: number | null;
+  } | null;
+  [key: string]: unknown;
+}
+
 // Force types-only namespace
 export type Paths = paths;
