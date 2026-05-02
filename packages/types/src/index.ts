@@ -16,7 +16,26 @@ export type Connection = components['schemas']['Connection'];
 export type WebhookSubscription = components['schemas']['WebhookSubscription'];
 export type AIOperation = components['schemas']['AIOperation'];
 export type RepullErrorPayload = components['schemas']['Error'];
-export type PaginatedResponse = components['schemas']['PaginatedResponse'];
+export type Review = components['schemas']['Review'];
+/**
+ * Standard offset+limit pagination metadata. Returned by most list endpoints.
+ *
+ * `/v1/reservations` and `/v1/listings` use {@link ReservationPagination} /
+ * {@link CursorPagination} instead — they support cursor walks.
+ */
+export type Pagination = components['schemas']['Pagination'];
+/**
+ * Cursor-only pagination — used by `/v1/reviews`, `/v1/conversations`,
+ * `/v1/conversations/{id}/messages`, `/v1/listings`, etc. Pass
+ * `next_cursor` back as `?cursor=` to fetch the next page; stop when
+ * `has_more` is `false`.
+ */
+export type CursorPagination = components['schemas']['CursorPagination'];
+/**
+ * Reservation-list pagination — supports both legacy offset/limit and the
+ * new cursor walk during the deprecation window. Migrate to `next_cursor`.
+ */
+export type ReservationPagination = components['schemas']['ReservationPagination'];
 
 /** Hand-typed (the OpenAPI shape was loose). */
 export interface ConnectSession {
@@ -112,13 +131,50 @@ export type RepullProvider =
   | 'hostfully'
   | (string & {});
 
-/** Standard paginated list response used across most list endpoints. */
+/**
+ * Standard paginated list response used by `/v1/properties` (and other
+ * legacy offset/limit endpoints). For cursor walks (e.g. `/v1/reviews`,
+ * `/v1/conversations`) use {@link CursorListResponse}; reservations use
+ * {@link ReservationListResponse} which has both shapes during the
+ * deprecation window.
+ */
 export interface ListResponse<T> {
   data: T[];
   pagination: {
     total: number;
     limit: number;
     offset: number;
+    hasMore?: boolean;
+  };
+}
+
+/**
+ * Cursor-paginated list response. Pass `pagination.next_cursor` back as
+ * `?cursor=<value>` to fetch the next page; stop when `pagination.has_more`
+ * is `false`.
+ */
+export interface CursorListResponse<T> {
+  data: T[];
+  pagination: {
+    next_cursor: string | null;
+    has_more: boolean;
+  };
+}
+
+/**
+ * Reservation list response — supports both the legacy `?offset=` walk
+ * (returns `total/limit/offset`) and the new `?cursor=` walk (returns
+ * `next_cursor/has_more`) during the deprecation window. Migrate to
+ * `next_cursor`; legacy fields are removed after the `Sunset` header date.
+ */
+export interface ReservationListResponse<T = Reservation> {
+  data: T[];
+  pagination: {
+    next_cursor?: string | null;
+    has_more?: boolean;
+    total?: number;
+    limit?: number;
+    offset?: number;
   };
 }
 

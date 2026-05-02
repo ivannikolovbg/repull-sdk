@@ -19,18 +19,24 @@ import type {
   ConnectProvider,
   ConnectStatus,
   Connection,
+  Conversation,
+  CursorListResponse,
+  Guest,
   HealthResponse,
   ListResponse,
   MarketsResponse,
+  Message,
   PricingResponse,
   Property,
   Reservation,
+  ReservationListResponse,
+  Review,
   AirbnbAccessType,
 } from '@repull/types';
 import { RepullError } from './errors.js';
 
 const DEFAULT_BASE_URL = 'https://api.repull.dev';
-const DEFAULT_USER_AGENT = '@repull/sdk/0.1.0-alpha.0';
+const DEFAULT_USER_AGENT = '@repull/sdk/0.1.1';
 
 export type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
@@ -58,6 +64,9 @@ export class Repull {
   readonly connect: ConnectNamespace;
   readonly reservations: ReservationsNamespace;
   readonly properties: PropertiesNamespace;
+  readonly conversations: ConversationsNamespace;
+  readonly guests: GuestsNamespace;
+  readonly reviews: ReviewsNamespace;
   readonly health: HealthNamespace;
   readonly channels: ChannelsNamespace;
   readonly markets: MarketsNamespace;
@@ -104,6 +113,9 @@ export class Repull {
     this.connect = new ConnectNamespace(this);
     this.reservations = new ReservationsNamespace(this);
     this.properties = new PropertiesNamespace(this);
+    this.conversations = new ConversationsNamespace(this);
+    this.guests = new GuestsNamespace(this);
+    this.reviews = new ReviewsNamespace(this);
     this.health = new HealthNamespace(this);
     this.channels = new ChannelsNamespace(this);
     this.markets = new MarketsNamespace(this);
@@ -288,14 +300,112 @@ class ProviderConnectNamespace {
 class ReservationsNamespace {
   constructor(private readonly client: Repull) {}
 
-  /** GET /v1/reservations — paginated list. */
-  list(query: { limit?: number; offset?: number; status?: string; platform?: string; from?: string; to?: string } = {}): Promise<ListResponse<Reservation>> {
-    return this.client.request<ListResponse<Reservation>>('GET', '/v1/reservations', { query });
+  /**
+   * GET /v1/reservations — cursor-paginated list.
+   *
+   * Pass `cursor` from the previous response's `pagination.next_cursor` to
+   * walk forward; stop when `pagination.has_more` is `false`. The legacy
+   * `offset` parameter still works during the deprecation window but
+   * responses come back with a `Deprecation: true` header — migrate to
+   * `cursor`.
+   */
+  list(
+    query: {
+      limit?: number;
+      cursor?: string;
+      /** @deprecated Use `cursor` instead. Removed after the response Sunset date. */
+      offset?: number;
+      status?: 'confirmed' | 'pending' | 'cancelled' | 'completed' | string;
+      platform?: string;
+      listing_id?: number;
+      check_in_after?: string;
+      check_in_before?: string;
+      check_out_after?: string;
+      check_out_before?: string;
+      from?: string;
+      to?: string;
+    } = {},
+  ): Promise<ReservationListResponse<Reservation>> {
+    return this.client.request<ReservationListResponse<Reservation>>('GET', '/v1/reservations', { query });
   }
 
   /** GET /v1/reservations/{id}. */
   get(id: string | number): Promise<Reservation> {
     return this.client.request<Reservation>('GET', `/v1/reservations/${encodeURIComponent(String(id))}`);
+  }
+}
+
+/**
+ * Cross-channel guest conversations. Backed by Booking.com + Airbnb (and
+ * future channels) — `/v1/conversations` returns a unified thread list.
+ */
+class ConversationsNamespace {
+  constructor(private readonly client: Repull) {}
+
+  /**
+   * GET /v1/conversations — cursor-paginated list of conversation threads.
+   *
+   * Pass `cursor` from the previous response's `pagination.next_cursor` to
+   * walk forward; stop when `pagination.has_more` is `false`.
+   */
+  list(query: { limit?: number; cursor?: string; channel?: string } = {}): Promise<CursorListResponse<Conversation>> {
+    return this.client.request<CursorListResponse<Conversation>>('GET', '/v1/conversations', { query });
+  }
+
+  /** GET /v1/conversations/{id}/messages — messages on a thread, newest first. */
+  messages(
+    conversationId: string | number,
+    query: { limit?: number; cursor?: string } = {},
+  ): Promise<CursorListResponse<Message>> {
+    return this.client.request<CursorListResponse<Message>>(
+      'GET',
+      `/v1/conversations/${encodeURIComponent(String(conversationId))}/messages`,
+      { query },
+    );
+  }
+
+  /** POST /v1/conversations/{id}/messages — send a message on the thread. */
+  send(conversationId: string | number, body: { text: string; [k: string]: unknown }): Promise<Message> {
+    return this.client.request<Message>(
+      'POST',
+      `/v1/conversations/${encodeURIComponent(String(conversationId))}/messages`,
+      { body },
+    );
+  }
+}
+
+/**
+ * Guest CRM — the canonical guest record (name, email, phone, stays).
+ */
+class GuestsNamespace {
+  constructor(private readonly client: Repull) {}
+
+  /** GET /v1/guests — cursor-paginated guest directory. */
+  list(query: { limit?: number; cursor?: string; search?: string } = {}): Promise<CursorListResponse<Guest>> {
+    return this.client.request<CursorListResponse<Guest>>('GET', '/v1/guests', { query });
+  }
+
+  /** GET /v1/guests/{id} — full guest profile. */
+  get(id: string | number): Promise<Guest> {
+    return this.client.request<Guest>('GET', `/v1/guests/${encodeURIComponent(String(id))}`);
+  }
+}
+
+/**
+ * Channel-agnostic guest reviews. `/v1/reviews` aggregates Airbnb + Booking
+ * + direct review channels into one cursor-paginated stream.
+ */
+class ReviewsNamespace {
+  constructor(private readonly client: Repull) {}
+
+  /** GET /v1/reviews — cursor-paginated review stream across channels. */
+  list(query: { limit?: number; cursor?: string; channel?: string; listing_id?: number } = {}): Promise<CursorListResponse<Review>> {
+    return this.client.request<CursorListResponse<Review>>('GET', '/v1/reviews', { query });
+  }
+
+  /** GET /v1/reviews/{id}. */
+  get(id: string | number): Promise<Review> {
+    return this.client.request<Review>('GET', `/v1/reviews/${encodeURIComponent(String(id))}`);
   }
 }
 

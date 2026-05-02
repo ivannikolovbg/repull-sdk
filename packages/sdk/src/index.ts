@@ -2,8 +2,9 @@
  * @repull/sdk — official TypeScript SDK for api.repull.dev.
  *
  * Hand-written ergonomic facade over the documented REST surface.
- * v0.1.0-alpha — covers Connect (Airbnb OAuth flagship), Reservations,
- * Properties, Health, and Airbnb listings (read).
+ * v0.1.1 — adds `repull.conversations`, `repull.guests`, `repull.reviews`,
+ * and migrates `repull.reservations.list()` to cursor pagination (legacy
+ * `?offset=` walk still works during the deprecation window).
  *
  * Browser-safe behind a server proxy. Do NOT pass `apiKey` directly from
  * a browser bundle without `dangerouslyAllowBrowser: true`. Mirror the
@@ -19,6 +20,7 @@ export type {
   Guest,
   Conversation,
   Message,
+  Review,
   Connection,
   WebhookSubscription,
   AIOperation,
@@ -32,6 +34,11 @@ export type {
   ConnectChannelStatus,
   AirbnbAccessType,
   ListResponse,
+  CursorListResponse,
+  ReservationListResponse,
+  Pagination,
+  CursorPagination,
+  ReservationPagination,
   HealthResponse,
   MarketSummary,
   MarketListingPin,

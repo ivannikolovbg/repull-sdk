@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import { makeClient } from '@/lib/repull-client';
 import type { AuthState } from './auth-bar';
-import type { ListResponse, Reservation } from '@repull/sdk';
+import type { Reservation, ReservationListResponse } from '@repull/sdk';
 import { CodePanel, type CodeSnippet } from './code-panel';
 
 const PAGE_SIZE = 10;
@@ -11,7 +11,7 @@ const PAGE_SIZE = 10;
 export function ReservationsTable({ auth }: { auth: AuthState }) {
   const ready = Boolean(auth.apiKey || auth.useSandbox);
   const [page, setPage] = useState(0);
-  const [data, setData] = useState<ListResponse<Reservation> | null>(null);
+  const [data, setData] = useState<ReservationListResponse<Reservation> | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>('');

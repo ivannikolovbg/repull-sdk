@@ -12,31 +12,7 @@ export interface paths {
             cookie?: never;
         };
         /** Health check */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description API is healthy */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            /** @example ok */
-                            status?: string;
-                            /** @example 1.0.0 */
-                            version?: string;
-                        };
-                    };
-                };
-            };
-        };
+        get: operations["get_health"];
         put?: never;
         post?: never;
         delete?: never;
@@ -56,44 +32,7 @@ export interface paths {
          * List properties
          * @description Returns all properties across connected PMS platforms. Supports pagination and filtering by provider.
          */
-        get: {
-            parameters: {
-                query?: {
-                    /** @description Max items per page */
-                    limit?: components["parameters"]["limit"];
-                    /** @description Pagination offset */
-                    offset?: components["parameters"]["offset"];
-                    /** @description Filter by PMS provider */
-                    provider?: string;
-                };
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Properties list */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["PaginatedResponse"] & {
-                            data?: components["schemas"]["Property"][];
-                        };
-                    };
-                };
-                /** @description Unauthorized */
-                401: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Error"];
-                    };
-                };
-            };
-        };
+        get: operations["list_properties"];
         put?: never;
         post?: never;
         delete?: never;
@@ -110,35 +49,7 @@ export interface paths {
             cookie?: never;
         };
         /** Get property details */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: number;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Property details */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Property"];
-                    };
-                };
-                /** @description Property not found */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
-        };
+        get: operations["get_property"];
         put?: never;
         post?: never;
         delete?: never;
@@ -156,81 +67,16 @@ export interface paths {
         };
         /**
          * List reservations
-         * @description Returns reservations across all connected PMS platforms. Filter by platform, status, date range.
+         * @description Cursor-paginated list of reservations across all connected PMS platforms. Filter by platform, status, listing, or check-in date range.
+         *
+         *     **Pagination:** Walk pages with `?cursor=` — pass `pagination.next_cursor` from one response back as `?cursor=` on the next request. Stop when `pagination.has_more` is `false`. `limit` defaults to 50, max 100; requesting more returns 422 (no silent truncation).
+         *
+         *     **Deprecation:** The `?offset=` query param is supported for backward compatibility but is deprecated and will be removed after the `Sunset` header date. Responses to offset requests carry a `Deprecation: true` header. Migrate to `?cursor=`.
          */
-        get: {
-            parameters: {
-                query?: {
-                    /** @description Max items per page */
-                    limit?: components["parameters"]["limit"];
-                    /** @description Pagination offset */
-                    offset?: components["parameters"]["offset"];
-                    /** @description Filter by booking platform */
-                    platform?: string;
-                    status?: "confirmed" | "pending" | "cancelled" | "completed";
-                    /** @description Check-in date range start */
-                    checkInFrom?: string;
-                    /** @description Check-in date range end */
-                    checkInTo?: string;
-                };
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Reservations list */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["PaginatedResponse"] & {
-                            data?: components["schemas"]["Reservation"][];
-                        };
-                    };
-                };
-            };
-        };
+        get: operations["list_reservations"];
         put?: never;
         /** Create a reservation */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody: {
-                content: {
-                    "application/json": {
-                        propertyId: number;
-                        /** Format: date */
-                        checkIn: string;
-                        /** Format: date */
-                        checkOut: string;
-                        guestFirstName: string;
-                        guestLastName: string;
-                        guestEmail?: string;
-                        guestPhone?: string;
-                        guestCount?: number;
-                        totalPrice?: number;
-                        currency?: string;
-                    };
-                };
-            };
-            responses: {
-                /** @description Reservation created */
-                201: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Reservation"];
-                    };
-                };
-            };
-        };
+        post: operations["create_reservation"];
         delete?: never;
         options?: never;
         head?: never;
@@ -245,85 +91,15 @@ export interface paths {
             cookie?: never;
         };
         /** Get reservation details */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: number;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Reservation details */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Reservation"];
-                    };
-                };
-            };
-        };
+        get: operations["get_reservation"];
         put?: never;
         post?: never;
         /** Cancel reservation */
-        delete: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: number;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Cancelled */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
-        };
+        delete: operations["cancel_reservation"];
         options?: never;
         head?: never;
         /** Update reservation */
-        patch: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: number;
-                };
-                cookie?: never;
-            };
-            requestBody?: {
-                content: {
-                    "application/json": {
-                        /** Format: date */
-                        checkIn?: string;
-                        /** Format: date */
-                        checkOut?: string;
-                        status?: string;
-                        totalPrice?: number;
-                    };
-                };
-            };
-            responses: {
-                /** @description Updated */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
-        };
+        patch: operations["update_reservation"];
         trace?: never;
     };
     "/v1/availability/{propertyId}": {
@@ -337,63 +113,12 @@ export interface paths {
          * Get availability calendar
          * @description Returns day-by-day availability, pricing, and minimum stay for a property.
          */
-        get: {
-            parameters: {
-                query: {
-                    startDate: string;
-                    endDate: string;
-                };
-                header?: never;
-                path: {
-                    propertyId: number;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Calendar days */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            data?: components["schemas"]["CalendarDay"][];
-                        };
-                    };
-                };
-            };
-        };
+        get: operations["get_availability"];
         /**
          * Update availability
          * @description Update pricing, availability, and minimum stay for specific dates.
          */
-        put: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    propertyId: number;
-                };
-                cookie?: never;
-            };
-            requestBody?: {
-                content: {
-                    "application/json": {
-                        dates?: components["schemas"]["CalendarDay"][];
-                    };
-                };
-            };
-            responses: {
-                /** @description Updated */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
-        };
+        put: operations["update_availability"];
         post?: never;
         delete?: never;
         options?: never;
@@ -408,36 +133,13 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List guests */
-        get: {
-            parameters: {
-                query?: {
-                    /** @description Max items per page */
-                    limit?: components["parameters"]["limit"];
-                    /** @description Pagination offset */
-                    offset?: components["parameters"]["offset"];
-                    /** @description Search by name, email, or phone */
-                    search?: string;
-                };
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Guests list */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["PaginatedResponse"] & {
-                            data?: components["schemas"]["Guest"][];
-                        };
-                    };
-                };
-            };
-        };
+        /**
+         * List guests
+         * @description Cursor-paginated list of guests in the workspace. Walks `guests.id ASC` keyset for constant per-page cost regardless of how many guests the customer has. Use `pagination.next_cursor` from one response as the `cursor` query param of the next request.
+         *
+         *     Filters: `q` (substring on name/email/phone), `has_reservation` (`true`|`false`), `listing_id` (restrict to guests with at least one reservation on that listing).
+         */
+        get: operations["listGuests"];
         put?: never;
         post?: never;
         delete?: never;
@@ -453,29 +155,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get guest profile */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: number;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Guest profile */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Guest"];
-                    };
-                };
-            };
-        };
+        /**
+         * Get guest profile
+         * @description Returns the full guest profile — base list-row fields plus contacts, flags, notes, risk metadata, and reservation aggregates. Aggregates main vanio's `GuestService.getGuestProfile()` into the public Repull shape so SDK consumers don't have to learn the internal schema.
+         */
+        get: operations["getGuest"];
         put?: never;
         post?: never;
         delete?: never;
@@ -491,29 +175,33 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List conversations */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Conversations */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            data?: components["schemas"]["Conversation"][];
-                        };
-                    };
-                };
-            };
+        /**
+         * List conversations
+         * @description Cursor-paginated list of message threads owned by the workspace. Backed by main vanio's `/api/threads/list` which keyset-paginates against `(last_message_at, id)` for constant per-page cost. Use `pagination.next_cursor` from one response as the `cursor` query param of the next request.
+         *
+         *     Filters: `platform` (`airbnb`|`booking`|`vrbo`|`website`|`email`), `status` (`open`|`archived` — `archived` is a stable no-op until the bit lands on `message_threads`).
+         */
+        get: operations["listConversations"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/conversations/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
         };
+        /**
+         * Get conversation detail
+         * @description Returns one thread (the same shape as the list-row `Conversation`) plus expanded `host` (from `airbnb_hosts` for the thread's `host_id`) and `guest` (resolved via the thread's `reservation_id`, with up to 50 contacts) blocks.
+         */
+        get: operations["getConversation"];
         put?: never;
         post?: never;
         delete?: never;
@@ -529,59 +217,55 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get messages in conversation */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Messages */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            data?: components["schemas"]["Message"][];
-                        };
-                    };
-                };
-            };
-        };
+        /**
+         * List messages in a conversation
+         * @description Cursor-paginated messages within one thread. Defaults to newest-first (`?order=desc`); pass `?order=asc` for chronological replay. Use `pagination.next_cursor` from one response as the `cursor` query param of the next request.
+         */
+        get: operations["listConversationMessages"];
         put?: never;
-        /** Send message */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: {
-                content: {
-                    "application/json": {
-                        message: string;
-                    };
-                };
-            };
-            responses: {
-                /** @description Message sent */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/reviews": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
         };
+        /**
+         * List reviews
+         * @description Cursor-paginated guest + host review stream for the workspace. Backed by main vanio's unified `reviews` table (populated by per-channel backfill crons), so this surface returns the complete cross-channel history — separate from `/v1/channels/airbnb/reviews` which hits Airbnb live.
+         *
+         *     Filters: `platform` (`airbnb`|`booking`|`vrbo`), `listing_id` (internal Repull listing id), `rating_min` / `rating_max` (inclusive bounds, 0..5), `status` (`responded`|`unanswered`|`all`), `reviewer_role` (`guest` (default) | `host` | `all`).
+         */
+        get: operations["listReviews"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/reviews/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get review
+         * @description Returns one review (matching the list-endpoint `Review` shape) wrapped in `{ data: Review }`. Scoped to the authenticated workspace via the listings join — reviews that don't belong to the workspace return 404 (we don't differentiate to avoid leaking other customers' ids).
+         */
+        get: operations["getReview"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -599,30 +283,57 @@ export interface paths {
          * List PMS/OTA connections
          * @description Returns all active connections to PMS and OTA platforms.
          */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Connections */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            data?: components["schemas"]["Connection"][];
-                        };
-                    };
-                };
-            };
+        get: operations["list_connections"];
+        put?: never;
+        /**
+         * Create a multi-channel Connect picker session
+         * @description Mints a session that lands the user on the channel picker at `connect.repull.dev/{sessionId}` instead of jumping straight to a single provider. The user picks a channel from the registry, the picker page POSTs `selectConnectProvider` to bind the choice, and the per-provider flow takes over.
+         *
+         *     Use this when you want one entry point for all 13 channels. Use `POST /v1/connect/{provider}` instead when your UI already knows which channel to connect.
+         */
+        post: operations["createConnectSession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/connect/providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
         };
+        /**
+         * List Connect channels
+         * @description Returns the public registry of every channel the picker supports. No customer-specific data — display metadata only. Cached for 5 minutes at the edge.
+         */
+        get: operations["listConnectProviders"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/connect/sessions/{sessionId}/select-provider": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Bind a picker session to a provider
+         * @description Called by the hosted picker page once the user clicks a channel card. Validates the provider exists and is permitted by the session's `allowed_providers` whitelist (if any), then returns the next-step URL the picker should navigate to.
+         *
+         *     No API key required — the session ID is the capability token. The session must still be pending and unexpired.
+         */
+        post: operations["selectConnectProvider"];
         delete?: never;
         options?: never;
         head?: never;
@@ -636,28 +347,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get connection status */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    /** @description PMS provider slug (e.g., hostaway, guesty, ownerrez) */
-                    provider: components["parameters"]["provider"];
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Connection status */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
-        };
+        /**
+         * Get connection status
+         * @description Returns the current connection status for a provider, including host metadata (display name + avatar) for Airbnb so clients can render an account-level confirmation UI.
+         */
+        get: operations["get_connect_status"];
         put?: never;
         /**
          * Connect to PMS/OTA provider
@@ -665,73 +359,79 @@ export interface paths {
          *
          *     Airbnb-specific: pass `redirectUrl` (where to send the user after consent) and optionally `accessType` (`read_only` for calendar-only OAuth scopes, or `full_access` — the default — for full host scopes). The response returns a hosted `oauthUrl` to redirect the user to.
          */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    /** @description PMS provider slug (e.g., hostaway, guesty, ownerrez) */
-                    provider: components["parameters"]["provider"];
-                };
-                cookie?: never;
-            };
-            requestBody?: {
-                content: {
-                    "application/json": {
-                        /**
-                         * Format: uri
-                         * @description Airbnb only — where to redirect the user after the OAuth flow completes.
-                         */
-                        redirectUrl?: string;
-                        /**
-                         * @description Airbnb only — selects the OAuth scope set. 'read_only' grants calendar-only access; 'full_access' grants full host scopes (default).
-                         * @default full_access
-                         * @enum {string}
-                         */
-                        accessType?: "read_only" | "full_access";
-                        /** @description PMS providers — API key. */
-                        apiKey?: string;
-                        /** @description Plumguide — client ID. */
-                        clientId?: string;
-                        /** @description Plumguide — client secret. */
-                        clientSecret?: string;
-                    };
-                };
-            };
-            responses: {
-                /** @description Connected */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["Connection"];
-                    };
-                };
-            };
-        };
+        post: operations["create_connection"];
         /** Disconnect provider */
-        delete: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    /** @description PMS provider slug (e.g., hostaway, guesty, ownerrez) */
-                    provider: components["parameters"]["provider"];
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Disconnected */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
+        delete: operations["delete_connection"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/connect/booking/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
         };
+        get?: never;
+        put?: never;
+        /**
+         * Verify a Booking.com hotel ID for a Connect session
+         * @description Manual-paste fallback that closes the Booking.com claim flow. Call this after the customer completes Stage 1 designation in their Booking Extranet (ticking FantasticStay/Repull as their connectivity provider) and pastes their Hotel ID into the hosted picker.
+         *
+         *     Validates the hotel against Booking's property API, persists the `pms_connections` row, kicks off the room import, and transitions the Connect session to `awaiting_room_mapping`.
+         *
+         *     No API key required — the `sessionId` is the capability token. Sessions in any terminal state are rejected.
+         */
+        post: operations["verifyBookingHotel"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/connect/booking/rooms": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Booking.com rooms imported for a Connect session
+         * @description Returns the rooms imported from the Booking.com hotel claimed in this Connect session, plus the customer's listing options for the mapping dropdowns. Hosted-picker pages poll this endpoint every ~2s after `verifyBookingHotel` succeeds; once rooms appear the page transitions to the mapping UI.
+         *
+         *     No API key required — the `sessionId` query param is the capability token.
+         */
+        get: operations["listConnectBookingRooms"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/connect/booking/map-rooms": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Submit room→listing mappings for a Booking.com Connect session
+         * @description Submits the customer's room→listing mapping choices in one transaction. For each mapping, updates `listings_booking_rooms.listing_id` and replaces the corresponding `listing_platform_links` row. Pass `listingId: null` to explicitly unmap a room.
+         *
+         *     On success the Connect session is marked `completed` and the hosted picker page emits a `repull:connect:completed` postMessage to the embedding window.
+         *
+         *     No API key required — the `sessionId` in the body is the capability token. Each mapping's `roomId` must belong to the customer's claimed hotel; mismatched IDs are rejected with 403.
+         */
+        post: operations["mapConnectBookingRooms"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -745,61 +445,175 @@ export interface paths {
             cookie?: never;
         };
         /** List webhook subscriptions */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Webhooks */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            data?: components["schemas"]["WebhookSubscription"][];
-                        };
-                    };
-                };
-            };
-        };
+        get: operations["list_webhooks"];
         put?: never;
         /**
          * Create webhook subscription
-         * @description Subscribe to events. Supported events: reservation.created, reservation.updated, reservation.cancelled, message.received, listing.updated, calendar.updated, guest.created, payment.received
+         * @description Register a new endpoint. Returns the plaintext signing secret ONCE — capture it from the response and store it securely. After this call the secret is masked everywhere; mint a new one with `POST /v1/webhooks/{id}/rotate-secret` if you lose it. See `GET /v1/webhooks/event-types` for the full list of subscribable events.
          */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: {
-                content: {
-                    "application/json": {
-                        /** Format: uri */
-                        url: string;
-                        events: string[];
-                    };
-                };
-            };
-            responses: {
-                /** @description Created */
-                201: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["WebhookSubscription"];
-                    };
-                };
-            };
+        post: operations["create_webhook"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/webhooks/event-types": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
         };
+        /**
+         * List webhook event types
+         * @description The canonical catalog of every event the API can deliver, grouped by domain, with realistic sample payloads.
+         */
+        get: operations["list_webhook_event_types"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/webhooks/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get webhook subscription */
+        get: operations["get_webhook"];
+        put?: never;
+        post?: never;
+        /** Delete webhook subscription */
+        delete: operations["delete_webhook"];
+        options?: never;
+        head?: never;
+        /**
+         * Update webhook subscription
+         * @description Update url, description, events, or status (active|paused). Re-enabling clears `consecutive_failures` and `disabled_at`.
+         */
+        patch: operations["update_webhook"];
+        trace?: never;
+    };
+    "/v1/webhooks/{id}/rotate-secret": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rotate signing secret
+         * @description Mints a fresh signing secret and returns the plaintext ONCE. After this response the secret is masked everywhere — capture and store it now.
+         */
+        post: operations["rotate_webhook_secret"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/webhooks/{id}/ping": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send ping event
+         * @description Fires a synthetic `repull.ping` at the subscription URL and returns the full delivery cycle inline. Used by dashboards and health-check probes.
+         */
+        post: operations["ping_webhook"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/webhooks/{id}/test/{event_type}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send test event of a specific type
+         * @description Delivers a realistic fixture payload of the requested event type to the subscription URL.
+         */
+        post: operations["test_fire_webhook"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/webhooks/{id}/deliveries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List webhook deliveries
+         * @description Paginated history of every delivery attempt for this subscription.
+         */
+        get: operations["list_webhook_deliveries"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/webhooks/{id}/deliveries/{delivery_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get webhook delivery
+         * @description Full request + response capture for one delivery attempt.
+         */
+        get: operations["get_webhook_delivery"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/webhooks/{id}/deliveries/{delivery_id}/replay": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Replay webhook delivery
+         * @description Re-sends the original payload (same eventId, fresh deliveryId, attempt + 1).
+         */
+        post: operations["replay_webhook_delivery"];
         delete?: never;
         options?: never;
         head?: never;
@@ -816,34 +630,10 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Send test webhook
-         * @description Delivers a test payload to your webhook URL.
+         * [Legacy] Send test webhook to a URL
+         * @description Deprecated: prefer creating a subscription then calling `POST /v1/webhooks/{id}/ping`. Kept for back-compat.
          */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: {
-                content: {
-                    "application/json": {
-                        webhookId?: string;
-                        event?: string;
-                    };
-                };
-            };
-            responses: {
-                /** @description Test delivered */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
-        };
+        post: operations["test_webhook"];
         delete?: never;
         options?: never;
         head?: never;
@@ -858,44 +648,10 @@ export interface paths {
             cookie?: never;
         };
         /** List Airbnb listings */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Listings */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
-        };
+        get: operations["list_airbnb_listings"];
         put?: never;
         /** Create/push Airbnb listing */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Created */
-                201: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
-        };
+        post: operations["create_airbnb_listing"];
         delete?: never;
         options?: never;
         head?: never;
@@ -910,48 +666,10 @@ export interface paths {
             cookie?: never;
         };
         /** Get Airbnb listing */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Listing details */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
-        };
+        get: operations["get_airbnb_listing"];
         put?: never;
         /** Listing action (push/publish/unlist/delete) */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Action completed */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
-        };
+        post: operations["airbnb_listing_action"];
         delete?: never;
         options?: never;
         head?: never;
@@ -966,47 +684,9 @@ export interface paths {
             cookie?: never;
         };
         /** Get Airbnb pricing */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Pricing data */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
-        };
+        get: operations["get_airbnb_listing_pricing"];
         /** Update Airbnb pricing */
-        put: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Updated */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
-        };
+        put: operations["update_airbnb_listing_pricing"];
         post?: never;
         delete?: never;
         options?: never;
@@ -1022,47 +702,9 @@ export interface paths {
             cookie?: never;
         };
         /** Get Airbnb availability */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Availability data */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
-        };
+        get: operations["get_airbnb_listing_availability"];
         /** Update Airbnb availability */
-        put: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Updated */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
-        };
+        put: operations["update_airbnb_listing_availability"];
         post?: never;
         delete?: never;
         options?: never;
@@ -1078,48 +720,10 @@ export interface paths {
             cookie?: never;
         };
         /** List Airbnb photos */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Photos */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
-        };
+        get: operations["list_airbnb_listing_photos"];
         put?: never;
         /** Upload photos to Airbnb */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Uploaded */
-                201: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
-        };
+        post: operations["upload_airbnb_listing_photos"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1134,24 +738,7 @@ export interface paths {
             cookie?: never;
         };
         /** List Airbnb message threads */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Message threads */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
-        };
+        get: operations["list_airbnb_threads"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1168,48 +755,10 @@ export interface paths {
             cookie?: never;
         };
         /** Get Airbnb messages */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    threadId: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Messages */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
-        };
+        get: operations["list_airbnb_thread_messages"];
         put?: never;
         /** Send Airbnb message */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    threadId: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Sent */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
-        };
+        post: operations["send_airbnb_message"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1224,24 +773,7 @@ export interface paths {
             cookie?: never;
         };
         /** List Airbnb reservations */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Reservations */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
-        };
+        get: operations["list_airbnb_reservations"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1258,48 +790,10 @@ export interface paths {
             cookie?: never;
         };
         /** Get Airbnb reservation */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    code: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Reservation details */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
-        };
+        get: operations["get_airbnb_reservation"];
         put?: never;
         /** Accept/decline/cancel Airbnb reservation */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    code: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Action completed */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
-        };
+        post: operations["airbnb_reservation_action"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1314,44 +808,10 @@ export interface paths {
             cookie?: never;
         };
         /** List Airbnb reviews */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Reviews */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
-        };
+        get: operations["list_airbnb_reviews"];
         put?: never;
         /** Respond to Airbnb review */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Response posted */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
-        };
+        post: operations["respond_airbnb_review"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1371,24 +831,111 @@ export interface paths {
          * Bulk sync to Airbnb
          * @description Push all property data to Airbnb in one call.
          */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Sync started */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
+        post: operations["sync_airbnb"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/listings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
         };
+        /**
+         * List listings
+         * @description Cursor-paginated list of listings owned by the authenticated workspace. Use `pagination.next_cursor` from one response as the `cursor` query param of the next request to walk the full set. Filters: `q` (substring on name/street/city), `status`, `channel`.
+         */
+        get: operations["listListings"];
+        put?: never;
+        /**
+         * Create a Repull listing
+         * @description Create a new vacation-rental listing under the authenticated workspace. The listing is stored in the canonical Vanio listings tables and can be published to multiple channels (Airbnb, Booking.com) via the publish endpoints.
+         */
+        post: operations["createListing"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/listings/{id}/generate-content": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * AI-generate listing content
+         * @description Generate guest-facing copy (title, summary, description, amenities, etc.) for a listing using Kimi K2. When `photos` are provided the vision model is used for photo-grounded copy. Persists into the listing by default.
+         */
+        post: operations["generateListingContent"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/listings/{id}/publish/airbnb": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Publish a listing to Airbnb
+         * @description Push a Repull listing to Airbnb. Pass `airbnbConnectionId` to update an already-mapped Airbnb listing, or `hostId` to create a brand-new Airbnb listing under that host.
+         */
+        post: operations["publishListingToAirbnb"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/listings/{id}/publish/booking": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Publish a listing to Booking.com
+         * @description Push a Repull listing to Booking.com. The listing must already be mapped to a Booking property + room (created via the Booking-claim Connect flow).
+         */
+        post: operations["publishListingToBooking"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/listings/{id}/publish-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Per-channel publish status
+         * @description Returns one row per platform the listing has been pushed/pulled to, with last push timestamp and any dirty fields not yet synced.
+         */
+        get: operations["getListingPublishStatus"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1403,44 +950,10 @@ export interface paths {
             cookie?: never;
         };
         /** List Booking.com properties */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Properties */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
-        };
+        get: operations["list_booking_properties"];
         put?: never;
         /** Create Booking.com property */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Created */
-                201: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
-        };
+        post: operations["create_booking_property"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1456,24 +969,7 @@ export interface paths {
         };
         get?: never;
         /** Update Booking.com rates/availability */
-        put: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Updated */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
-        };
+        put: operations["update_booking_availability"];
         post?: never;
         delete?: never;
         options?: never;
@@ -1489,44 +985,10 @@ export interface paths {
             cookie?: never;
         };
         /** Get Booking.com content */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Content */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
-        };
+        get: operations["get_booking_content"];
         put?: never;
         /** Update Booking.com content */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Updated */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
-        };
+        post: operations["update_booking_content"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1541,44 +1003,10 @@ export interface paths {
             cookie?: never;
         };
         /** List Booking.com conversations */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Conversations */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
-        };
+        get: operations["list_booking_conversations"];
         put?: never;
         /** Send Booking.com message */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Sent */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
-        };
+        post: operations["send_booking_message"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1595,24 +1023,33 @@ export interface paths {
         get?: never;
         put?: never;
         /** Bulk sync to Booking.com */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Sync started */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
+        post: operations["sync_booking"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/booking/listings/{id}/pricing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
         };
+        /**
+         * Get Booking.com pricing for a listing
+         * @description Resolves the Vanio listing ID to its Booking.com `hotel_id` (via the `listings_booking` mapping owned by the authenticated workspace), then proxies Booking's `getRoomRateAvailability` for the requested window. Pricing on Booking is per-room/per-rate-plan, so `room_id` and `room_level` flow through query params unchanged.
+         *
+         *     Mirrors the per-channel `/listings/{id}/pricing` shape used by Airbnb so SDK consumers can carry a Vanio listing ID across channels.
+         */
+        get: operations["getBookingListingPricing"];
+        /**
+         * Update Booking.com pricing for a listing
+         * @description Pushes one or more rate updates to Booking.com via `updateRates`. Each update needs `roomId` + `rateId` + `dateRange` + `price` + `currency`. Field-level validation runs up front so callers don't have to parse Booking's XML error envelope to discover a missing `roomId`.
+         */
+        put: operations["updateBookingListingPricing"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1627,25 +1064,34 @@ export interface paths {
             cookie?: never;
         };
         /** List VRBO listings */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Listings */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
-        };
+        get: operations["list_vrbo_listings"];
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/vrbo/listings/{id}/pricing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get VRBO pricing (501 — agency model)
+         * @description VRBO uses the agency model — VRBO PULLS rates from `/api/webhooks/vrbo/listings-xml/rates/{listing}/{unit}` rather than accepting a push API. This endpoint is declared for symmetry with the other channel-pricing routes but currently returns **501 Not Implemented** with a pointer at the public rate URL VRBO consumes. Use `GET /v1/listings/{id}/calendar` (once wired) to inspect the underlying source-of-truth.
+         *
+         *     When the listings-XML rate-builder is ported into this repo, this endpoint will return the parsed rates VRBO sees.
+         */
+        get: operations["getVrboListingPricing"];
+        /**
+         * Update VRBO pricing (501 — no push API exists)
+         * @description VRBO has no rate-push API. To change what VRBO sees, update the underlying Vanio calendar/pricing-settings (e.g. `PUT /v1/listings/{id}/calendar` once wired) — VRBO will pick up the change on its next pull. This endpoint always returns **501** rather than fake-stubbing a successful push the SDK would silently swallow.
+         */
+        put: operations["updateVrboListingPricing"];
         post?: never;
         delete?: never;
         options?: never;
@@ -1661,24 +1107,7 @@ export interface paths {
             cookie?: never;
         };
         /** List VRBO reservations */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Reservations */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
-        };
+        get: operations["list_vrbo_reservations"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1695,24 +1124,7 @@ export interface paths {
             cookie?: never;
         };
         /** List Plumguide listings */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Listings */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
-        };
+        get: operations["list_plumguide_listings"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1729,43 +1141,9 @@ export interface paths {
             cookie?: never;
         };
         /** Get Plumguide availability */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Availability */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
-        };
+        get: operations["get_plumguide_availability"];
         /** Push availability to Plumguide */
-        put: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Pushed */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
-        };
+        put: operations["update_plumguide_availability"];
         post?: never;
         delete?: never;
         options?: never;
@@ -1781,43 +1159,232 @@ export interface paths {
             cookie?: never;
         };
         /** Get Plumguide pricing */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Pricing */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
-        };
+        get: operations["get_plumguide_pricing"];
         /** Push pricing to Plumguide */
-        put: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Pushed */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
+        put: operations["update_plumguide_pricing"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/listings/{id}/pricing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
         };
+        /**
+         * Get pricing recommendations
+         * @description Returns date-by-date pricing recommendations for a listing's upcoming calendar window, plus the listing's base-price context and a 5km comp summary. Recommendations come from the Atlas pricing model — pre-computed nightly and stored in `pricing_recommendations`. Use POST to apply or decline pending recommendations.
+         */
+        get: operations["get_listing_pricing"];
+        put?: never;
+        /**
+         * Apply or decline pricing recommendations
+         * @description Apply: writes the recommended price to the listing's calendar for the given dates and triggers the platform fan-out (Airbnb / Booking.com / VRBO). Decline: marks the recommendation as `declined` so it stops surfacing — the model can re-recommend on the next training cycle.
+         */
+        post: operations["apply_listing_pricing"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/listings/{id}/pricing/strategy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get pricing strategy
+         * @description Returns the strategy that constrains how the Atlas pricing model behaves for this listing. If no strategy row exists yet, returns sane defaults flagged with `isDefault: true`.
+         */
+        get: operations["get_listing_pricing_strategy"];
+        /**
+         * Update pricing strategy
+         * @description Upserts the strategy on `(listing_id, customer_id)` — repeated PUTs are idempotent. Send only the fields you want to change; omitted fields take server-side defaults.
+         */
+        put: operations["update_listing_pricing_strategy"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/listings/pricing/bulk": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Bulk apply or decline pricing recommendations
+         * @description Apply or decline pending Atlas pricing recommendations across many listings in one call. Built for power users with hundreds of listings who would otherwise need 500 sequential single-listing POSTs.
+         *
+         *     - `items` is capped at 500 entries per request — exceeding returns 422.
+         *     - Per-item failures (stale listing IDs, no pending recs, channel auth blips) DO NOT fail the whole batch — partial success is the norm at this scale and the granular `failed[]` array lets the SDK retry just the bad entries.
+         *     - Tier-limit accounting: this endpoint counts as **1 API call** regardless of how many items the body contains.
+         *
+         *     Apply path writes the recommended price to each listing's calendar via the calendar service (which fans out to Airbnb/Booking/VRBO) then marks the Atlas recommendation `applied`. Decline path is Atlas-only — fast.
+         */
+        post: operations["bulkApplyPricing"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/listings/{id}/pricing/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Pricing recommendation audit trail
+         * @description Cursor-paginated audit trail of pricing recommendations vs applied prices for a listing across a date window. Use `pagination.next_cursor` from one response as the `cursor` query param of the next request.
+         *
+         *     Defaults to ±90 days from today. Cursor is a keyset on `date ASC` — stable even if rows are added during a partner's pagination walk. `limit` is capped at 500 — exceeding returns 422.
+         */
+        get: operations["getListingPricingHistory"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/listings/{id}/comps": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Comp set for a listing (with daily nightly pricing)
+         * @description Returns the actual comp set for a listing — the underlying competitor listings (with daily nightly pricing), not just the aggregated `compSummary` from `/pricing`. Each comp comes back with distance, bedrooms, ratings, lat/lng, platform link, and a per-day rate/availability series for the requested window.
+         *
+         *     Powered by Atlas. Comps with no coordinates are excluded — there's no way to rank them by distance. Listings without coordinates return `data: []` and a `warning` field.
+         */
+        get: operations["listListingComps"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/listings/{id}/segments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Atlas DNA segment intelligence for a listing
+         * @description Aggregates Atlas DNA segment signal (quality tier, design style, bedrooms) across the listing's geographic neighborhood (default: 5km radius) or the whole city, so consumers can answer:
+         *     - What segments dominate my market?
+         *     - Which segment does my listing match best?
+         *     - What's the ADR uplift for moving up a tier?
+         *
+         *     DNA coverage is still ramping — segments are scored asynchronously. Cities and radii without scored comps return `totalCompsAnalyzed: 0` plus a `low_dna_coverage` recommendation rather than fabricated data.
+         */
+        get: operations["getListingSegments"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/markets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List markets the customer operates in
+         * @description Returns per-city KPIs across every market the authenticated customer has listings in (market share, ADR vs market, occupancy, ratings) plus a lightweight `browse` discovery summary (top-50 featured markets, country categories, total catalog size). For the full paginated discovery catalog with search, call `GET /v1/markets/browse`. Each `markets[]` entry is enriched with `subscribed` + `source` from the customer's market subscriptions.
+         */
+        get: operations["list_markets"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/markets/browse": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Paginated discovery catalog
+         * @description Cursor-paginated, search-filterable catalog of every Atlas-tracked market the customer could expand into. Backed by the precomputed `market_summaries` table (>=5 active comps per city). Supports fuzzy `q` substring search (trigram-indexed), `country` (ISO 3166-1 alpha-2) filter, and `sort` (`listings_desc` | `name_asc`). Use the `next_cursor` from `pagination` to walk pages — the cursor is an opaque base64 token; do not parse it.
+         */
+        get: operations["list_market_browse"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/markets/{city}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Deep-dive on a single market
+         * @description Detailed market view for one city — price distribution, bedroom mix, property types, upcoming events, Wheelhouse demand, monthly benchmarks, customer health rollup, top comps (proximity-sorted, paginated), customer's percentile position, capacity-mix gap, and a 6-month supply trend.
+         */
+        get: operations["get_market"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/markets/{city}/calendar": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Calendar-level market view
+         * @description Date-by-date market view for a city — market avg / min / max nightly rate, occupancy %, Wheelhouse demand, events touching the date, and (when `listingId` is supplied) an overlay of the customer's own pricing + availability.
+         */
+        get: operations["get_market_calendar"];
+        put?: never;
         post?: never;
         delete?: never;
         options?: never;
@@ -1845,33 +1412,7 @@ export interface paths {
          *     - `review-response` — Generate a review response
          *     - `price-suggestion` — Get AI pricing suggestions
          */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: {
-                content: {
-                    "application/json": components["schemas"]["AIOperation"];
-                };
-            };
-            responses: {
-                /** @description AI response (may be streaming) */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            result?: string;
-                            confidence?: number;
-                        };
-                    };
-                };
-            };
-        };
+        post: operations["create_ai_operation"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1886,54 +1427,13 @@ export interface paths {
             cookie?: never;
         };
         /** Get plan and usage */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Plan info and current usage */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
-        };
+        get: operations["get_billing"];
         put?: never;
         /**
          * Create checkout session
          * @description Redirect user to Stripe checkout.
          */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: {
-                content: {
-                    "application/json": {
-                        /** @enum {string} */
-                        plan?: "starter" | "growth" | "scale";
-                    };
-                };
-            };
-            responses: {
-                /** @description Checkout URL */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
-        };
+        post: operations["create_billing_checkout"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2032,17 +1532,112 @@ export interface components {
             /** @example guesty */
             provider?: string;
         };
+        /** @description Guest list-row shape returned by `GET /v1/guests`. Pre-resolved primary phone/email + display name + cumulative stay aggregates so list UIs can render without a per-row round-trip. */
         Guest: {
             id?: number;
-            /** @example Jane */
-            firstName?: string;
-            /** @example Doe */
-            lastName?: string;
+            /**
+             * @description Short display name (first name).
+             * @example Jane
+             */
+            displayName?: string;
+            /**
+             * @description Long display name (first + last). Falls back to displayName when last name is missing.
+             * @example Jane Doe
+             */
+            displayNameLong?: string;
+            /** Format: uri */
+            avatarUrl?: string | null;
+            /** @description Guest's preferred language (ISO 639-1). */
+            language?: string | null;
+            /** @description Guest country (from profile metadata or address). */
+            country?: string | null;
+            /** @description Primary phone contact (or first non-primary if no primary set). */
+            phone?: string | null;
+            /**
+             * Format: email
+             * @description Primary email contact.
+             */
+            email?: string | null;
+            /** @description Lifetime reservation count. */
+            totalReservations?: number;
+            /**
+             * @description Decimal-as-string to preserve precision across mixed-currency totals.
+             * @example 14250.00
+             */
+            totalRevenue?: string;
+            /** Format: date-time */
+            lastStayedAt?: string | null;
+            /** Format: date-time */
+            firstStayedAt?: string | null;
+            /** Format: date-time */
+            created_at?: string;
+        };
+        /** @description One contact channel attached to a guest profile (phone, email, etc.). */
+        GuestContact: {
+            /**
+             * @description Contact channel type (`phone`, `email`, etc.).
+             * @example phone
+             */
+            type?: string;
+            /** @example +15551234567 */
+            value?: string;
+            verified?: boolean;
+            is_primary?: boolean;
+            /** Format: date-time */
+            last_used?: string | null;
+        };
+        /** @description A risk/operational flag attached to a guest profile (e.g. blacklist, do-not-host, VIP). Severity comes from main vanio's flag taxonomy. */
+        GuestFlag: {
+            /** @description Severity / category (e.g. `info`, `warning`, `block`). */
+            type?: string;
+            /** @description Reason text when present. */
+            note?: string | null;
+            is_active?: boolean;
+            /** Format: date-time */
+            created_at?: string | null;
+        };
+        GuestNote: {
+            id?: number;
+            body?: string | null;
+            category?: string | null;
+            /** Format: date-time */
+            created_at?: string | null;
+            created_by?: string | null;
+        };
+        /** @description Aggregate counts of reservations attached to the guest. `future` is derived from `total - past - cancelled`. */
+        GuestReservationsSummary: {
+            total?: number;
+            future?: number;
+            past?: number;
+            cancelled?: number;
+        };
+        /** @description Full guest profile returned by `GET /v1/guests/{id}`. Aggregates the base list-row fields plus contacts, flags, notes, risk metadata, and a reservations-summary rollup. */
+        GuestProfile: {
+            id?: number;
+            displayName?: string;
+            displayNameLong?: string;
+            /** Format: uri */
+            avatarUrl?: string | null;
+            language?: string | null;
+            country?: string | null;
+            phone?: string | null;
             /** Format: email */
-            email?: string;
-            phone?: string;
-            totalStays?: number;
-            totalRevenue?: number;
+            email?: string | null;
+            totalReservations?: number;
+            /** @description Decimal as string. */
+            totalRevenue?: string;
+            currency?: string | null;
+            isBlacklisted?: boolean;
+            blacklistedReason?: string | null;
+            /** @description Main-vanio risk score (e.g. `low`, `medium`, `high`). */
+            riskLevel?: string | null;
+            verificationLevel?: string | null;
+            /** Format: date-time */
+            created_at?: string | null;
+            contacts?: components["schemas"]["GuestContact"][];
+            flags?: components["schemas"]["GuestFlag"][];
+            notes?: components["schemas"]["GuestNote"][];
+            reservations_summary?: components["schemas"]["GuestReservationsSummary"];
         };
         CalendarDay: {
             /**
@@ -2056,24 +1651,161 @@ export interface components {
             /** @example 2 */
             minNights?: number;
         };
+        /** @description Channel-agnostic message thread between the host workspace and a guest. Returned by `GET /v1/conversations`. The `id` is the internal Repull thread id (integer) — pass it back as the `{id}` path param on detail / messages calls. */
         Conversation: {
-            id?: string;
-            reservationId?: number;
-            guestName?: string;
-            lastMessage?: string;
+            id?: number;
+            /**
+             * @example airbnb
+             * @enum {string|null}
+             */
+            platform?: "airbnb" | "booking" | "vrbo" | "website" | "email" | null;
+            guest_id?: number | null;
+            listing_id?: number | null;
+            reservation_id?: number | null;
+            /** @description Thread subject (email/website channels) or null when not applicable. */
+            subject?: string | null;
             /** Format: date-time */
-            lastMessageAt?: string;
-            unreadCount?: number;
+            last_message_at?: string | null;
+            /** @description Short preview of the most recent message body for list-UI rendering. */
+            last_message_preview?: string | null;
+            unread_count?: number;
+            /**
+             * @description `archived` is reserved for a future bit on `message_threads` — currently always `open`.
+             * @enum {string}
+             */
+            status?: "open" | "archived";
+            /** Format: date-time */
+            created_at?: string;
+            /** Format: date-time */
+            updated_at?: string;
         };
-        Message: {
-            id?: string;
-            conversationId?: string;
-            /** @enum {string} */
-            senderType?: "guest" | "host" | "system";
-            senderName?: string;
-            message?: string;
+        /** @description Linked host metadata for a conversation thread. Currently populated for Airbnb threads (resolved through `airbnb_hosts`); null for other channels until per-channel host enrichment lands. */
+        ConversationHost: {
+            id?: number;
+            /** @description Airbnb-side host id. */
+            airbnbId?: string;
+            firstName?: string;
+            displayName?: string;
+            /** Format: uri */
+            avatarUrl?: string | null;
+        };
+        ConversationGuestContact: {
+            /** @example phone */
+            type?: string;
+            value?: string;
+            isPrimary?: boolean;
+            isVerified?: boolean;
+        };
+        /** @description Linked guest metadata for a conversation thread. Resolved through the thread's `reservation_id` → `reservations.guest_id`. Up to 50 contacts are returned. */
+        ConversationGuest: {
+            id?: number;
+            displayName?: string;
+            /** Format: uri */
+            avatarUrl?: string | null;
+            contacts?: components["schemas"]["ConversationGuestContact"][];
+        };
+        /** @description Returned by `GET /v1/conversations/{id}`. Extends the list-row `Conversation` shape with expanded `host` + `guest` blocks so SDK consumers can render thread headers without an extra round-trip. */
+        ConversationDetail: components["schemas"]["Conversation"] & {
+            host?: components["schemas"]["ConversationHost"] | null;
+            guest?: components["schemas"]["ConversationGuest"] | null;
+        };
+        ConversationMessageAttachment: {
+            id?: number;
+            /** Format: uri */
+            imageUrl?: string;
+            /** @example image/jpeg */
+            contentType?: string;
             /** Format: date-time */
-            sentAt?: string;
+            createdAt?: string;
+        };
+        /** @description A single message inside a conversation thread. Returned by `GET /v1/conversations/{id}/messages`. `direction` is normalized to `inbound` (from the guest) / `outbound` (from the host or an automation). */
+        Message: {
+            id?: number;
+            /** @description ID assigned by the source channel (Airbnb message id, Booking message id, etc.). Stable across syncs. */
+            external_message_id?: string | null;
+            /** @enum {string} */
+            direction?: "inbound" | "outbound";
+            /** @description Free-form sender role from the channel (e.g. `guest`, `host`, `system`, `airbnb`). Use `direction` for binary inbound/outbound logic. */
+            sender_type?: string | null;
+            sender_name?: string;
+            /** Format: uri */
+            sender_avatar?: string | null;
+            /** @description Delivery channel — `airbnb`, `booking`, `sms`, `email`, etc. */
+            channel?: string | null;
+            /** @description Message body in the original language. */
+            body?: string;
+            /** @description English translation when the original language is non-English and a translation has been computed. */
+            translated_body?: string | null;
+            attachments?: components["schemas"]["ConversationMessageAttachment"][];
+            /** @description `true` when the message was sent by a Vanio automation (template, schedule, etc.). */
+            is_automated?: boolean;
+            /** @description `true` when the body was authored by Vanio AI (autopilot, draft). */
+            ai_generated?: boolean;
+            /** Format: date-time */
+            sent_at?: string;
+            /** Format: date-time */
+            delivered_at?: string;
+            /** Format: date-time */
+            read_at?: string | null;
+        };
+        /** @description One scored sub-category of a multi-axis review (cleanliness, communication, accuracy, etc.). Categories vary by platform. */
+        ReviewCategory: {
+            /** @example cleanliness */
+            category?: string;
+            /** @description Per-category rating on the platform's scale (typically 1..5). */
+            rating?: number | null;
+            comment?: string | null;
+        };
+        /** @description Host response to a review, when present. */
+        ReviewResponse: {
+            body?: string;
+            /** Format: date-time */
+            submitted_at?: string | null;
+        };
+        /** @description A guest or host review unified across channels. Returned by `GET /v1/reviews` and `GET /v1/reviews/{id}`. Populated from main vanio's unified `reviews` table after the per-channel backfill cron has run. */
+        Review: {
+            /** @description Internal Repull review id — pass back to `/v1/reviews/{id}`. */
+            id?: number;
+            /** @description ID in the source channel (Airbnb review id, Booking review id, etc.). */
+            external_id?: string;
+            /** @enum {string|null} */
+            platform?: "airbnb" | "booking" | "vrbo" | null;
+            /** @description Internal Repull listing id the review is attached to. */
+            listing_id?: number | null;
+            reservation_id?: number | null;
+            /** @description Channel-side confirmation code for the reservation being reviewed. */
+            reservation_confirmation_code?: string | null;
+            guest_id?: number | null;
+            guest_name?: string | null;
+            /** Format: uri */
+            guest_avatar?: string | null;
+            /**
+             * @description Who wrote the review — `guest` (about the host/property) or `host` (about the guest).
+             * @enum {string}
+             */
+            reviewer_role?: "guest" | "host";
+            /** @description Overall rating on the platform's scale (typically 1..5). May be `null` for review types that lack a numeric overall score. */
+            rating?: number | null;
+            categories?: components["schemas"]["ReviewCategory"][];
+            /** @description Public-facing review text shown on the listing page. */
+            public_review?: string | null;
+            /** @description Private feedback the reviewer sent only to the host. */
+            private_feedback?: string | null;
+            /** @description Did the reviewer recommend the reviewee? Used for guest-side reviews. */
+            is_reviewee_recommended?: boolean | null;
+            response?: components["schemas"]["ReviewResponse"] | null;
+            /** Format: date-time */
+            submitted_at?: string | null;
+            /** Format: date-time */
+            updated_at?: string | null;
+            /**
+             * Format: date-time
+             * @description When the review window closes (Airbnb has a 14-day window after checkout).
+             */
+            expires_at?: string | null;
+            hidden?: boolean;
+            /** @description Detected language (ISO 639-1) of the review body. */
+            language?: string | null;
         };
         Connection: {
             id?: number;
@@ -2087,11 +1819,145 @@ export interface components {
             externalAccountId?: string | null;
             /** Format: date-time */
             createdAt?: string;
+            /** @description Host metadata for the linked account. Currently populated for Airbnb only; null for other providers. */
+            host?: components["schemas"]["ConnectHost"] | null;
         };
+        /** @description Public-facing metadata about the host whose account is linked. Lets clients render an account-level card (avatar + name) instead of just an opaque ID. Email is intentionally NOT exposed for Airbnb — the partner API doesn't return host email. */
+        ConnectHost: {
+            /**
+             * @description Short display name (Airbnb first name).
+             * @example Lidia
+             */
+            displayName?: string | null;
+            /**
+             * @description Preferred long-form name. Falls back to displayName when the host hasn't set a preferred form.
+             * @example Lidia
+             */
+            displayNameLong?: string | null;
+            /**
+             * Format: uri
+             * @description Profile picture URL (small).
+             */
+            avatarUrl?: string | null;
+            /**
+             * Format: uri
+             * @description Profile picture URL (large).
+             */
+            avatarUrlLarge?: string | null;
+            /**
+             * @description Per-provider activation/onboarding status.
+             * @example active
+             */
+            activationStatus?: string | null;
+        };
+        /** @description A channel the multi-channel Connect picker can show. Returned by `GET /v1/connect/providers` and consumed by SDKs that render their own picker UI. */
+        ConnectProvider: {
+            /**
+             * @description Stable identifier passed back to /select-provider and used in /v1/connect/{provider} routes.
+             * @example airbnb
+             */
+            id: string;
+            /** @example Airbnb */
+            displayName: string;
+            /**
+             * @description Channel category — OTAs are listing marketplaces; PMSes are property management systems.
+             * @enum {string}
+             */
+            category: "ota" | "pms";
+            /**
+             * @description How the host is connected. `oauth`: provider-side consent screen. `credentials`: hosted form collects API keys. `activation`: push-only handshake (Vrbo). `claim`: connectivity-provider designation in the channel's Extranet (Booking.com).
+             * @enum {string}
+             */
+            connectPattern: "oauth" | "credentials" | "activation" | "claim";
+            /**
+             * @description Pickers should hide / disable `coming-soon` cards. `beta` cards are clickable but show a Beta pill.
+             * @enum {string}
+             */
+            status: "live" | "beta" | "coming-soon";
+            /**
+             * Format: uri
+             * @description Logo URL — Clearbit stand-in until self-hosted SVGs land.
+             */
+            logoUrl: string;
+            /** @example OAuth consent — host approves access in one click. */
+            description: string;
+            /**
+             * Format: uri
+             * @example https://repull.dev/docs/channels/airbnb
+             */
+            docsUrl: string;
+            /**
+             * @description Optional friendly aliases the picker's search box can match.
+             * @example [
+             *       "airbnb",
+             *       "abnb"
+             *     ]
+             */
+            aliases?: string[] | null;
+        };
+        ConnectProviderListResponse: {
+            data?: components["schemas"]["ConnectProvider"][];
+        };
+        /** @description A multi-channel Connect picker session. The `url` is the hosted picker page on connect.repull.dev — redirect the host to it, they pick a channel, and the picker takes them through the per-provider flow before redirecting back to the original `redirectUrl`. */
+        ConnectSession: {
+            /** @example cs_8gQrT2v9k3M4nLp7wJxYzAbCdEfGhIjKlMnOp */
+            sessionId: string;
+            /**
+             * Format: uri
+             * @example https://connect.repull.dev/cs_8gQrT2v9k3M4nLp7wJxYzAbCdEfGhIjKlMnOp
+             */
+            url: string;
+            /** Format: date-time */
+            expiresAt: string;
+            /** @description Echoed back from the request body for SDK consumers that pass an opaque correlation token. */
+            state?: string | null;
+        };
+        /** @description Returned by `POST /v1/connect/sessions/{sessionId}/select-provider`. The picker UI navigates the user to `nextUrl` to begin the per-provider handoff. */
+        SelectProviderResponse: {
+            sessionId?: string;
+            /** @example airbnb */
+            provider?: string;
+            /** @enum {string} */
+            pattern?: "oauth" | "credentials" | "activation" | "claim";
+            /**
+             * Format: uri
+             * @description Where to send the user next — OAuth consent, credentials form, activation checklist, or claim form.
+             */
+            nextUrl?: string;
+        };
+        /** @description Connection status response for a single provider. When `connected` is false, all other fields except `provider` and `host` may be omitted, and `host` is null. */
+        ConnectStatus: {
+            /** @example true */
+            connected?: boolean;
+            /** @example airbnb */
+            provider?: string;
+            /**
+             * @description Repull-side connection ID. Stable across token refreshes.
+             * @example 3
+             */
+            id?: number;
+            /**
+             * @example active
+             * @enum {string}
+             */
+            status?: "active" | "inactive" | "error";
+            /**
+             * @description Provider-side account ID (e.g. the Airbnb host ID).
+             * @example 23998907
+             */
+            externalAccountId?: string | null;
+            /** Format: date-time */
+            createdAt?: string;
+            /** @description Host metadata, populated for Airbnb when the host row exists. Null for other providers (per-provider enrichment is incremental). */
+            host?: components["schemas"]["ConnectHost"] | null;
+        };
+        /** @description A registered webhook endpoint. The `secret` field is only present in the response of `POST /v1/webhooks` and `POST /v1/webhooks/{id}/rotate-secret` (Stripe pattern — capture it then; it is masked everywhere else). */
         WebhookSubscription: {
+            /** Format: uuid */
             id?: string;
             /** Format: uri */
             url?: string;
+            description?: string | null;
             /**
              * @example [
              *       "reservation.created",
@@ -2099,9 +1965,182 @@ export interface components {
              *     ]
              */
             events?: string[];
-            active?: boolean;
-            /** @description HMAC-SHA256 signing secret */
-            secret?: string;
+            /** @example 2026-04 */
+            apiVersion?: string;
+            /** @enum {string} */
+            status?: "active" | "paused" | "disabled";
+            consecutiveFailures?: number;
+            /** Format: date-time */
+            lastDeliveredAt?: string | null;
+            /** Format: date-time */
+            lastSuccessAt?: string | null;
+            /** Format: date-time */
+            lastFailureAt?: string | null;
+            lastDeliveryStatus?: number | null;
+            /** Format: date-time */
+            disabledAt?: string | null;
+            /** Format: date-time */
+            createdAt?: string;
+            /** Format: date-time */
+            updatedAt?: string;
+            /** @example whsec_a1b…f9c2 */
+            secretMasked?: string | null;
+            /** @description Plaintext signing secret. Only returned by create + rotate. Capture and store securely. */
+            secret?: string | null;
+        };
+        WebhookDelivery: {
+            /** Format: uuid */
+            id?: string;
+            /**
+             * Format: uuid
+             * @description Stable across retries of the same logical event.
+             */
+            eventId?: string;
+            eventType?: string;
+            statusCode?: number | null;
+            responseTimeMs?: number | null;
+            attempt?: number;
+            success?: boolean;
+            errorMessage?: string | null;
+            /** Format: date-time */
+            createdAt?: string;
+            /** Format: date-time */
+            succeededAt?: string | null;
+            /** Format: date-time */
+            failedAt?: string | null;
+        };
+        WebhookDeliveryDetail: {
+            id?: string;
+            eventId?: string;
+            eventType?: string;
+            payload?: Record<string, never>;
+            requestHeaders?: Record<string, never> | null;
+            statusCode?: number | null;
+            responseHeaders?: Record<string, never> | null;
+            responseBody?: string | null;
+            responseTimeMs?: number | null;
+            attempt?: number;
+            success?: boolean;
+            errorMessage?: string | null;
+            /** Format: date-time */
+            createdAt?: string;
+        };
+        WebhookDeliveryListResponse: {
+            data?: components["schemas"]["WebhookDelivery"][];
+            pagination?: {
+                limit?: number;
+                hasMore?: boolean;
+                nextCursor?: string | null;
+            };
+        };
+        WebhookEventCatalog: {
+            domains?: {
+                id?: string;
+                title?: string;
+                events?: {
+                    type?: string;
+                    domain?: string;
+                    title?: string;
+                    description?: string;
+                    samplePayload?: Record<string, never>;
+                }[];
+            }[];
+        };
+        /** @description An Airbnb listing in the host account. Mirrors the Airbnb partner API shape with light normalization. */
+        AirbnbListing: {
+            /**
+             * @description Airbnb listing ID
+             * @example 12345678
+             */
+            id?: string;
+            /** @description Listing title */
+            name?: string;
+            /** @description Listing status (active, unlisted, etc.) */
+            status?: string;
+            propertyType?: string | null;
+            roomType?: string | null;
+            bedrooms?: number | null;
+            bathrooms?: number | null;
+            maxGuests?: number | null;
+            /** Format: uri */
+            thumbnailUrl?: string | null;
+        };
+        /** @description A property registered in the Booking.com extranet for the connected hotel ID. */
+        BookingProperty: {
+            /** @description Booking.com hotel/property ID */
+            id?: string;
+            name?: string;
+            status?: string | null;
+            country?: string | null;
+            city?: string | null;
+        };
+        /** @description A VRBO listing. */
+        VrboListing: {
+            id?: string;
+            name?: string;
+            status?: string | null;
+        };
+        /** @description A Plumguide listing. */
+        PlumguideListing: {
+            id?: string;
+            name?: string;
+            status?: string | null;
+        };
+        /** @description An Airbnb reservation as returned by the channel API. Use `confirmationCode` to address it in Airbnb operations. */
+        AirbnbReservation: {
+            /** @example HMABC12345 */
+            confirmationCode?: string;
+            listingId?: string;
+            /**
+             * @example accepted
+             * @enum {string}
+             */
+            status?: "accepted" | "pending" | "cancelled" | "denied" | "inquiry";
+            /** Format: date */
+            checkIn?: string;
+            /** Format: date */
+            checkOut?: string;
+            guestName?: string | null;
+            guestCount?: number | null;
+            totalPrice?: number | null;
+            currency?: string | null;
+        };
+        /** @description A VRBO reservation. */
+        VrboReservation: {
+            id?: string;
+            listingId?: string;
+            status?: string | null;
+            /** Format: date */
+            checkIn?: string;
+            /** Format: date */
+            checkOut?: string;
+        };
+        /** @description An Airbnb message thread. */
+        AirbnbThread: {
+            id?: string;
+            listingId?: string | null;
+            guestName?: string | null;
+            /** Format: date-time */
+            lastMessageAt?: string | null;
+            unreadCount?: number | null;
+        };
+        /** @description An Airbnb review (guest → host or host → guest). */
+        AirbnbReview: {
+            id?: string;
+            reservationCode?: string | null;
+            rating?: number | null;
+            comment?: string | null;
+            response?: string | null;
+            /** Format: date-time */
+            createdAt?: string | null;
+        };
+        /** @description A Booking.com guest conversation. */
+        BookingConversation: {
+            id?: string;
+            reservationId?: string | null;
+            guestName?: string | null;
+            /** Format: date-time */
+            lastMessageAt?: string | null;
         };
         AIOperation: {
             /**
@@ -2127,14 +2166,921 @@ export interface components {
                 example?: string;
             };
         };
-        PaginatedResponse: {
-            data?: unknown[];
-            pagination?: {
-                total?: number;
-                limit?: number;
-                offset?: number;
-                hasMore?: boolean;
+        Pagination: {
+            total?: number;
+            limit?: number;
+            offset?: number;
+            hasMore?: boolean;
+        };
+        PropertyListResponse: {
+            data?: components["schemas"]["Property"][];
+            pagination?: components["schemas"]["Pagination"];
+        };
+        /**
+         * @description Cursor-paginated reservation list. Pass `pagination.next_cursor` back as `?cursor=` to fetch the next page; stop when `pagination.has_more` is `false`. The `total` field is the count of rows matching the current filter (across all pages).
+         *
+         *     Legacy `?offset=` consumers continue to receive `pagination.limit` + `pagination.offset` during the deprecation window. A `Deprecation: true` header (with a `Sunset` date) is set on responses that came in via `?offset=` — migrate to `?cursor=`.
+         */
+        ReservationListResponse: {
+            data?: components["schemas"]["Reservation"][];
+            pagination?: components["schemas"]["ReservationPagination"];
+        };
+        /** @description Hybrid pagination envelope for `/v1/reservations`. Always populates `next_cursor` + `has_more` + `total`. When the request used the deprecated `?offset=` path, also populates `limit` + `offset`. */
+        ReservationPagination: {
+            /** @description Opaque base64 cursor — pass back as `?cursor=<value>`. `null` when there are no more pages. */
+            next_cursor: string | null;
+            has_more: boolean;
+            /** @description Total rows matching the current filter (across all pages). */
+            total: number;
+            /** @description Deprecated — only present on responses to `?offset=` requests. */
+            limit?: number;
+            /** @description Deprecated — only present on responses to `?offset=` requests. */
+            offset?: number;
+        };
+        /** @description Cursor-paginated guest list. Pass `pagination.next_cursor` back as `?cursor=` to fetch the next page. */
+        GuestListResponse: {
+            data?: components["schemas"]["Guest"][];
+            pagination?: components["schemas"]["CursorPagination"];
+        };
+        /** @description Cursor-paginated conversation list. Pass `pagination.next_cursor` back as `?cursor=` to fetch the next page. */
+        ConversationListResponse: {
+            data?: components["schemas"]["Conversation"][];
+            pagination?: components["schemas"]["CursorPagination"];
+        };
+        /** @description Cursor-paginated message list. Pass `pagination.next_cursor` back as `?cursor=` to fetch the next page. */
+        MessageListResponse: {
+            data?: components["schemas"]["Message"][];
+            pagination?: components["schemas"]["CursorPagination"];
+        };
+        /** @description Cursor-paginated review list. Pass `pagination.next_cursor` back as `?cursor=` to fetch the next page. */
+        ReviewListResponse: {
+            data?: components["schemas"]["Review"][];
+            pagination?: components["schemas"]["CursorPagination"];
+        };
+        ReviewGetResponse: {
+            data?: components["schemas"]["Review"];
+        };
+        ConnectionListResponse: {
+            data?: components["schemas"]["Connection"][];
+            pagination?: components["schemas"]["Pagination"];
+        };
+        WebhookListResponse: {
+            data?: components["schemas"]["WebhookSubscription"][];
+            pagination?: components["schemas"]["Pagination"];
+        };
+        CalendarResponse: {
+            data?: components["schemas"]["CalendarDay"][];
+        };
+        AirbnbListingListResponse: {
+            data?: components["schemas"]["AirbnbListing"][];
+            pagination?: components["schemas"]["Pagination"];
+        };
+        AirbnbReservationListResponse: {
+            data?: components["schemas"]["AirbnbReservation"][];
+            pagination?: components["schemas"]["Pagination"];
+        };
+        AirbnbThreadListResponse: {
+            data?: components["schemas"]["AirbnbThread"][];
+            pagination?: components["schemas"]["Pagination"];
+        };
+        AirbnbReviewListResponse: {
+            data?: components["schemas"]["AirbnbReview"][];
+            pagination?: components["schemas"]["Pagination"];
+        };
+        BookingPropertyListResponse: {
+            data?: components["schemas"]["BookingProperty"][];
+            pagination?: components["schemas"]["Pagination"];
+        };
+        BookingConversationListResponse: {
+            data?: components["schemas"]["BookingConversation"][];
+            pagination?: components["schemas"]["Pagination"];
+        };
+        VrboListingListResponse: {
+            data?: components["schemas"]["VrboListing"][];
+            pagination?: components["schemas"]["Pagination"];
+        };
+        VrboReservationListResponse: {
+            data?: components["schemas"]["VrboReservation"][];
+            pagination?: components["schemas"]["Pagination"];
+        };
+        PlumguideListingListResponse: {
+            data?: components["schemas"]["PlumguideListing"][];
+            pagination?: components["schemas"]["Pagination"];
+        };
+        /** @description Inputs for `POST /v1/listings`. Provide enough address detail (street + city + lat/lng) for downstream Airbnb publish to work. */
+        ListingCreateRequest: {
+            /**
+             * @description Public guest-facing title
+             * @example Sunset Loft #2
+             */
+            name: string;
+            /** @example apartment */
+            propertyType?: string;
+            /** @example 123 Main St */
+            street?: string;
+            /** @example Miami Beach */
+            city?: string;
+            /** @example FL */
+            state?: string;
+            /** @example US */
+            countryCode?: string;
+            /** @example 25.7617 */
+            lat?: number;
+            /** @example -80.1918 */
+            lng?: number;
+            /** @example 2 */
+            bedrooms?: number;
+            /** @example 1.5 */
+            bathrooms?: number;
+            /** @example 2 */
+            beds?: number;
+            /** @example 4 */
+            personCapacity?: number;
+            summary?: string;
+            description?: string;
+            defaultDailyPrice?: number;
+            cleaningFee?: number;
+            /** @enum {string} */
+            cancellationPolicy?: "flexible" | "moderate" | "strict" | "super_strict";
+            /** @example 15:00 */
+            checkInTimeStart?: string;
+            /** @example 11:00 */
+            checkOutTime?: string;
+            allowsPets?: boolean;
+            allowsSmoking?: boolean;
+            allowsChildren?: boolean;
+            allowsEvents?: boolean;
+        };
+        ListingCreateResponse: {
+            /** @description New listing ID — use for follow-up generate-content / publish calls */
+            id?: number;
+        };
+        ListingGenerateContentRequest: {
+            /** @description Up to 8 reference photos. When present, Kimi K2 vision is used for grounded copy. */
+            photos?: string[];
+            /**
+             * @default warm
+             * @enum {string}
+             */
+            style: "warm" | "professional" | "concise";
+            /**
+             * @description Save the generated content to the listing (so subsequent publishes pick it up).
+             * @default true
+             */
+            persist: boolean;
+        };
+        ListingContent: {
+            title?: string;
+            summary?: string;
+            description?: string;
+            space?: string;
+            guestAccess?: string;
+            neighborhoodOverview?: string;
+            transit?: string;
+            notes?: string;
+            houseRules?: string;
+            amenities?: string[];
+        };
+        ListingGenerateContentResponse: {
+            listingId?: number;
+            persisted?: boolean;
+            content?: components["schemas"]["ListingContent"];
+        };
+        /** @description Pass either `airbnbConnectionId` (update an already-mapped listing) or `hostId` (create a brand-new Airbnb listing under that host). */
+        ListingPublishAirbnbRequest: {
+            /** @description Existing Airbnb connection row id */
+            airbnbConnectionId?: number;
+            /** @description Airbnb host id (required for first-time creates) */
+            hostId?: string;
+            /**
+             * @description Re-push every section, ignoring dirty-fields tracking
+             * @default false
+             */
+            force: boolean;
+        };
+        ListingPublishResponse: {
+            listingId?: number;
+            /** @enum {string} */
+            channel?: "airbnb" | "booking";
+            /** @description Channel-specific push result (sections pushed, errors, etc.) */
+            result?: Record<string, never>;
+        };
+        ListingPublishStatusChannel: {
+            /** @example airbnb */
+            platform?: string;
+            /** @enum {string|null} */
+            pushStatus?: "idle" | "pushing" | "success" | "error" | null;
+            /** Format: date-time */
+            lastPushedAt?: string | null;
+            /** Format: date-time */
+            lastPulledAt?: string | null;
+            dirtyFields?: string[];
+            platformHasChanges?: boolean;
+        };
+        ListingPublishStatusResponse: {
+            listingId?: number;
+            channels?: components["schemas"]["ListingPublishStatusChannel"][];
+        };
+        /** @description Per-platform connection for a listing — one row per channel the listing is published to. */
+        ListingChannel: {
+            /** @example airbnb */
+            platform?: string;
+            /** @description ID in the platform (Airbnb listing id, Booking room id, etc.) */
+            externalId?: string;
+            active?: boolean;
+            syncEnabled?: boolean;
+        };
+        /** @description A vacation rental listing in your Repull workspace. */
+        Listing: {
+            /** @description Repull listing id */
+            id?: number;
+            /** @example I - Stafford Apartment */
+            name?: string;
+            address?: {
+                street?: string | null;
+                city?: string | null;
             };
+            /** Format: uri */
+            thumbnailUrl?: string | null;
+            /** @enum {string} */
+            status?: "active" | "inactive" | "archived";
+            /** @description Channels (Airbnb, Booking, VRBO, etc.) the listing is connected to. */
+            channels?: components["schemas"]["ListingChannel"][];
+            /** Format: date-time */
+            createdAt?: string;
+            /** Format: date-time */
+            updatedAt?: string;
+        };
+        /** @description Cursor-based pagination. Pass `next_cursor` back as `cursor` to fetch the next page. When `has_more` is `false` you are done. */
+        CursorPagination: {
+            /** @description Opaque base64-encoded cursor — pass back as `?cursor=<value>`. `null` when there are no more pages. */
+            next_cursor?: string | null;
+            has_more?: boolean;
+        };
+        ListingListResponse: {
+            data?: components["schemas"]["Listing"][];
+            pagination?: components["schemas"]["CursorPagination"];
+        };
+        /** @description A pricing recommendation for one date in the listing's calendar window. */
+        ListingPricingRecommendation: {
+            /**
+             * Format: date
+             * @example 2026-05-14
+             */
+            date?: string;
+            /** @description Current calendar price (from Vanio listings_calendar_days) before applying the recommendation. */
+            currentPrice?: number | null;
+            /** @description Atlas model's recommended price. */
+            recommendedPrice?: number;
+            minPrice?: number | null;
+            maxPrice?: number | null;
+            /** @example USD */
+            currency?: string;
+            /** @description Model confidence in [0, 1]. */
+            confidence?: number;
+            /** @description Expected booking probability for the date at the recommended price. */
+            bookingProbability?: number | null;
+            expectedRevenue?: number | null;
+            /** @description Free-form JSON of model factors (comp distance, event boost, weekend, demand, etc.). */
+            factors?: {
+                [key: string]: unknown;
+            };
+            /**
+             * @description Lifecycle state.
+             * @enum {string}
+             */
+            status?: "pending" | "applied" | "declined";
+            modelVersion?: string;
+            /** Format: date-time */
+            generatedAt?: string;
+        };
+        ListingPricingResponse: {
+            listingId?: number;
+            dateRange?: {
+                /** Format: date */
+                start?: string;
+                /** Format: date */
+                end?: string;
+            };
+            recommendations?: components["schemas"]["ListingPricingRecommendation"][];
+            /** @description AI-derived base-price context for the listing. */
+            listing?: {
+                aiBasePrice?: number | null;
+                aiBasePriceFactors?: {
+                    [key: string]: unknown;
+                } | null;
+                qualityTier?: string | null;
+                segment?: string | null;
+                currency?: string | null;
+            } | null;
+            /** @description 5km comp aggregate (Atlas comp_listings). */
+            compSummary?: {
+                count?: number;
+                avgPrice?: number | null;
+                minPrice?: number | null;
+                maxPrice?: number | null;
+            } | null;
+        };
+        ListingPricingApplyRequest: {
+            /** @description Dates the action applies to. Must match dates that have a `pending` recommendation; others are silently skipped. */
+            dates: string[];
+            /** @enum {string} */
+            action: "apply" | "decline";
+        };
+        ListingPricingApplyResponse: {
+            ok?: boolean;
+            /** @description Number of recommendations applied (apply action only). */
+            applied?: number | null;
+            /** @description Number of dates declined (decline action only). */
+            declined?: number | null;
+        };
+        /** @description Strategy that constrains the Atlas pricing model for one listing. */
+        ListingPricingStrategy: {
+            id?: number | null;
+            listingId?: number;
+            customerId?: number;
+            /**
+             * @description `recommend` surfaces suggestions; `auto` applies them on the next sync.
+             * @enum {string}
+             */
+            mode?: "recommend" | "auto";
+            minPrice?: number | null;
+            maxPrice?: number | null;
+            /**
+             * @description Max day-over-day swing in %.
+             * @default 15
+             */
+            maxDailyChangePct: number;
+            /** @description % bump applied on Fri/Sat. */
+            weekendMarkupPct?: number | null;
+            /** @description Multiplier per ISO weekday key (0..6). */
+            dayOfWeekMultipliers?: {
+                [key: string]: number;
+            };
+            targetOccupancyPct?: number | null;
+            targetMonthlyRevenue?: number | null;
+            ownerMinMonthlyPayout?: number | null;
+            /**
+             * @default match
+             * @enum {string}
+             */
+            compPositionTarget: "below" | "match" | "above";
+            /**
+             * @description Extra adjustment vs comp median (-30..+30).
+             * @default 0
+             */
+            compAdjustPct: number;
+            /** @default true */
+            eventBoostEnabled: boolean;
+            /** @default 30 */
+            eventBoostMaxPct: number;
+            /** @description true when no row exists yet and the response is server-side defaults. */
+            isDefault?: boolean;
+        };
+        /** @description Same shape as `ListingPricingStrategy` minus the read-only fields. Send only fields you want to change. */
+        ListingPricingStrategyInput: {
+            /** @enum {string} */
+            mode?: "recommend" | "auto";
+            minPrice?: number | null;
+            maxPrice?: number | null;
+            maxDailyChangePct?: number;
+            weekendMarkupPct?: number | null;
+            dayOfWeekMultipliers?: {
+                [key: string]: number;
+            };
+            targetOccupancyPct?: number | null;
+            targetMonthlyRevenue?: number | null;
+            ownerMinMonthlyPayout?: number | null;
+            /** @enum {string} */
+            compPositionTarget?: "below" | "match" | "above";
+            compAdjustPct?: number;
+            eventBoostEnabled?: boolean;
+            eventBoostMaxPct?: number;
+        };
+        /** @description A single (listing_id, dates) pair in a bulk pricing request. The action in the parent request body applies to every date in `dates` for this listing. */
+        BulkPricingItem: {
+            /** @example 4118 */
+            listing_id: number;
+            /**
+             * @example [
+             *       "2026-05-14",
+             *       "2026-05-15"
+             *     ]
+             */
+            dates: string[];
+        };
+        /** @description Body for `POST /v1/listings/pricing/bulk`. Apply or decline pending Atlas pricing recommendations across many listings in one call. Capped at 500 items per request — exceeding returns 422. */
+        BulkPricingRequest: {
+            /**
+             * @description `apply` writes the recommended price to each listing's calendar and fans out to channels (Airbnb/Booking/VRBO). `decline` marks the recommendations as `declined` so they stop surfacing.
+             * @enum {string}
+             */
+            action: "apply" | "decline";
+            items: components["schemas"]["BulkPricingItem"][];
+        };
+        /** @description Per-item failure entry. Per-item failures DO NOT fail the whole batch — partial-success is the norm at this scale. */
+        BulkPricingFailure: {
+            listing_id?: number;
+            dates?: string[];
+            /**
+             * @example not_owned
+             * @enum {string}
+             */
+            error_code?: "not_owned" | "no_pending_recommendations" | "calendar_update_failed" | "internal_error";
+            error?: string;
+        };
+        /** @description Response for `POST /v1/listings/pricing/bulk`. Per-item failures are returned granularly so the SDK consumer can retry just the bad entries. */
+        BulkPricingResponse: {
+            /** @description Total dates attempted across every item. */
+            processed?: number;
+            /** @description Total dates that were successfully applied (or declined). */
+            succeeded?: number;
+            failed?: components["schemas"]["BulkPricingFailure"][];
+        };
+        /** @description One date in the recommendation-vs-applied audit trail. */
+        ListingPricingHistoryEntry: {
+            /** Format: date */
+            date?: string;
+            /** @description The Atlas model's recommended price for the date. */
+            recommended_rate?: number;
+            /** @description Price actually written to the calendar. `null` when status is `pending` or `declined`. For now, when `status=applied` this equals `recommended_rate` because the apply path writes the recommendation verbatim. */
+            applied_rate?: number | null;
+            /**
+             * @description `overridden` is reserved for a future signal — it never appears today.
+             * @enum {string}
+             */
+            status?: "pending" | "applied" | "declined" | "overridden";
+            /** @description Raw model factors (comp distance, event boost, weekend, demand, etc.). */
+            recommendation_factors?: {
+                [key: string]: unknown;
+            };
+            /** Format: date-time */
+            applied_at?: string | null;
+            /** @description Who applied it (e.g. `auto`, `api`, `user`). */
+            applied_by?: string | null;
+        };
+        /** @description Cursor-paginated audit trail. Pagination is keyset on `date ASC` — stable across concurrent writes. */
+        ListingPricingHistoryResponse: {
+            data?: components["schemas"]["ListingPricingHistoryEntry"][];
+            pagination?: components["schemas"]["CursorPagination"];
+        };
+        ListingCompNightly: {
+            /** Format: date */
+            date?: string;
+            rate?: number | null;
+            available?: boolean;
+        };
+        /** @description A single competitor listing in a comp set, sorted closest-first. Includes per-day rate/availability for the requested calendar window. */
+        ListingComp: {
+            comp_id?: number;
+            listing_name?: string | null;
+            /** @description Haversine distance from the source listing in km, rounded to 3 decimals. */
+            distance_km?: number | null;
+            bedrooms?: number | null;
+            max_guests?: number | null;
+            ratings?: {
+                avg?: number | null;
+                count?: number;
+            };
+            currency?: string | null;
+            /** @description Latest snapshot ADR — fallback to render when the calendar window is empty. */
+            current_nightly_rate?: number | null;
+            /** @description Per-day rate + availability for the requested window. May be empty if Atlas hasn't snapshotted the comp recently. */
+            nightly?: components["schemas"]["ListingCompNightly"][];
+            lat?: number | null;
+            lng?: number | null;
+            /** @example airbnb */
+            platform?: string | null;
+            /**
+             * Format: uri
+             * @description Link to the listing on its source platform when one is available.
+             */
+            external_url?: string | null;
+        };
+        /** @description Returned by `GET /v1/listings/{id}/comps`. Comps without coordinates are excluded — there's no way to rank them by distance. May include a `warning` field when the source listing itself has no coordinates. */
+        ListingCompsResponse: {
+            listingId?: number;
+            dateRange?: {
+                /** Format: date */
+                start?: string;
+                /** Format: date */
+                end?: string;
+            };
+            radiusKm?: number;
+            total?: number;
+            data?: components["schemas"]["ListingComp"][];
+            /** @description Present (and `data` empty) when the source listing has no coordinates. */
+            warning?: string | null;
+        };
+        /** @description One Atlas DNA segment (e.g. `upscale-modern-2br`) with share + ADR aggregates across the scoped comp set or market. */
+        ListingSegment: {
+            /** @example upscale-modern-2br */
+            name?: string;
+            /** @description Percent of analyzed comps in the scope that fall in this segment. */
+            share_pct?: number;
+            sample_size?: number;
+            avg_adr_in_segment?: number | null;
+            currency?: string | null;
+            /** @enum {string|null} */
+            quality_tier?: "budget" | "standard" | "upscale" | "luxury" | null;
+            /** @description Decomposed style token (e.g. `modern`, `mid-century`). */
+            design_style?: string | null;
+            /** @description Decomposed bedroom count. `0` indicates studio. */
+            bedrooms?: number | null;
+            /** @description True when the source listing's `ai_segment` matches this segment. */
+            my_listing_match?: boolean;
+        };
+        ListingQualityTier: {
+            /** @enum {string} */
+            tier?: "budget" | "standard" | "upscale" | "luxury";
+            share_pct?: number;
+            avg_adr?: number | null;
+            sample_size?: number;
+        };
+        /** @description Structural observation about the segment landscape — not LLM-generated. */
+        ListingSegmentRecommendation: {
+            /**
+             * @description Stable identifier for the recommendation kind. SDKs can switch on this safely.
+             * @enum {string}
+             */
+            kind?: "low_dna_coverage" | "self_not_scored" | "my_segment" | "tier_uplift" | "segment_not_found" | "no_market_signal" | "no_geo";
+            message?: string;
+            evidence?: {
+                [key: string]: unknown;
+            } | null;
+        };
+        /** @description Returned by `GET /v1/listings/{id}/segments`. Honest about DNA coverage — when no comps in the scope have been DNA-scored, returns `totalCompsAnalyzed: 0` plus a `low_dna_coverage` recommendation rather than fabricated data. */
+        ListingSegmentsResponse: {
+            listingId?: number;
+            /** @enum {string} */
+            level?: "comp_set" | "market";
+            /** @description When `level=comp_set` carries `radiusKm`; when `level=market` carries `city`. May be empty when neither could be resolved. */
+            scope?: {
+                radiusKm?: number | null;
+                city?: string | null;
+            };
+            /** @description The source listing's own `ai_segment` (or null if not yet scored). */
+            mySegment?: string | null;
+            /** @enum {string|null} */
+            myQualityTier?: "budget" | "standard" | "upscale" | "luxury" | null;
+            /** @description Number of comps in scope that have a DNA score. `0` is a coverage signal, not an error. */
+            totalCompsAnalyzed?: number;
+            segments?: components["schemas"]["ListingSegment"][];
+            qualityTiers?: components["schemas"]["ListingQualityTier"][];
+            recommendations?: components["schemas"]["ListingSegmentRecommendation"][];
+        };
+        /** @description Optional length-of-stay / availability restrictions for one rate update. */
+        BookingPricingRateUpdateRestrictions: {
+            minStay?: number | null;
+            maxStay?: number | null;
+            closedToArrival?: boolean | null;
+            closedToDeparture?: boolean | null;
+        };
+        /** @description A single (room, rate-plan, date-range) update pushed to Booking.com via the rates API. */
+        BookingPricingRateUpdate: {
+            /** @description Booking.com room ID for the rate plan. Comes from `listings_booking_rooms` mapping. */
+            roomId: string;
+            /** @description Booking.com rate-plan ID. */
+            rateId: string;
+            dateRange: {
+                /** Format: date */
+                start: string;
+                /** Format: date */
+                end: string;
+            };
+            price: number;
+            /** @example USD */
+            currency: string;
+            singlePrice?: number | null;
+            occupancy?: number | null;
+            roomsToSell?: number | null;
+            restrictions?: components["schemas"]["BookingPricingRateUpdateRestrictions"];
+        };
+        /** @description Body for `PUT /v1/channels/booking/listings/{id}/pricing`. Pricing on Booking is per-room/per-rate-plan, so `room_id` + `rate_id` are required on every update. */
+        BookingPricingUpdateRequest: {
+            updates: components["schemas"]["BookingPricingRateUpdate"][];
+        };
+        BookingPricingUpdateResponse: {
+            hotel_id?: string;
+            listing_id?: number;
+            /** @description Number of updates Booking.com accepted as `success`. Falls back to total update count when Booking omits per-update status on full success. */
+            pushed?: number;
+            requested?: number;
+            /** @description Per-update failure rows from Booking — shape mirrors the Booking rates API response. */
+            errors?: {
+                [key: string]: unknown;
+            }[];
+            /** @description Verbatim Booking response envelope for debugging. */
+            raw?: {
+                [key: string]: unknown;
+            };
+        };
+        /** @description Returned by `GET /v1/channels/booking/listings/{id}/pricing`. Mirrors Booking's `getRoomRateAvailability` response with `hotel_id` and `listing_id` echoed back for SDK consumers. */
+        BookingPricingResponse: {
+            hotel_id?: string;
+            listing_id?: number;
+        } & {
+            [key: string]: unknown;
+        };
+        /** @description Per-city KPIs combining the customer's own listings with Atlas comp aggregates. */
+        MarketSummary: {
+            /** @example Radium Hot Springs */
+            city?: string;
+            myListings?: number;
+            /** @description Atlas-tracked active comps in this city. */
+            totalListings?: number;
+            marketSharePct?: number | null;
+            myAvgAdr?: number | null;
+            marketAvgAdr?: number | null;
+            /** @description (myAvgAdr - marketAvgAdr) / marketAvgAdr * 100, rounded. */
+            priceDiffPct?: number | null;
+            myAvgRating?: number | null;
+            marketAvgRating?: number | null;
+            /** @description Customer's 30-day forward occupancy %. */
+            myOccupancyPct?: number | null;
+            marketOccupancyPct?: number | null;
+            /** @description Distinct property types Atlas has seen in this city. */
+            propertyTypes?: number;
+        };
+        /** @description Lightweight customer listing entry for map rendering. */
+        MarketMyListing: {
+            id?: number;
+            name?: string;
+            city?: string | null;
+            lat?: number;
+            lng?: number;
+            /** Format: uri */
+            thumbnail?: string | null;
+            /** @description Pre-computed ADR rounded to integer. */
+            todayPrice?: number | null;
+            blocked?: boolean;
+            bookedNights?: number;
+            availableNights?: number;
+            /**
+             * @example mine
+             * @enum {string}
+             */
+            type?: "mine";
+        };
+        /** @description Curated featured market entry on the discovery summary. Enriched with `subscribed` so the dashboard can render "Already unlocked" pills without an extra round-trip. */
+        MarketBrowseFeatured: {
+            city?: string;
+            /** @description ISO 3166-1 alpha-2. */
+            country?: string;
+            /** @description Atlas-tracked active comps in this city. */
+            listings?: number;
+            /** @description Atlas-aggregated avg nightly rate (mixed currency, dominated by the country base). */
+            avg_adr?: number | null;
+            subscribed?: boolean;
+        };
+        MarketBrowseCategory: {
+            /** @description ISO 3166-1 alpha-2. */
+            country?: string;
+            /** @description Number of Atlas-tracked cities in this country. */
+            count?: number;
+        };
+        /** @description Discovery catalog entry returned by `/v1/markets/browse`. */
+        MarketBrowseEntry: {
+            city?: string;
+            /** @description ISO 3166-1 alpha-2. */
+            country?: string;
+            /** @description Atlas-tracked active comps in this city. */
+            listings?: number;
+            avg_adr?: number | null;
+            /** @description ISO 4217 currency derived from the country code. */
+            currency?: string;
+            subscribed?: boolean;
+        };
+        MarketBrowsePagination: {
+            /** @description Opaque cursor for the next page; null when no more results. */
+            next_cursor?: string | null;
+            has_more?: boolean;
+            /** @description Total markets matching the current `q`/`country`/`min_listings` filter (ignores cursor). */
+            total_in_filter?: number;
+        };
+        MarketBrowseResponse: {
+            data?: components["schemas"]["MarketBrowseEntry"][];
+            pagination?: components["schemas"]["MarketBrowsePagination"];
+        };
+        MarketsOverviewResponse: {
+            markets?: components["schemas"]["MarketSummary"][];
+            totals?: {
+                myListings?: number;
+                markets?: number;
+                totalCompetitors?: number;
+            };
+            myListings?: components["schemas"]["MarketMyListing"][];
+            /** @description City auto-assigned as the customer's free market (largest by listing count). Null for customers with no listings. */
+            free_market?: string | null;
+            /** @description Active per-market unlocks vs the tier quota. */
+            subscriptions?: {
+                active?: number;
+                limit?: number;
+            };
+            /** @description Resolved Repull tier (free / pro / scale). */
+            tier?: string;
+            /** @description Lightweight discovery summary. Use `/v1/markets/browse` for the full paginated catalog. */
+            browse?: {
+                /** @description Top ~50 markets by listing volume the customer doesn't already operate in. */
+                featured?: components["schemas"]["MarketBrowseFeatured"][];
+                /** @description Top 50 countries by tracked-city count. */
+                categories?: components["schemas"]["MarketBrowseCategory"][];
+                /** @description Total Atlas-tracked cities in the catalog. */
+                total_available?: number;
+            };
+        };
+        MarketEvent: {
+            id?: string;
+            title?: string;
+            category?: string | null;
+            /** Format: date */
+            start_date?: string;
+            /** Format: date */
+            end_date?: string | null;
+            lat?: number | null;
+            lng?: number | null;
+            rank?: number | null;
+            local_rank?: number | null;
+            attendance?: number | null;
+            demand_impact?: string | null;
+            labels?: string[] | null;
+        };
+        MarketTopComp: {
+            id?: number;
+            platform_listing_id?: string;
+            title?: string | null;
+            property_type?: string | null;
+            bedrooms?: number | null;
+            max_guests?: number | null;
+            rating?: number | null;
+            review_count?: number | null;
+            current_nightly_rate?: number | null;
+            /** Format: uri */
+            thumbnail_url?: string | null;
+            lat?: number | null;
+            lng?: number | null;
+            /** Format: uri */
+            url?: string;
+            distance_km?: number | null;
+        };
+        /** @description Detailed view for a single city. Several sub-objects are passed through verbatim from upstream — keys mirror the underlying SQL aggregations. */
+        MarketDetailResponse: {
+            city?: string;
+            priceDistribution?: {
+                label?: string;
+                count?: number;
+                avg_rate?: number | null;
+                min_rate?: number | null;
+                max_rate?: number | null;
+            }[];
+            bedroomBreakdown?: {
+                [key: string]: unknown;
+            }[];
+            propertyTypeMix?: {
+                property_type?: string;
+                count?: number;
+                avg_rate?: number | null;
+            }[];
+            events?: components["schemas"]["MarketEvent"][];
+            wheelhouseTrends?: {
+                [key: string]: unknown;
+            }[];
+            benchmarks?: {
+                [key: string]: unknown;
+            }[];
+            healthSummary?: {
+                [key: string]: unknown;
+            } | null;
+            topComps?: {
+                items?: components["schemas"]["MarketTopComp"][];
+                mapItems?: components["schemas"]["MarketTopComp"][];
+                total?: number;
+                page?: number;
+                pageSize?: number;
+            };
+            marketPosition?: {
+                [key: string]: unknown;
+            } | null;
+            capacityGap?: {
+                [key: string]: unknown;
+            };
+            supplyTrend?: {
+                /** @example 2026-04 */
+                month?: string;
+                new_listings?: number;
+            }[];
+        };
+        MarketCalendarDay: {
+            /** Format: date */
+            date?: string;
+            marketAvgRate?: number | null;
+            marketMinRate?: number | null;
+            marketMaxRate?: number | null;
+            pricedListings?: number;
+            occupancyPct?: number | null;
+            totalListings?: number;
+            wheelhouseOccupancy?: number | null;
+            wheelhouseAdr?: number | null;
+            events?: {
+                title?: string;
+                category?: string | null;
+                rank?: number | null;
+                attendance?: number | null;
+            }[];
+            /** @description Only present when `listingId` is supplied. */
+            myPrice?: number | null;
+            /** @description Only meaningful when `listingId` is supplied. */
+            myAvailable?: boolean;
+        };
+        MarketCalendarResponse: {
+            city?: string;
+            dateRange?: {
+                /** Format: date */
+                start?: string;
+                /** Format: date */
+                end?: string;
+            };
+            days?: components["schemas"]["MarketCalendarDay"][];
+            events?: components["schemas"]["MarketEvent"][];
+        };
+        /** @description Body for `POST /v1/connect/booking/verify`. Manual-paste fallback that closes a Booking.com Connect session after the customer completes Stage 1 designation in the Extranet. */
+        BookingVerifyHotelRequest: {
+            /**
+             * @description The Connect session ID returned by `createConnectSession`. Acts as the capability token — no API key required.
+             * @example cs_8gQrT2v9k3M4nLp7wJxYzAbCdEfGhIjKlMnOp
+             */
+            sessionId: string;
+            /**
+             * @description Booking.com hotel ID the customer pasted. 6+ digits.
+             * @example 12345678
+             */
+            hotelId: string;
+        };
+        /** @description Successful verify response. The session is transitioned to `awaiting_room_mapping` and a `pms_connections` row is upserted. */
+        BookingVerifyHotelResponse: {
+            /** @example true */
+            valid: boolean;
+            sessionId: string;
+            /** @description Repull-side `pms_connections.id` for the linked Booking account. */
+            connectionId: number;
+            hotelId: string;
+            hotelName?: string | null;
+            /** @description Booking.com hotel/property type code (e.g. `apartment`, `hotel`). */
+            hotelType?: string | null;
+            country?: string | null;
+            city?: string | null;
+        };
+        /** @description A Booking.com room imported from the claimed hotel. The customer maps each room to one of their Repull listings via `mapConnectBookingRooms`. */
+        BookingConnectRoom: {
+            /** @description Repull-side `listings_booking_rooms.id`. Pass this back in the mapping submission. */
+            roomId: number;
+            /** @example Deluxe King */
+            roomName: string;
+            maxGuests?: number | null;
+            /** @description Number of inventory units of this room type at the hotel. */
+            numberOfRooms: number;
+            /** @description Currently mapped Repull listing ID, or null if not yet mapped. */
+            currentListingId?: number | null;
+            /** @description Booking.com-side room ID (used internally for `listing_platform_links`). */
+            roomBookingId?: number | null;
+        };
+        /** @description A Repull listing the customer can map a Booking room to. Mirrors the minimal shape needed for a select dropdown. */
+        BookingConnectListingOption: {
+            id: number;
+            name: string;
+            city?: string | null;
+        };
+        /** @description Returned by `GET /v1/connect/booking/rooms`. The hosted picker page polls this every ~2s while the room import runs server-side; once `status` is `ready` it renders the mapping UI. */
+        BookingConnectRoomsResponse: {
+            /**
+             * @description `importing` — listings_booking row exists but rooms not yet imported. `ready` — rooms imported, awaiting mapping. `completed` — session already finished.
+             * @enum {string}
+             */
+            status: "importing" | "ready" | "completed";
+            sessionId: string;
+            hotelId: string;
+            rooms: components["schemas"]["BookingConnectRoom"][];
+            listingOptions: components["schemas"]["BookingConnectListingOption"][];
+        };
+        /** @description A single room→listing assignment. Pass `listingId: null` to explicitly UNMAP a room (e.g. "skip this room for now") — this also removes the corresponding `listing_platform_links` row. */
+        BookingRoomMapping: {
+            /** @description Repull-side `listings_booking_rooms.id` from `listConnectBookingRooms`. */
+            roomId: number;
+            /** @description Repull listing to bind to this room. `null` to unmap. */
+            listingId?: number | null;
+        };
+        /** @description Body for `POST /v1/connect/booking/map-rooms`. Submits all room→listing assignments in one transaction; on success the Connect session is marked `completed`. */
+        MapConnectBookingRoomsRequest: {
+            sessionId: string;
+            mappings: components["schemas"]["BookingRoomMapping"][];
+        };
+        MapConnectBookingRoomsResponse: {
+            /** @example true */
+            success: boolean;
+            /** @description Number of rooms processed (mapped + unmapped). */
+            mapped: number;
+            sessionId: string;
+            connectionId: number;
         };
     };
     responses: never;
@@ -2151,4 +3097,3219 @@ export interface components {
     pathItems: never;
 }
 export type $defs = Record<string, never>;
-export type operations = Record<string, never>;
+export interface operations {
+    get_health: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description API is healthy */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @example ok */
+                        status?: string;
+                        /** @example 1.0.0 */
+                        version?: string;
+                    };
+                };
+            };
+        };
+    };
+    list_properties: {
+        parameters: {
+            query?: {
+                /** @description Max items per page */
+                limit?: components["parameters"]["limit"];
+                /** @description Pagination offset */
+                offset?: components["parameters"]["offset"];
+                /** @description Filter by PMS provider */
+                provider?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Properties list */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PropertyListResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    get_property: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Property details */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Property"];
+                };
+            };
+            /** @description Property not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_reservations: {
+        parameters: {
+            query?: {
+                /** @description Page size (max 100). Requests over the cap return 422. */
+                limit?: number;
+                /** @description Opaque cursor returned in the previous response's `pagination.next_cursor`. Omit to fetch the first page. */
+                cursor?: string;
+                /**
+                 * @deprecated
+                 * @description Deprecated — use `cursor` instead. Will be removed after the `Sunset` response header date.
+                 */
+                offset?: number;
+                /** @description Filter by booking platform */
+                platform?: string;
+                status?: "confirmed" | "pending" | "cancelled" | "completed";
+                /** @description Filter to a single listing */
+                listing_id?: number;
+                /** @description Check-in date >= this value */
+                check_in_after?: string;
+                /** @description Check-in date <= this value */
+                check_in_before?: string;
+                /**
+                 * @deprecated
+                 * @description Deprecated alias for `check_in_after`.
+                 */
+                checkInFrom?: string;
+                /**
+                 * @deprecated
+                 * @description Deprecated alias for `check_in_before`.
+                 */
+                checkInTo?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Reservations list */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReservationListResponse"];
+                };
+            };
+            /** @description Invalid `limit`, `cursor`, `offset`, or filter param. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    create_reservation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    propertyId: number;
+                    /** Format: date */
+                    checkIn: string;
+                    /** Format: date */
+                    checkOut: string;
+                    guestFirstName: string;
+                    guestLastName: string;
+                    guestEmail?: string;
+                    guestPhone?: string;
+                    guestCount?: number;
+                    totalPrice?: number;
+                    currency?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Reservation created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Reservation"];
+                };
+            };
+        };
+    };
+    get_reservation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Reservation details */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Reservation"];
+                };
+            };
+        };
+    };
+    cancel_reservation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Cancelled */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    update_reservation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** Format: date */
+                    checkIn?: string;
+                    /** Format: date */
+                    checkOut?: string;
+                    status?: string;
+                    totalPrice?: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_availability: {
+        parameters: {
+            query: {
+                startDate: string;
+                endDate: string;
+            };
+            header?: never;
+            path: {
+                propertyId: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Calendar days */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalendarResponse"];
+                };
+            };
+        };
+    };
+    update_availability: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                propertyId: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    dates?: components["schemas"]["CalendarDay"][];
+                };
+            };
+        };
+        responses: {
+            /** @description Updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    listGuests: {
+        parameters: {
+            query?: {
+                /** @description Opaque cursor returned in the previous response's `pagination.next_cursor`. Omit to fetch the first page. */
+                cursor?: string;
+                /** @description Max items per page. Hard cap is 100. */
+                limit?: number;
+                /** @description Case-insensitive substring search on name, email, or phone. */
+                q?: string;
+                /** @description Restrict to guests that do (`true`) or do not (`false`) have any reservation on file. */
+                has_reservation?: boolean;
+                /** @description Restrict to guests with at least one reservation on the given internal Repull listing id. */
+                listing_id?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Guests page */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GuestListResponse"];
+                };
+            };
+            /** @description Invalid params (e.g. malformed `cursor` / non-integer `listing_id`) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `limit` exceeds the 100-item cap */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Upstream main vanio failure */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getGuest: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Guest profile */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GuestProfile"];
+                };
+            };
+            /** @description Invalid params (`id` must be a positive integer) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Guest not found in this workspace */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Upstream main vanio failure */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listConversations: {
+        parameters: {
+            query?: {
+                /** @description Opaque cursor returned in the previous response's `pagination.next_cursor`. Omit to fetch the first page. */
+                cursor?: string;
+                /** @description Max items per page. Hard cap is 100. */
+                limit?: number;
+                /** @description Restrict to threads on a single channel. */
+                platform?: "airbnb" | "booking" | "vrbo" | "website" | "email";
+                /** @description Filter by archive status. `archived` currently always returns an empty page — kept for forward-compat. */
+                status?: "open" | "archived";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Conversations page */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConversationListResponse"];
+                };
+            };
+            /** @description Invalid params (bad `platform` / `status` / malformed `cursor`) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `limit` exceeds the 100-item cap */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Upstream main vanio failure */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getConversation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Internal Repull thread id. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Conversation detail */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConversationDetail"];
+                };
+            };
+            /** @description Invalid params (`id` must be a positive integer) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conversation not found in this workspace */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Upstream main vanio failure */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listConversationMessages: {
+        parameters: {
+            query?: {
+                /** @description Opaque cursor returned in the previous response's `pagination.next_cursor`. */
+                cursor?: string;
+                limit?: number;
+                /** @description `desc` (default) returns newest first. `asc` returns chronological replay. */
+                order?: "asc" | "desc";
+            };
+            header?: never;
+            path: {
+                /** @description Internal Repull thread id. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Messages page */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MessageListResponse"];
+                };
+            };
+            /** @description Invalid params (bad `id` / `order` / malformed `cursor`) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conversation not found in this workspace */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `limit` exceeds the 100-item cap */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Upstream main vanio failure */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listReviews: {
+        parameters: {
+            query?: {
+                /** @description Opaque cursor returned in the previous response's `pagination.next_cursor`. */
+                cursor?: string;
+                limit?: number;
+                platform?: "airbnb" | "booking" | "vrbo";
+                /** @description Restrict to one internal Repull listing. */
+                listing_id?: number;
+                rating_min?: number;
+                rating_max?: number;
+                /** @description `responded` — host has replied. `unanswered` — host has not replied. `all` — no filter. */
+                status?: "responded" | "unanswered" | "all";
+                /** @description `guest` (default) — reviews written by guests about the host/property. `host` — reviews written by the host about guests. `all` — both. */
+                reviewer_role?: "guest" | "host" | "all";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Reviews page */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReviewListResponse"];
+                };
+            };
+            /** @description Invalid params (bad enum value, malformed cursor, non-numeric rating) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `limit` exceeds the 100-item cap */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Upstream main vanio failure */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getReview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Internal Repull review id. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Review */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReviewGetResponse"];
+                };
+            };
+            /** @description Invalid params (`id` must be a positive integer) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Review not found (or does not belong to this workspace) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Upstream main vanio failure */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    list_connections: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Connections */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectionListResponse"];
+                };
+            };
+        };
+    };
+    createConnectSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /**
+                     * Format: uri
+                     * @description Where to send the user after they finish (or cancel). Status query params are appended.
+                     */
+                    redirectUrl: string;
+                    /** @description Opaque pass-through correlation token. Echoed back in the response. */
+                    state?: string | null;
+                    /** @description Optional whitelist of provider IDs the picker should expose. Omit to show every channel in the registry. */
+                    allowed_providers?: string[] | null;
+                };
+            };
+        };
+        responses: {
+            /** @description Picker session created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectSession"];
+                };
+            };
+        };
+    };
+    listConnectProviders: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Channel registry */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectProviderListResponse"];
+                };
+            };
+        };
+    };
+    selectConnectProvider: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The picker session ID returned by `createConnectSession`. */
+                sessionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /**
+                     * @description Provider ID from the registry.
+                     * @example airbnb
+                     */
+                    provider: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Provider bound; next URL returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SelectProviderResponse"];
+                };
+            };
+        };
+    };
+    get_connect_status: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description PMS provider slug (e.g., hostaway, guesty, ownerrez) */
+                provider: components["parameters"]["provider"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Connection status */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectStatus"];
+                };
+            };
+        };
+    };
+    create_connection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description PMS provider slug (e.g., hostaway, guesty, ownerrez) */
+                provider: components["parameters"]["provider"];
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /**
+                     * Format: uri
+                     * @description Airbnb only — where to redirect the user after the OAuth flow completes.
+                     */
+                    redirectUrl?: string;
+                    /**
+                     * @description Airbnb only — selects the OAuth scope set. 'read_only' grants calendar-only access; 'full_access' grants full host scopes (default).
+                     * @default full_access
+                     * @enum {string}
+                     */
+                    accessType?: "read_only" | "full_access";
+                    /** @description PMS providers — API key. */
+                    apiKey?: string;
+                    /** @description Plumguide — client ID. */
+                    clientId?: string;
+                    /** @description Plumguide — client secret. */
+                    clientSecret?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Connected */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Connection"];
+                };
+            };
+        };
+    };
+    delete_connection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description PMS provider slug (e.g., hostaway, guesty, ownerrez) */
+                provider: components["parameters"]["provider"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Disconnected */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    verifyBookingHotel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BookingVerifyHotelRequest"];
+            };
+        };
+        responses: {
+            /** @description Hotel verified, session bumped to `awaiting_room_mapping` */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BookingVerifyHotelResponse"];
+                };
+            };
+            /** @description Invalid params (missing sessionId/hotelId, malformed hotel ID) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Session not found, or hotel not found at Booking.com */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Session bound to a different provider, or already in a terminal state */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Session has expired — start a new one */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Stage 1 designation not yet complete in the Extranet */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Booking.com verification call failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Booking.com client credentials not configured on this deployment */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listConnectBookingRooms: {
+        parameters: {
+            query: {
+                /** @description The Connect session ID returned by `createConnectSession`. */
+                sessionId: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Rooms + listing options */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BookingConnectRoomsResponse"];
+                };
+            };
+            /** @description Missing sessionId */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Session not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Session bound to a different provider */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Session has expired */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Hotel claim not yet persisted — retry shortly */
+            425: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    mapConnectBookingRooms: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MapConnectBookingRoomsRequest"];
+            };
+        };
+        responses: {
+            /** @description All mappings applied; session marked completed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MapConnectBookingRoomsResponse"];
+                };
+            };
+            /** @description Invalid params (missing fields, duplicate listing in submission) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A room ID does not belong to this customer's claimed hotel */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Session not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Session bound to a different provider, or already in a terminal state */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Session has expired */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No Booking.com connection found for this customer */
+            425: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    list_webhooks: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Webhooks */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookListResponse"];
+                };
+            };
+        };
+    };
+    create_webhook: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Format: uri */
+                    url: string;
+                    events: string[];
+                    description?: string | null;
+                    /** @example 2026-04 */
+                    apiVersion?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookSubscription"];
+                };
+            };
+        };
+    };
+    list_webhook_event_types: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Catalog */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookEventCatalog"];
+                };
+            };
+        };
+    };
+    get_webhook: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Subscription */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookSubscription"];
+                };
+            };
+        };
+    };
+    delete_webhook: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    update_webhook: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** Format: uri */
+                    url?: string;
+                    description?: string | null;
+                    events?: string[];
+                    /** @enum {string} */
+                    status?: "active" | "paused";
+                };
+            };
+        };
+        responses: {
+            /** @description Updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookSubscription"];
+                };
+            };
+        };
+    };
+    rotate_webhook_secret: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Rotated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        id?: string;
+                        secret?: string;
+                        /** Format: date-time */
+                        rotatedAt?: string;
+                    };
+                };
+            };
+        };
+    };
+    ping_webhook: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Ping delivered (success or failure — check the response fields) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    test_fire_webhook: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                event_type: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Test delivered */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_webhook_deliveries: {
+        parameters: {
+            query?: {
+                limit?: number;
+                cursor?: string;
+                status?: "success" | "failure" | "all";
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deliveries */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookDeliveryListResponse"];
+                };
+            };
+        };
+    };
+    get_webhook_delivery: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                delivery_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Delivery */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookDeliveryDetail"];
+                };
+            };
+        };
+    };
+    replay_webhook_delivery: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                delivery_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Replayed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    test_webhook: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** Format: uri */
+                    url?: string;
+                    event_type?: string;
+                    signing_secret?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Test delivered */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_airbnb_listings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Listings */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AirbnbListingListResponse"];
+                };
+            };
+        };
+    };
+    create_airbnb_listing: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AirbnbListing"];
+                };
+            };
+        };
+    };
+    get_airbnb_listing: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Listing details */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AirbnbListing"];
+                };
+            };
+        };
+    };
+    airbnb_listing_action: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Action completed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_airbnb_listing_pricing: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Pricing data */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    update_airbnb_listing_pricing: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_airbnb_listing_availability: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Availability data */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    update_airbnb_listing_availability: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_airbnb_listing_photos: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Photos */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    upload_airbnb_listing_photos: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Uploaded */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_airbnb_threads: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Message threads */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AirbnbThreadListResponse"];
+                };
+            };
+        };
+    };
+    list_airbnb_thread_messages: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Messages */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MessageListResponse"];
+                };
+            };
+        };
+    };
+    send_airbnb_message: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Sent */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_airbnb_reservations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Reservations */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AirbnbReservationListResponse"];
+                };
+            };
+        };
+    };
+    get_airbnb_reservation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                code: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Reservation details */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AirbnbReservation"];
+                };
+            };
+        };
+    };
+    airbnb_reservation_action: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                code: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Action completed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_airbnb_reviews: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Reviews */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AirbnbReviewListResponse"];
+                };
+            };
+        };
+    };
+    respond_airbnb_review: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Response posted */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    sync_airbnb: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Sync started */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    listListings: {
+        parameters: {
+            query?: {
+                /** @description Opaque cursor returned in the previous response's `pagination.next_cursor`. Omit to fetch the first page. */
+                cursor?: string;
+                /** @description Max items per page. Hard cap is 100. */
+                limit?: number;
+                /** @description Case-insensitive substring search on name, street, or city. */
+                q?: string;
+                /** @description Filter by listing status. */
+                status?: "active" | "inactive" | "archived";
+                /** @description Restrict to listings published on the given channel (`airbnb`, `booking`, `vrbo`, etc.). Joins through `listing_platform_links` and matches active links only. */
+                channel?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Listings page */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListingListResponse"];
+                };
+            };
+            /** @description Invalid params (e.g. malformed cursor) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Limit exceeds the 100-item cap */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    createListing: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ListingCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListingCreateResponse"];
+                };
+            };
+            /** @description Invalid input */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    generateListingContent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ListingGenerateContentRequest"];
+            };
+        };
+        responses: {
+            /** @description Generated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListingGenerateContentResponse"];
+                };
+            };
+            /** @description Listing not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description AI provider failed or returned non-JSON */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    publishListingToAirbnb: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ListingPublishAirbnbRequest"];
+            };
+        };
+        responses: {
+            /** @description Pushed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListingPublishResponse"];
+                };
+            };
+            /** @description Invalid input or push rejected by Airbnb */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    publishListingToBooking: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Pushed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListingPublishResponse"];
+                };
+            };
+            /** @description No Booking mapping or push rejected */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    getListingPublishStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Status */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListingPublishStatusResponse"];
+                };
+            };
+        };
+    };
+    list_booking_properties: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Properties */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BookingPropertyListResponse"];
+                };
+            };
+        };
+    };
+    create_booking_property: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BookingProperty"];
+                };
+            };
+        };
+    };
+    update_booking_availability: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_booking_content: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Content */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    update_booking_content: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_booking_conversations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Conversations */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BookingConversationListResponse"];
+                };
+            };
+        };
+    };
+    send_booking_message: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Sent */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    sync_booking: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Sync started */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    getBookingListingPricing: {
+        parameters: {
+            query?: {
+                start_date?: string;
+                number_of_days?: number;
+                room_id?: string;
+                /** @description When true, returns room-level (vs rate-plan-level) availability. */
+                room_level?: boolean;
+            };
+            header?: never;
+            path: {
+                /** @description Vanio listing ID — resolved to a Booking.com hotel ID via the workspace mapping. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Pricing pulled from Booking.com */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BookingPricingResponse"];
+                };
+            };
+            /** @description Invalid listing ID */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No active Booking.com mapping for this listing, or no Booking.com connection on this workspace */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Booking.com call failed */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    updateBookingListingPricing: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BookingPricingUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Updates pushed (per-update success/failure breakdown in `errors[]`) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BookingPricingUpdateResponse"];
+                };
+            };
+            /** @description Invalid params (bad listing ID or per-update validation failed) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No active Booking.com mapping for this listing, or no Booking.com connection on this workspace */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Booking.com call failed */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    list_vrbo_listings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Listings */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VrboListingListResponse"];
+                };
+            };
+        };
+    };
+    getVrboListingPricing: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Vanio listing ID — resolved to a VRBO listing/unit via the workspace mapping. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No active VRBO mapping for this listing */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not implemented — VRBO is agency-model. Response includes the public rate URL VRBO fetches. */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    updateVrboListingPricing: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No active VRBO mapping for this listing */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not implemented — VRBO accepts no rate pushes. Update the calendar instead. */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    list_vrbo_reservations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Reservations */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VrboReservationListResponse"];
+                };
+            };
+        };
+    };
+    list_plumguide_listings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Listings */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlumguideListingListResponse"];
+                };
+            };
+        };
+    };
+    get_plumguide_availability: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Availability */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    update_plumguide_availability: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Pushed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_plumguide_pricing: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Pricing */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    update_plumguide_pricing: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Pushed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_listing_pricing: {
+        parameters: {
+            query?: {
+                /** @description Inclusive start of the calendar window. Defaults to today. */
+                startDate?: string;
+                /** @description Inclusive end of the calendar window. Defaults to today + 90 days. */
+                endDate?: string;
+            };
+            header?: never;
+            path: {
+                /** @description Listing ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Pricing recommendations + factors */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListingPricingResponse"];
+                };
+            };
+            /** @description Invalid params */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Upstream Atlas/main vanio failure */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    apply_listing_pricing: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ListingPricingApplyRequest"];
+            };
+        };
+        responses: {
+            /** @description Action completed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListingPricingApplyResponse"];
+                };
+            };
+            /** @description Invalid params */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_listing_pricing_strategy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Pricing strategy */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListingPricingStrategy"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    update_listing_pricing_strategy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ListingPricingStrategyInput"];
+            };
+        };
+        responses: {
+            /** @description Updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        ok?: boolean;
+                    };
+                };
+            };
+        };
+    };
+    bulkApplyPricing: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BulkPricingRequest"];
+            };
+        };
+        responses: {
+            /** @description Bulk action processed (check `failed[]` for partial failures) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BulkPricingResponse"];
+                };
+            };
+            /** @description Invalid params (malformed body, bad item shape) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `items` exceeds the 500-item cap */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Upstream Atlas/main vanio failure */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getListingPricingHistory: {
+        parameters: {
+            query?: {
+                /** @description Inclusive. Defaults to today - 90 days. */
+                start_date?: string;
+                /** @description Inclusive. Defaults to today + 90 days. */
+                end_date?: string;
+                limit?: number;
+                /** @description Opaque cursor returned in the previous response's `pagination.next_cursor`. Omit to fetch the first page. */
+                cursor?: string;
+            };
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Pricing history page */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListingPricingHistoryResponse"];
+                };
+            };
+            /** @description Invalid params (bad date, malformed cursor) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Listing not found in this workspace */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `limit` exceeds the 500-cap */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Upstream Atlas/main vanio failure */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listListingComps: {
+        parameters: {
+            query?: {
+                /** @description Bbox + haversine on lat/lng. Default 5, max 50. */
+                radius_km?: number;
+                /** @description Closest-first. Max 100. */
+                limit?: number;
+                /** @description Defaults to today. */
+                start_date?: string;
+                /** @description Defaults to today + 30 days. */
+                end_date?: string;
+            };
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Comp set with daily pricing */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListingCompsResponse"];
+                };
+            };
+            /** @description Invalid params */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Listing not found in this workspace */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Upstream Atlas/main vanio failure */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getListingSegments: {
+        parameters: {
+            query?: {
+                /** @description `comp_set` (default) restricts to a `radius_km` bbox. `market` aggregates across the whole city. */
+                level?: "comp_set" | "market";
+                /** @description Only used when `level=comp_set`. */
+                radius_km?: number;
+            };
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Segment intelligence (may carry a `low_dna_coverage` recommendation when scope is unscored) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListingSegmentsResponse"];
+                };
+            };
+            /** @description Invalid params */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Listing not found in this workspace */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Upstream Atlas/main vanio failure */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    list_markets: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Markets overview */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MarketsOverviewResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Upstream Atlas/main vanio failure */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_market_browse: {
+        parameters: {
+            query?: {
+                /** @description Substring match on city name (case-insensitive). */
+                q?: string;
+                /** @description ISO 3166-1 alpha-2 (e.g. `US`, `ES`). */
+                country?: string;
+                /** @description Minimum comp-set size — cities with fewer active comps are excluded. */
+                min_listings?: number;
+                /** @description Opaque cursor returned by the previous page's `pagination.next_cursor`. */
+                cursor?: string;
+                limit?: number;
+                sort?: "listings_desc" | "name_asc";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Paginated discovery catalog */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MarketBrowseResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Upstream Atlas/main vanio failure */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    get_market: {
+        parameters: {
+            query?: {
+                /** @description 1-indexed page number for the `topComps` slice. */
+                compsPage?: number;
+            };
+            header?: never;
+            path: {
+                /** @description URL-encoded city name (e.g. `Radium%20Hot%20Springs`). */
+                city: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Market deep-dive */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MarketDetailResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Upstream failure */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_market_calendar: {
+        parameters: {
+            query?: {
+                /** @description Defaults to today. */
+                startDate?: string;
+                /** @description Defaults to today + 365 days. */
+                endDate?: string;
+                /** @description Optional — overlays the customer's own pricing/availability for direct comparison. Bypasses the upstream cache. */
+                listingId?: number;
+            };
+            header?: never;
+            path: {
+                city: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Per-date market calendar */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MarketCalendarResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Upstream failure */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    create_ai_operation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["AIOperation"];
+            };
+        };
+        responses: {
+            /** @description AI response (may be streaming) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        result?: string;
+                        confidence?: number;
+                    };
+                };
+            };
+        };
+    };
+    get_billing: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Plan info and current usage */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    create_billing_checkout: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @enum {string} */
+                    plan?: "starter" | "growth" | "scale";
+                };
+            };
+        };
+        responses: {
+            /** @description Checkout URL */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+}
