@@ -18,6 +18,26 @@ export type AIOperation = components['schemas']['AIOperation'];
 export type RepullErrorPayload = components['schemas']['Error'];
 export type Review = components['schemas']['Review'];
 /**
+ * Custom field-mapping schema. Reshapes the `native` response payload into
+ * your app's preferred field names. Apply one per request via the
+ * `X-Schema: <name>` header on any read endpoint.
+ */
+export type CustomSchema = components['schemas']['CustomSchema'];
+/** Row shape returned by `GET /v1/schema/custom`. */
+export type CustomSchemaSummary = components['schemas']['CustomSchemaSummary'];
+/** Request body for `POST /v1/schema/custom`. */
+export type CustomSchemaCreate = components['schemas']['CustomSchemaCreate'];
+/** Returned by `POST /v1/schema/custom` (201). */
+export type CustomSchemaCreateResponse = components['schemas']['CustomSchemaCreateResponse'];
+/** Request body for `PATCH /v1/schema/custom/{id}`. `name` is intentionally not patchable. */
+export type CustomSchemaUpdate = components['schemas']['CustomSchemaUpdate'];
+/** Returned by `GET /v1/schema/custom`. */
+export type CustomSchemaListResponse = components['schemas']['CustomSchemaListResponse'];
+/** Returned by `DELETE /v1/schema/custom/{id}`. */
+export type CustomSchemaDeleteResponse = components['schemas']['CustomSchemaDeleteResponse'];
+/** Mappings object — keys are output field names, values are expressions over the native payload. */
+export type CustomSchemaMappings = components['schemas']['CustomSchemaMappings'];
+/**
  * Standard offset+limit pagination metadata. Returned by most list endpoints.
  *
  * `/v1/reservations` and `/v1/listings` use {@link ReservationPagination} /

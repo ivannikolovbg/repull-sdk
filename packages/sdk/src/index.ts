@@ -2,9 +2,15 @@
  * @repull/sdk — official TypeScript SDK for api.repull.dev.
  *
  * Hand-written ergonomic facade over the documented REST surface.
- * v0.1.1 — adds `repull.conversations`, `repull.guests`, `repull.reviews`,
- * and migrates `repull.reservations.list()` to cursor pagination (legacy
- * `?offset=` walk still works during the deprecation window).
+ * v0.1.2 — adds `repull.schemas` (custom field-mapping CRUD) and the
+ * `xSchema` per-call option on every read endpoint
+ * (`reservations`, `conversations`, `guests`, `reviews`). Also picks up
+ * the corrected `Reservation` shape — `propertyId` / `guestFirstName` /
+ * `guestLastName` / `guestEmail` / `guestPhone` / `guestCount` /
+ * `provider` are removed; real fields are `listingId` / `guestId` /
+ * `guestDetails` / `guestName`. Consumers depending on the old fields
+ * will see breaking type changes — that's intentional, the old types
+ * were lying.
  *
  * Browser-safe behind a server proxy. Do NOT pass `apiKey` directly from
  * a browser bundle without `dangerouslyAllowBrowser: true`. Mirror the
@@ -47,4 +53,12 @@ export type {
   PricingRecommendation,
   PricingRecommendationStatus,
   PricingResponse,
+  CustomSchema,
+  CustomSchemaSummary,
+  CustomSchemaCreate,
+  CustomSchemaCreateResponse,
+  CustomSchemaUpdate,
+  CustomSchemaListResponse,
+  CustomSchemaDeleteResponse,
+  CustomSchemaMappings,
 } from '@repull/types';

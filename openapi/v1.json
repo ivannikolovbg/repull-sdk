@@ -106,6 +106,10 @@
     {
       "name": "System",
       "description": "Health checks and API status"
+    },
+    {
+      "name": "schema",
+      "description": "Custom field-mapping schemas to reshape response payloads to your app's data model. Built-in schemas (`native`, `calry`, `calry-v1`) ship out of the box; create custom schemas with `POST /v1/schema/custom` and select one per request via the `X-Schema` header."
     }
   ],
   "components": {
@@ -185,44 +189,19 @@
       },
       "Reservation": {
         "type": "object",
-        "description": "A booking/reservation from a connected PMS",
+        "description": "A booking/reservation from a connected PMS. Identical shape between list-row (`GET /v1/reservations`) and detail (`GET /v1/reservations/{id}`) — SDK consumers can use the same type for both.",
         "properties": {
           "id": {
             "type": "integer",
             "description": "Internal Repull reservation ID"
           },
-          "confirmationCode": {
-            "type": "string",
-            "description": "PMS confirmation code",
-            "example": "HA-123456"
-          },
-          "propertyId": {
+          "listingId": {
             "type": "integer",
-            "description": "Property ID"
+            "description": "Internal Repull listing ID this reservation is on."
           },
-          "platform": {
-            "type": "string",
-            "description": "Booking source",
-            "enum": [
-              "airbnb",
-              "booking.com",
-              "vrbo",
-              "direct",
-              "website",
-              "owner",
-              "other"
-            ],
-            "example": "airbnb"
-          },
-          "status": {
-            "type": "string",
-            "enum": [
-              "confirmed",
-              "pending",
-              "cancelled",
-              "completed"
-            ],
-            "example": "confirmed"
+          "guestId": {
+            "type": "integer",
+            "description": "Internal Repull guest ID. Use `GET /v1/guests/{id}` for the full profile."
           },
           "checkIn": {
             "type": "string",
@@ -234,38 +213,76 @@
             "format": "date",
             "example": "2026-04-20"
           },
-          "guestFirstName": {
+          "status": {
             "type": "string",
-            "example": "John"
+            "enum": [
+              "confirmed",
+              "pending",
+              "cancelled",
+              "completed"
+            ],
+            "example": "confirmed"
           },
-          "guestLastName": {
+          "platform": {
             "type": "string",
-            "example": "Smith"
-          },
-          "guestEmail": {
-            "type": "string",
-            "format": "email"
-          },
-          "guestPhone": {
-            "type": "string"
-          },
-          "guestCount": {
-            "type": "integer",
-            "example": 4
+            "nullable": true,
+            "description": "Booking source. Lowercase. May be null on legacy rows.",
+            "enum": [
+              "airbnb",
+              "booking.com",
+              "vrbo",
+              "direct",
+              "website",
+              "owner",
+              "other",
+              null
+            ],
+            "example": "airbnb"
           },
           "totalPrice": {
-            "type": "number",
-            "example": 1250
+            "type": "string",
+            "description": "Decimal-as-string (precision 10, scale 2) to preserve precision across mixed-currency totals.",
+            "example": "1250.00"
           },
           "currency": {
             "type": "string",
+            "description": "ISO 4217 currency code.",
             "example": "USD"
           },
-          "provider": {
+          "confirmationCode": {
             "type": "string",
-            "example": "guesty"
+            "description": "Channel-side confirmation code (Airbnb HMxxx, Booking.com numeric, etc.).",
+            "example": "HMXYZ123"
+          },
+          "guestDetails": {
+            "type": "object",
+            "description": "Raw guest details from the source channel (firstName, lastName, email, phone, count, etc.). Shape varies by platform — use the dedicated guest endpoint for a normalized profile.",
+            "additionalProperties": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the reservation row was created in Repull (not the booking-on-channel timestamp)."
+          },
+          "guestName": {
+            "type": "string",
+            "nullable": true,
+            "description": "Pre-resolved display name (`firstName lastName`) extracted from `guestDetails`. Null when no first name is available."
           }
-        }
+        },
+        "required": [
+          "id",
+          "listingId",
+          "guestId",
+          "checkIn",
+          "checkOut",
+          "status",
+          "totalPrice",
+          "currency",
+          "confirmationCode",
+          "guestDetails",
+          "createdAt"
+        ]
       },
       "Guest": {
         "type": "object",
@@ -1735,6 +1752,196 @@
             "description": "Operation-specific input data"
           }
         }
+      },
+      "CustomSchemaMappings": {
+        "type": "object",
+        "description": "Field-mapping table. Keys are the output field names emitted in the response payload; values are simple expressions referenced against the source `native` payload (dot paths, basic arithmetic, string concatenation). Min 1 entry, max 50 entries. Each key must be <= 100 chars; each expression must be <= 500 chars and pass the safety check (no `eval`, no `function`, no `process`, etc.).",
+        "additionalProperties": {
+          "type": "string"
+        },
+        "minProperties": 1,
+        "maxProperties": 50,
+        "example": {
+          "listing_id": "propertyId",
+          "arrival": "checkIn",
+          "departure": "checkOut",
+          "guest_name": "primaryGuest.firstName + ' ' + primaryGuest.lastName",
+          "nightly_rate": "financials.breakdown.basePrice / nights"
+        }
+      },
+      "CustomSchema": {
+        "type": "object",
+        "description": "A custom field-mapping schema owned by the workspace. Reshapes the `native` response into the workspace's preferred field names. Apply one per request via the `X-Schema: <name>` header on any read endpoint.",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Stable workspace-scoped identifier."
+          },
+          "name": {
+            "type": "string",
+            "example": "my-app-schema",
+            "description": "3-100 lowercase chars, hyphens allowed (`^[a-z0-9][a-z0-9-]{1,98}[a-z0-9]$`). Must be unique within the workspace. Cannot collide with reserved names (`calry`, `calry-v1`, `native`)."
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "mappings": {
+            "$ref": "#/components/schemas/CustomSchemaMappings"
+          },
+          "active": {
+            "type": "boolean",
+            "description": "When `false`, requests carrying this schema name in `X-Schema` fall back to `native`."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "mappings",
+          "active",
+          "createdAt"
+        ]
+      },
+      "CustomSchemaSummary": {
+        "type": "object",
+        "description": "List-row shape returned by `GET /v1/schema/custom`. Same fields as `CustomSchema` minus heavy nested data — kept identical today; reserved as a separate schema so the list shape can shrink without breaking the detail call.",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "mappings": {
+            "$ref": "#/components/schemas/CustomSchemaMappings"
+          },
+          "active": {
+            "type": "boolean"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "mappings",
+          "active",
+          "createdAt"
+        ]
+      },
+      "CustomSchemaCreate": {
+        "type": "object",
+        "description": "Request body for `POST /v1/schema/custom`.",
+        "required": [
+          "name",
+          "mappings"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 100,
+            "pattern": "^[a-z0-9][a-z0-9-]{1,98}[a-z0-9]$",
+            "example": "my-app-schema",
+            "description": "3-100 lowercase chars + hyphens. Must be unique within the workspace and cannot collide with reserved names (`calry`, `calry-v1`, `native`)."
+          },
+          "description": {
+            "type": "string",
+            "nullable": true,
+            "description": "Optional human-readable note shown in the dashboard."
+          },
+          "mappings": {
+            "$ref": "#/components/schemas/CustomSchemaMappings"
+          }
+        }
+      },
+      "CustomSchemaCreateResponse": {
+        "type": "object",
+        "description": "Returned by `POST /v1/schema/custom` (201). Includes a `usage` hint telling the caller exactly which header value to set on subsequent requests.",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "mappings": {
+            "$ref": "#/components/schemas/CustomSchemaMappings"
+          },
+          "usage": {
+            "type": "string",
+            "example": "Set header: X-Schema: my-app-schema"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "mappings",
+          "usage",
+          "createdAt"
+        ]
+      },
+      "CustomSchemaUpdate": {
+        "type": "object",
+        "description": "Request body for `PATCH /v1/schema/custom/{id}`. All fields optional; omitted fields are left unchanged. `name` is intentionally NOT patchable — create a new schema and migrate consumers if you need to rename.",
+        "properties": {
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "mappings": {
+            "$ref": "#/components/schemas/CustomSchemaMappings"
+          },
+          "active": {
+            "type": "boolean",
+            "description": "Toggle the schema on/off. When `false`, requests carrying this schema name in `X-Schema` fall back to `native`."
+          }
+        }
+      },
+      "CustomSchemaListResponse": {
+        "type": "object",
+        "description": "Returned by `GET /v1/schema/custom`. Returns every custom schema owned by the workspace.",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CustomSchemaSummary"
+            }
+          }
+        }
+      },
+      "CustomSchemaDeleteResponse": {
+        "type": "object",
+        "properties": {
+          "deleted": {
+            "type": "boolean",
+            "example": true
+          }
+        },
+        "required": [
+          "deleted"
+        ]
       },
       "Error": {
         "type": "object",
@@ -4271,6 +4478,16 @@
           "type": "string"
         },
         "description": "PMS provider slug (e.g., hostaway, guesty, ownerrez)"
+      },
+      "XSchemaHeader": {
+        "name": "X-Schema",
+        "in": "header",
+        "required": false,
+        "description": "Apply a custom or built-in schema to transform the response. Built-in: `native` (default), `calry`, `calry-v1`. Custom: any schema name created via `POST /v1/schema/custom`. Unknown / inactive schema names fall back to `native`.",
+        "schema": {
+          "type": "string",
+          "example": "my-app-schema"
+        }
       }
     }
   },
@@ -4398,6 +4615,9 @@
           "Reservations"
         ],
         "parameters": [
+          {
+            "$ref": "#/components/parameters/XSchemaHeader"
+          },
           {
             "name": "limit",
             "in": "query",
@@ -4589,17 +4809,22 @@
       "get": {
         "operationId": "get_reservation",
         "summary": "Get reservation details",
+        "description": "Returns the full record for a single reservation, scoped to the authenticated workspace. Response shape is identical to a single row in `GET /v1/reservations` so SDK consumers can use the same type for both. Returns **404** if the id does not exist OR belongs to a different workspace — the API never differentiates the two so caller can't enumerate other workspaces' ids.",
         "tags": [
           "Reservations"
         ],
         "parameters": [
+          {
+            "$ref": "#/components/parameters/XSchemaHeader"
+          },
           {
             "name": "id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "integer"
-            }
+            },
+            "description": "Internal Repull reservation ID."
           }
         ],
         "responses": {
@@ -4609,6 +4834,46 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Reservation"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Reservation not found in this workspace",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid `id` (must be a positive integer)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
@@ -4785,6 +5050,9 @@
         ],
         "parameters": [
           {
+            "$ref": "#/components/parameters/XSchemaHeader"
+          },
+          {
             "name": "cursor",
             "in": "query",
             "schema": {
@@ -4892,6 +5160,9 @@
         ],
         "parameters": [
           {
+            "$ref": "#/components/parameters/XSchemaHeader"
+          },
+          {
             "name": "id",
             "in": "path",
             "required": true,
@@ -4963,6 +5234,9 @@
           "Conversations"
         ],
         "parameters": [
+          {
+            "$ref": "#/components/parameters/XSchemaHeader"
+          },
           {
             "name": "cursor",
             "in": "query",
@@ -5074,6 +5348,9 @@
         ],
         "parameters": [
           {
+            "$ref": "#/components/parameters/XSchemaHeader"
+          },
+          {
             "name": "id",
             "in": "path",
             "required": true,
@@ -5146,6 +5423,9 @@
           "Conversations"
         ],
         "parameters": [
+          {
+            "$ref": "#/components/parameters/XSchemaHeader"
+          },
           {
             "name": "id",
             "in": "path",
@@ -5260,6 +5540,9 @@
           "Reviews"
         ],
         "parameters": [
+          {
+            "$ref": "#/components/parameters/XSchemaHeader"
+          },
           {
             "name": "cursor",
             "in": "query",
@@ -5407,6 +5690,9 @@
           "Reviews"
         ],
         "parameters": [
+          {
+            "$ref": "#/components/parameters/XSchemaHeader"
+          },
           {
             "name": "id",
             "in": "path",
@@ -6946,6 +7232,9 @@
           "Listings"
         ],
         "parameters": [
+          {
+            "$ref": "#/components/parameters/XSchemaHeader"
+          },
           {
             "name": "cursor",
             "in": "query",
@@ -8680,6 +8969,334 @@
         "responses": {
           "200": {
             "description": "Checkout URL"
+          }
+        }
+      }
+    },
+    "/v1/schema/custom": {
+      "post": {
+        "operationId": "createCustomSchema",
+        "summary": "Create a custom schema",
+        "description": "Create a workspace-scoped field-mapping schema. The schema reshapes the `native` response payload into your app's preferred field names. After creation, set `X-Schema: <name>` on any read endpoint to apply it.\n\n**Reserved names:** `calry`, `calry-v1`, `native` are built-in schemas and cannot be used as a custom name.\n\n**Mapping safety:** Each mapping value is parsed by an internal expression engine — `eval`, `Function`, `process`, and other unsafe keywords are rejected up front. Field names are capped at 100 chars and expressions at 500 chars.",
+        "tags": [
+          "schema"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CustomSchemaCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomSchemaCreateResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed — bad name format, reserved name (`calry` / `calry-v1` / `native`), unsafe mapping expression, more than 50 mappings, or duplicate name in this workspace.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — API key is not permitted to manage schemas for this workspace.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request body shape was not parseable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "operationId": "listCustomSchemas",
+        "summary": "List custom schemas",
+        "description": "Returns every custom schema owned by the workspace, including inactive ones.",
+        "tags": [
+          "schema"
+        ],
+        "responses": {
+          "200": {
+            "description": "Custom schemas list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomSchemaListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — API key is not permitted to manage schemas for this workspace.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/schema/custom/{id}": {
+      "get": {
+        "operationId": "getCustomSchema",
+        "summary": "Get a custom schema",
+        "description": "Fetch a single custom schema by id. Scoped to the authenticated workspace — schemas that belong to other workspaces return 404.",
+        "tags": [
+          "schema"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Custom schema id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Custom schema",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomSchema"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — API key is not permitted to manage schemas for this workspace.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Custom schema not found in this workspace.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "operationId": "updateCustomSchema",
+        "summary": "Update a custom schema",
+        "description": "Patch the description, mappings, or active flag of a custom schema. The schema `name` is immutable — create a new schema and migrate consumers if you need to rename. Mapping updates are revalidated for safety.",
+        "tags": [
+          "schema"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CustomSchemaUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomSchema"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed — unsafe mapping expression or invalid mapping shape.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — API key is not permitted to manage schemas for this workspace.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Custom schema not found in this workspace.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request body shape was not parseable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteCustomSchema",
+        "summary": "Delete a custom schema",
+        "description": "Hard-delete a custom schema. Subsequent requests carrying its name in `X-Schema` fall back to `native`. There is no undelete.",
+        "tags": [
+          "schema"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomSchemaDeleteResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — API key is not permitted to manage schemas for this workspace.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Custom schema not found in this workspace.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }

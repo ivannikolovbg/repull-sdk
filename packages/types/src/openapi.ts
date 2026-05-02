@@ -90,7 +90,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get reservation details */
+        /**
+         * Get reservation details
+         * @description Returns the full record for a single reservation, scoped to the authenticated workspace. Response shape is identical to a single row in `GET /v1/reservations` so SDK consumers can use the same type for both. Returns **404** if the id does not exist OR belongs to a different workspace — the API never differentiates the two so caller can't enumerate other workspaces' ids.
+         */
         get: operations["get_reservation"];
         put?: never;
         post?: never;
@@ -1440,6 +1443,62 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/schema/custom": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List custom schemas
+         * @description Returns every custom schema owned by the workspace, including inactive ones.
+         */
+        get: operations["listCustomSchemas"];
+        put?: never;
+        /**
+         * Create a custom schema
+         * @description Create a workspace-scoped field-mapping schema. The schema reshapes the `native` response payload into your app's preferred field names. After creation, set `X-Schema: <name>` on any read endpoint to apply it.
+         *
+         *     **Reserved names:** `calry`, `calry-v1`, `native` are built-in schemas and cannot be used as a custom name.
+         *
+         *     **Mapping safety:** Each mapping value is parsed by an internal expression engine — `eval`, `Function`, `process`, and other unsafe keywords are rejected up front. Field names are capped at 100 chars and expressions at 500 chars.
+         */
+        post: operations["createCustomSchema"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/schema/custom/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get a custom schema
+         * @description Fetch a single custom schema by id. Scoped to the authenticated workspace — schemas that belong to other workspaces return 404.
+         */
+        get: operations["getCustomSchema"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete a custom schema
+         * @description Hard-delete a custom schema. Subsequent requests carrying its name in `X-Schema` fall back to `native`. There is no undelete.
+         */
+        delete: operations["deleteCustomSchema"];
+        options?: never;
+        head?: never;
+        /**
+         * Update a custom schema
+         * @description Patch the description, mappings, or active flag of a custom schema. The schema `name` is immutable — create a new schema and migrate consumers if you need to rename. Mapping updates are revalidated for safety.
+         */
+        patch: operations["updateCustomSchema"];
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1484,53 +1543,61 @@ export interface components {
              */
             provider?: string;
         };
-        /** @description A booking/reservation from a connected PMS */
+        /** @description A booking/reservation from a connected PMS. Identical shape between list-row (`GET /v1/reservations`) and detail (`GET /v1/reservations/{id}`) — SDK consumers can use the same type for both. */
         Reservation: {
             /** @description Internal Repull reservation ID */
-            id?: number;
-            /**
-             * @description PMS confirmation code
-             * @example HA-123456
-             */
-            confirmationCode?: string;
-            /** @description Property ID */
-            propertyId?: number;
-            /**
-             * @description Booking source
-             * @example airbnb
-             * @enum {string}
-             */
-            platform?: "airbnb" | "booking.com" | "vrbo" | "direct" | "website" | "owner" | "other";
-            /**
-             * @example confirmed
-             * @enum {string}
-             */
-            status?: "confirmed" | "pending" | "cancelled" | "completed";
+            id: number;
+            /** @description Internal Repull listing ID this reservation is on. */
+            listingId: number;
+            /** @description Internal Repull guest ID. Use `GET /v1/guests/{id}` for the full profile. */
+            guestId: number;
             /**
              * Format: date
              * @example 2026-04-15
              */
-            checkIn?: string;
+            checkIn: string;
             /**
              * Format: date
              * @example 2026-04-20
              */
-            checkOut?: string;
-            /** @example John */
-            guestFirstName?: string;
-            /** @example Smith */
-            guestLastName?: string;
-            /** Format: email */
-            guestEmail?: string;
-            guestPhone?: string;
-            /** @example 4 */
-            guestCount?: number;
-            /** @example 1250 */
-            totalPrice?: number;
-            /** @example USD */
-            currency?: string;
-            /** @example guesty */
-            provider?: string;
+            checkOut: string;
+            /**
+             * @example confirmed
+             * @enum {string}
+             */
+            status: "confirmed" | "pending" | "cancelled" | "completed";
+            /**
+             * @description Booking source. Lowercase. May be null on legacy rows.
+             * @example airbnb
+             * @enum {string|null}
+             */
+            platform?: "airbnb" | "booking.com" | "vrbo" | "direct" | "website" | "owner" | "other" | null;
+            /**
+             * @description Decimal-as-string (precision 10, scale 2) to preserve precision across mixed-currency totals.
+             * @example 1250.00
+             */
+            totalPrice: string;
+            /**
+             * @description ISO 4217 currency code.
+             * @example USD
+             */
+            currency: string;
+            /**
+             * @description Channel-side confirmation code (Airbnb HMxxx, Booking.com numeric, etc.).
+             * @example HMXYZ123
+             */
+            confirmationCode: string;
+            /** @description Raw guest details from the source channel (firstName, lastName, email, phone, count, etc.). Shape varies by platform — use the dedicated guest endpoint for a normalized profile. */
+            guestDetails: {
+                [key: string]: unknown;
+            };
+            /**
+             * Format: date-time
+             * @description When the reservation row was created in Repull (not the booking-on-channel timestamp).
+             */
+            createdAt: string;
+            /** @description Pre-resolved display name (`firstName lastName`) extracted from `guestDetails`. Null when no first name is available. */
+            guestName?: string | null;
         };
         /** @description Guest list-row shape returned by `GET /v1/guests`. Pre-resolved primary phone/email + display name + cumulative stay aggregates so list UIs can render without a per-row round-trip. */
         Guest: {
@@ -2150,6 +2217,87 @@ export interface components {
             operation?: "respond-to-guest" | "classify-intent" | "generate-listing" | "review-response" | "price-suggestion";
             /** @description Operation-specific input data */
             input?: Record<string, never>;
+        };
+        /**
+         * @description Field-mapping table. Keys are the output field names emitted in the response payload; values are simple expressions referenced against the source `native` payload (dot paths, basic arithmetic, string concatenation). Min 1 entry, max 50 entries. Each key must be <= 100 chars; each expression must be <= 500 chars and pass the safety check (no `eval`, no `function`, no `process`, etc.).
+         * @example {
+         *       "listing_id": "propertyId",
+         *       "arrival": "checkIn",
+         *       "departure": "checkOut",
+         *       "guest_name": "primaryGuest.firstName + ' ' + primaryGuest.lastName",
+         *       "nightly_rate": "financials.breakdown.basePrice / nights"
+         *     }
+         */
+        CustomSchemaMappings: {
+            [key: string]: string;
+        };
+        /** @description A custom field-mapping schema owned by the workspace. Reshapes the `native` response into the workspace's preferred field names. Apply one per request via the `X-Schema: <name>` header on any read endpoint. */
+        CustomSchema: {
+            /**
+             * Format: uuid
+             * @description Stable workspace-scoped identifier.
+             */
+            id: string;
+            /**
+             * @description 3-100 lowercase chars, hyphens allowed (`^[a-z0-9][a-z0-9-]{1,98}[a-z0-9]$`). Must be unique within the workspace. Cannot collide with reserved names (`calry`, `calry-v1`, `native`).
+             * @example my-app-schema
+             */
+            name: string;
+            description?: string | null;
+            mappings: components["schemas"]["CustomSchemaMappings"];
+            /** @description When `false`, requests carrying this schema name in `X-Schema` fall back to `native`. */
+            active: boolean;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        /** @description List-row shape returned by `GET /v1/schema/custom`. Same fields as `CustomSchema` minus heavy nested data — kept identical today; reserved as a separate schema so the list shape can shrink without breaking the detail call. */
+        CustomSchemaSummary: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            description?: string | null;
+            mappings: components["schemas"]["CustomSchemaMappings"];
+            active: boolean;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        /** @description Request body for `POST /v1/schema/custom`. */
+        CustomSchemaCreate: {
+            /**
+             * @description 3-100 lowercase chars + hyphens. Must be unique within the workspace and cannot collide with reserved names (`calry`, `calry-v1`, `native`).
+             * @example my-app-schema
+             */
+            name: string;
+            /** @description Optional human-readable note shown in the dashboard. */
+            description?: string | null;
+            mappings: components["schemas"]["CustomSchemaMappings"];
+        };
+        /** @description Returned by `POST /v1/schema/custom` (201). Includes a `usage` hint telling the caller exactly which header value to set on subsequent requests. */
+        CustomSchemaCreateResponse: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            description?: string | null;
+            mappings: components["schemas"]["CustomSchemaMappings"];
+            /** @example Set header: X-Schema: my-app-schema */
+            usage: string;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        /** @description Request body for `PATCH /v1/schema/custom/{id}`. All fields optional; omitted fields are left unchanged. `name` is intentionally NOT patchable — create a new schema and migrate consumers if you need to rename. */
+        CustomSchemaUpdate: {
+            description?: string | null;
+            mappings?: components["schemas"]["CustomSchemaMappings"];
+            /** @description Toggle the schema on/off. When `false`, requests carrying this schema name in `X-Schema` fall back to `native`. */
+            active?: boolean;
+        };
+        /** @description Returned by `GET /v1/schema/custom`. Returns every custom schema owned by the workspace. */
+        CustomSchemaListResponse: {
+            data?: components["schemas"]["CustomSchemaSummary"][];
+        };
+        CustomSchemaDeleteResponse: {
+            /** @example true */
+            deleted: boolean;
         };
         Error: {
             error?: {
@@ -3091,6 +3239,8 @@ export interface components {
         offset: number;
         /** @description PMS provider slug (e.g., hostaway, guesty, ownerrez) */
         provider: string;
+        /** @description Apply a custom or built-in schema to transform the response. Built-in: `native` (default), `calry`, `calry-v1`. Custom: any schema name created via `POST /v1/schema/custom`. Unknown / inactive schema names fall back to `native`. */
+        XSchemaHeader: string;
     };
     requestBodies: never;
     headers: never;
@@ -3220,7 +3370,10 @@ export interface operations {
                  */
                 checkInTo?: string;
             };
-            header?: never;
+            header?: {
+                /** @description Apply a custom or built-in schema to transform the response. Built-in: `native` (default), `calry`, `calry-v1`. Custom: any schema name created via `POST /v1/schema/custom`. Unknown / inactive schema names fall back to `native`. */
+                "X-Schema"?: components["parameters"]["XSchemaHeader"];
+            };
             path?: never;
             cookie?: never;
         };
@@ -3284,8 +3437,12 @@ export interface operations {
     get_reservation: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description Apply a custom or built-in schema to transform the response. Built-in: `native` (default), `calry`, `calry-v1`. Custom: any schema name created via `POST /v1/schema/custom`. Unknown / inactive schema names fall back to `native`. */
+                "X-Schema"?: components["parameters"]["XSchemaHeader"];
+            };
             path: {
+                /** @description Internal Repull reservation ID. */
                 id: number;
             };
             cookie?: never;
@@ -3299,6 +3456,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Reservation"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Reservation not found in this workspace */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Invalid `id` (must be a positive integer) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -3419,7 +3612,10 @@ export interface operations {
                 /** @description Restrict to guests with at least one reservation on the given internal Repull listing id. */
                 listing_id?: number;
             };
-            header?: never;
+            header?: {
+                /** @description Apply a custom or built-in schema to transform the response. Built-in: `native` (default), `calry`, `calry-v1`. Custom: any schema name created via `POST /v1/schema/custom`. Unknown / inactive schema names fall back to `native`. */
+                "X-Schema"?: components["parameters"]["XSchemaHeader"];
+            };
             path?: never;
             cookie?: never;
         };
@@ -3475,7 +3671,10 @@ export interface operations {
     getGuest: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description Apply a custom or built-in schema to transform the response. Built-in: `native` (default), `calry`, `calry-v1`. Custom: any schema name created via `POST /v1/schema/custom`. Unknown / inactive schema names fall back to `native`. */
+                "X-Schema"?: components["parameters"]["XSchemaHeader"];
+            };
             path: {
                 id: number;
             };
@@ -3542,7 +3741,10 @@ export interface operations {
                 /** @description Filter by archive status. `archived` currently always returns an empty page — kept for forward-compat. */
                 status?: "open" | "archived";
             };
-            header?: never;
+            header?: {
+                /** @description Apply a custom or built-in schema to transform the response. Built-in: `native` (default), `calry`, `calry-v1`. Custom: any schema name created via `POST /v1/schema/custom`. Unknown / inactive schema names fall back to `native`. */
+                "X-Schema"?: components["parameters"]["XSchemaHeader"];
+            };
             path?: never;
             cookie?: never;
         };
@@ -3598,7 +3800,10 @@ export interface operations {
     getConversation: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description Apply a custom or built-in schema to transform the response. Built-in: `native` (default), `calry`, `calry-v1`. Custom: any schema name created via `POST /v1/schema/custom`. Unknown / inactive schema names fall back to `native`. */
+                "X-Schema"?: components["parameters"]["XSchemaHeader"];
+            };
             path: {
                 /** @description Internal Repull thread id. */
                 id: number;
@@ -3663,7 +3868,10 @@ export interface operations {
                 /** @description `desc` (default) returns newest first. `asc` returns chronological replay. */
                 order?: "asc" | "desc";
             };
-            header?: never;
+            header?: {
+                /** @description Apply a custom or built-in schema to transform the response. Built-in: `native` (default), `calry`, `calry-v1`. Custom: any schema name created via `POST /v1/schema/custom`. Unknown / inactive schema names fall back to `native`. */
+                "X-Schema"?: components["parameters"]["XSchemaHeader"];
+            };
             path: {
                 /** @description Internal Repull thread id. */
                 id: number;
@@ -3744,7 +3952,10 @@ export interface operations {
                 /** @description `guest` (default) — reviews written by guests about the host/property. `host` — reviews written by the host about guests. `all` — both. */
                 reviewer_role?: "guest" | "host" | "all";
             };
-            header?: never;
+            header?: {
+                /** @description Apply a custom or built-in schema to transform the response. Built-in: `native` (default), `calry`, `calry-v1`. Custom: any schema name created via `POST /v1/schema/custom`. Unknown / inactive schema names fall back to `native`. */
+                "X-Schema"?: components["parameters"]["XSchemaHeader"];
+            };
             path?: never;
             cookie?: never;
         };
@@ -3800,7 +4011,10 @@ export interface operations {
     getReview: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description Apply a custom or built-in schema to transform the response. Built-in: `native` (default), `calry`, `calry-v1`. Custom: any schema name created via `POST /v1/schema/custom`. Unknown / inactive schema names fall back to `native`. */
+                "X-Schema"?: components["parameters"]["XSchemaHeader"];
+            };
             path: {
                 /** @description Internal Repull review id. */
                 id: number;
@@ -4992,7 +5206,10 @@ export interface operations {
                 /** @description Restrict to listings published on the given channel (`airbnb`, `booking`, `vrbo`, etc.). Joins through `listing_platform_links` and matches active links only. */
                 channel?: string;
             };
-            header?: never;
+            header?: {
+                /** @description Apply a custom or built-in schema to transform the response. Built-in: `native` (default), `calry`, `calry-v1`. Custom: any schema name created via `POST /v1/schema/custom`. Unknown / inactive schema names fall back to `native`. */
+                "X-Schema"?: components["parameters"]["XSchemaHeader"];
+            };
             path?: never;
             cookie?: never;
         };
@@ -6309,6 +6526,274 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    listCustomSchemas: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Custom schemas list */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomSchemaListResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden — API key is not permitted to manage schemas for this workspace. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    createCustomSchema: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CustomSchemaCreate"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomSchemaCreateResponse"];
+                };
+            };
+            /** @description Validation failed — bad name format, reserved name (`calry` / `calry-v1` / `native`), unsafe mapping expression, more than 50 mappings, or duplicate name in this workspace. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden — API key is not permitted to manage schemas for this workspace. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Request body shape was not parseable. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getCustomSchema: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Custom schema id. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Custom schema */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomSchema"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden — API key is not permitted to manage schemas for this workspace. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Custom schema not found in this workspace. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    deleteCustomSchema: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomSchemaDeleteResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden — API key is not permitted to manage schemas for this workspace. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Custom schema not found in this workspace. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    updateCustomSchema: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CustomSchemaUpdate"];
+            };
+        };
+        responses: {
+            /** @description Updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomSchema"];
+                };
+            };
+            /** @description Validation failed — unsafe mapping expression or invalid mapping shape. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden — API key is not permitted to manage schemas for this workspace. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Custom schema not found in this workspace. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Request body shape was not parseable. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
             };
         };
     };

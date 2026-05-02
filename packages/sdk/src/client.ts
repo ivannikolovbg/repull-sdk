@@ -21,6 +21,12 @@ import type {
   Connection,
   Conversation,
   CursorListResponse,
+  CustomSchema,
+  CustomSchemaCreate,
+  CustomSchemaCreateResponse,
+  CustomSchemaDeleteResponse,
+  CustomSchemaListResponse,
+  CustomSchemaUpdate,
   Guest,
   HealthResponse,
   ListResponse,
@@ -36,7 +42,7 @@ import type {
 import { RepullError } from './errors.js';
 
 const DEFAULT_BASE_URL = 'https://api.repull.dev';
-const DEFAULT_USER_AGENT = '@repull/sdk/0.1.1';
+const DEFAULT_USER_AGENT = '@repull/sdk/0.1.2';
 
 export type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
@@ -71,6 +77,7 @@ export class Repull {
   readonly channels: ChannelsNamespace;
   readonly markets: MarketsNamespace;
   readonly listings: ListingsNamespace;
+  readonly schemas: SchemasNamespace;
 
   private readonly opts: {
     apiKey?: string;
@@ -120,10 +127,15 @@ export class Repull {
     this.channels = new ChannelsNamespace(this);
     this.markets = new MarketsNamespace(this);
     this.listings = new ListingsNamespace(this);
+    this.schemas = new SchemasNamespace(this);
   }
 
   /** @internal */
-  async request<T>(method: string, path: string, init: { query?: Record<string, unknown>; body?: unknown } = {}): Promise<T> {
+  async request<T>(
+    method: string,
+    path: string,
+    init: { query?: Record<string, unknown>; body?: unknown; xSchema?: string } = {},
+  ): Promise<T> {
     const url = buildUrl(this.opts.baseUrl, path, init.query);
     const headers: Record<string, string> = {
       Accept: 'application/json',
@@ -131,6 +143,7 @@ export class Repull {
     if (this.opts.apiKey) headers.Authorization = `Bearer ${this.opts.apiKey}`;
     if (init.body !== undefined) headers['Content-Type'] = 'application/json';
     if (!isBrowser) headers['User-Agent'] = this.opts.userAgent;
+    if (init.xSchema) headers['X-Schema'] = init.xSchema;
 
     const reqInit: RequestInit = {
       method,
@@ -325,13 +338,19 @@ class ReservationsNamespace {
       from?: string;
       to?: string;
     } = {},
+    opts: { xSchema?: string } = {},
   ): Promise<ReservationListResponse<Reservation>> {
-    return this.client.request<ReservationListResponse<Reservation>>('GET', '/v1/reservations', { query });
+    return this.client.request<ReservationListResponse<Reservation>>('GET', '/v1/reservations', {
+      query,
+      xSchema: opts.xSchema,
+    });
   }
 
-  /** GET /v1/reservations/{id}. */
-  get(id: string | number): Promise<Reservation> {
-    return this.client.request<Reservation>('GET', `/v1/reservations/${encodeURIComponent(String(id))}`);
+  /** GET /v1/reservations/{id}. Pass `opts.xSchema` to apply a custom field-mapping schema. */
+  get(id: string | number, opts: { xSchema?: string } = {}): Promise<Reservation> {
+    return this.client.request<Reservation>('GET', `/v1/reservations/${encodeURIComponent(String(id))}`, {
+      xSchema: opts.xSchema,
+    });
   }
 }
 
@@ -348,15 +367,22 @@ class ConversationsNamespace {
    * Pass `cursor` from the previous response's `pagination.next_cursor` to
    * walk forward; stop when `pagination.has_more` is `false`.
    */
-  list(query: { limit?: number; cursor?: string; channel?: string } = {}): Promise<CursorListResponse<Conversation>> {
-    return this.client.request<CursorListResponse<Conversation>>('GET', '/v1/conversations', { query });
+  list(
+    query: { limit?: number; cursor?: string; channel?: string } = {},
+    opts: { xSchema?: string } = {},
+  ): Promise<CursorListResponse<Conversation>> {
+    return this.client.request<CursorListResponse<Conversation>>('GET', '/v1/conversations', {
+      query,
+      xSchema: opts.xSchema,
+    });
   }
 
   /** GET /v1/conversations/{id} — single conversation thread. */
-  get(conversationId: string | number): Promise<Conversation> {
+  get(conversationId: string | number, opts: { xSchema?: string } = {}): Promise<Conversation> {
     return this.client.request<Conversation>(
       'GET',
       `/v1/conversations/${encodeURIComponent(String(conversationId))}`,
+      { xSchema: opts.xSchema },
     );
   }
 
@@ -364,11 +390,12 @@ class ConversationsNamespace {
   messages(
     conversationId: string | number,
     query: { limit?: number; cursor?: string } = {},
+    opts: { xSchema?: string } = {},
   ): Promise<CursorListResponse<Message>> {
     return this.client.request<CursorListResponse<Message>>(
       'GET',
       `/v1/conversations/${encodeURIComponent(String(conversationId))}/messages`,
-      { query },
+      { query, xSchema: opts.xSchema },
     );
   }
 }
@@ -380,13 +407,21 @@ class GuestsNamespace {
   constructor(private readonly client: Repull) {}
 
   /** GET /v1/guests — cursor-paginated guest directory. */
-  list(query: { limit?: number; cursor?: string; search?: string } = {}): Promise<CursorListResponse<Guest>> {
-    return this.client.request<CursorListResponse<Guest>>('GET', '/v1/guests', { query });
+  list(
+    query: { limit?: number; cursor?: string; search?: string } = {},
+    opts: { xSchema?: string } = {},
+  ): Promise<CursorListResponse<Guest>> {
+    return this.client.request<CursorListResponse<Guest>>('GET', '/v1/guests', {
+      query,
+      xSchema: opts.xSchema,
+    });
   }
 
   /** GET /v1/guests/{id} — full guest profile. */
-  get(id: string | number): Promise<Guest> {
-    return this.client.request<Guest>('GET', `/v1/guests/${encodeURIComponent(String(id))}`);
+  get(id: string | number, opts: { xSchema?: string } = {}): Promise<Guest> {
+    return this.client.request<Guest>('GET', `/v1/guests/${encodeURIComponent(String(id))}`, {
+      xSchema: opts.xSchema,
+    });
   }
 }
 
@@ -398,13 +433,21 @@ class ReviewsNamespace {
   constructor(private readonly client: Repull) {}
 
   /** GET /v1/reviews — cursor-paginated review stream across channels. */
-  list(query: { limit?: number; cursor?: string; channel?: string; listing_id?: number } = {}): Promise<CursorListResponse<Review>> {
-    return this.client.request<CursorListResponse<Review>>('GET', '/v1/reviews', { query });
+  list(
+    query: { limit?: number; cursor?: string; channel?: string; listing_id?: number } = {},
+    opts: { xSchema?: string } = {},
+  ): Promise<CursorListResponse<Review>> {
+    return this.client.request<CursorListResponse<Review>>('GET', '/v1/reviews', {
+      query,
+      xSchema: opts.xSchema,
+    });
   }
 
   /** GET /v1/reviews/{id}. */
-  get(id: string | number): Promise<Review> {
-    return this.client.request<Review>('GET', `/v1/reviews/${encodeURIComponent(String(id))}`);
+  get(id: string | number, opts: { xSchema?: string } = {}): Promise<Review> {
+    return this.client.request<Review>('GET', `/v1/reviews/${encodeURIComponent(String(id))}`, {
+      xSchema: opts.xSchema,
+    });
   }
 }
 
@@ -537,6 +580,63 @@ class ListingsPricingNamespace {
       'POST',
       `/v1/listings/${encodeURIComponent(String(listingId))}/pricing`,
       { body },
+    );
+  }
+}
+
+/**
+ * Custom field-mapping schemas. Reshape the `native` response payload into
+ * your app's preferred field names. After creating a schema, apply it to any
+ * read endpoint by passing `{ xSchema: '<name>' }` as the trailing options
+ * argument (e.g. `repull.reservations.list({}, { xSchema: 'my-schema' })`).
+ *
+ * Reserved names: `calry`, `calry-v1`, `native` are built-in and cannot be
+ * used as a custom name. Mapping expressions are sandboxed — `eval`,
+ * `Function`, `process`, etc. are rejected up front.
+ */
+class SchemasNamespace {
+  constructor(private readonly client: Repull) {}
+
+  /** GET /v1/schema/custom — list every custom schema owned by this workspace. */
+  list(): Promise<CustomSchemaListResponse> {
+    return this.client.request<CustomSchemaListResponse>('GET', '/v1/schema/custom');
+  }
+
+  /** GET /v1/schema/custom/{id} — single custom schema with full mappings. */
+  get(id: string | number): Promise<CustomSchema> {
+    return this.client.request<CustomSchema>(
+      'GET',
+      `/v1/schema/custom/${encodeURIComponent(String(id))}`,
+    );
+  }
+
+  /** POST /v1/schema/custom — create a workspace-scoped field-mapping schema. */
+  create(body: CustomSchemaCreate): Promise<CustomSchemaCreateResponse> {
+    return this.client.request<CustomSchemaCreateResponse>('POST', '/v1/schema/custom', { body });
+  }
+
+  /**
+   * PATCH /v1/schema/custom/{id} — update mappings or toggle active. `name`
+   * is intentionally NOT patchable; create a new schema and migrate
+   * consumers if you need to rename.
+   */
+  update(id: string | number, body: CustomSchemaUpdate): Promise<CustomSchema> {
+    return this.client.request<CustomSchema>(
+      'PATCH',
+      `/v1/schema/custom/${encodeURIComponent(String(id))}`,
+      { body },
+    );
+  }
+
+  /**
+   * DELETE /v1/schema/custom/{id} — hard delete. Subsequent requests
+   * carrying its name in `X-Schema` fall back to `native`. There is no
+   * undelete.
+   */
+  delete(id: string | number): Promise<CustomSchemaDeleteResponse> {
+    return this.client.request<CustomSchemaDeleteResponse>(
+      'DELETE',
+      `/v1/schema/custom/${encodeURIComponent(String(id))}`,
     );
   }
 }
