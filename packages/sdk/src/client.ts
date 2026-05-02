@@ -352,6 +352,14 @@ class ConversationsNamespace {
     return this.client.request<CursorListResponse<Conversation>>('GET', '/v1/conversations', { query });
   }
 
+  /** GET /v1/conversations/{id} — single conversation thread. */
+  get(conversationId: string | number): Promise<Conversation> {
+    return this.client.request<Conversation>(
+      'GET',
+      `/v1/conversations/${encodeURIComponent(String(conversationId))}`,
+    );
+  }
+
   /** GET /v1/conversations/{id}/messages — messages on a thread, newest first. */
   messages(
     conversationId: string | number,
@@ -361,15 +369,6 @@ class ConversationsNamespace {
       'GET',
       `/v1/conversations/${encodeURIComponent(String(conversationId))}/messages`,
       { query },
-    );
-  }
-
-  /** POST /v1/conversations/{id}/messages — send a message on the thread. */
-  send(conversationId: string | number, body: { text: string; [k: string]: unknown }): Promise<Message> {
-    return this.client.request<Message>(
-      'POST',
-      `/v1/conversations/${encodeURIComponent(String(conversationId))}/messages`,
-      { body },
     );
   }
 }
