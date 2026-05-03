@@ -3,15 +3,18 @@
 import { useEffect, useState, useMemo } from 'react';
 import { makeClient } from '@/lib/repull-client';
 import type { AuthState } from './auth-bar';
-import type { Reservation, ReservationListResponse } from '@repull/sdk';
+import type { ListResponse, Reservation } from '@repull/sdk';
 import { CodePanel, type CodeSnippet } from './code-panel';
 
 const PAGE_SIZE = 10;
 
 export function ReservationsTable({ auth }: { auth: AuthState }) {
   const ready = Boolean(auth.apiKey || auth.useSandbox);
-  const [page, setPage] = useState(0);
-  const [data, setData] = useState<ReservationListResponse<Reservation> | null>(null);
+  // Cursor stack — index 0 is the first page (no cursor); each subsequent
+  // index is the cursor that fetches that page. Lets the user walk back.
+  const [cursorStack, setCursorStack] = useState<(string | undefined)[]>([undefined]);
+  const [pageIndex, setPageIndex] = useState(0);
+  const [data, setData] = useState<ListResponse<Reservation> | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>('');
@@ -24,53 +27,82 @@ export function ReservationsTable({ auth }: { auth: AuthState }) {
     const client = makeClient({ apiKey: auth.apiKey, useSandbox: auth.useSandbox });
     setLoading(true);
     setError(null);
+    const cursor = cursorStack[pageIndex];
     client.reservations
-      .list({ limit: PAGE_SIZE, offset: page * PAGE_SIZE, status: statusFilter || undefined })
+      .list({ limit: PAGE_SIZE, cursor, status: statusFilter || undefined })
       .then((res) => setData(res))
       .catch((err) => setError((err as Error).message))
       .finally(() => setLoading(false));
-  }, [ready, page, statusFilter, auth.apiKey, auth.useSandbox]);
+  }, [ready, pageIndex, cursorStack, statusFilter, auth.apiKey, auth.useSandbox]);
 
   const snippets = useMemo<CodeSnippet[]>(() => {
     const filterPart = statusFilter ? `, status: ${JSON.stringify(statusFilter)}` : '';
+    const cursor = cursorStack[pageIndex];
+    const cursorPart = cursor ? `, cursor: ${JSON.stringify(cursor)}` : '';
     return [
       {
         label: 'TS',
         language: 'ts',
         code: `const { data, pagination } = await repull.reservations.list({
-  limit: ${PAGE_SIZE},
-  offset: ${page * PAGE_SIZE}${filterPart}
-});`,
+  limit: ${PAGE_SIZE}${cursorPart}${filterPart}
+});
+
+// Walk forward: pagination.nextCursor / pagination.hasMore`,
       },
       {
         label: 'curl',
         language: 'curl',
-        code: `curl 'https://api.repull.dev/v1/reservations?limit=${PAGE_SIZE}&offset=${page * PAGE_SIZE}${
-          statusFilter ? `&status=${statusFilter}` : ''
-        }' \\
+        code: `curl 'https://api.repull.dev/v1/reservations?limit=${PAGE_SIZE}${
+          cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''
+        }${statusFilter ? `&status=${statusFilter}` : ''}' \\
   -H 'Authorization: Bearer $REPULL_API_KEY'`,
       },
     ];
-  }, [page, statusFilter]);
+  }, [pageIndex, statusFilter, cursorStack]);
 
   const total = data?.pagination?.total ?? 0;
+  const hasMore = data?.pagination?.hasMore ?? false;
+  const nextCursor = data?.pagination?.nextCursor ?? null;
   const showing = data?.data ?? [];
+
+  function resetForFilter(next: string) {
+    setCursorStack([undefined]);
+    setPageIndex(0);
+    setStatusFilter(next);
+  }
+
+  function goNext() {
+    if (!hasMore || !nextCursor) return;
+    // Push the new cursor and advance.
+    setCursorStack((stack) => {
+      // If we're already at top of stack, append.
+      if (pageIndex === stack.length - 1) {
+        return [...stack, nextCursor];
+      }
+      // We've walked back, then forward — overwrite the next slot.
+      const copy = stack.slice(0, pageIndex + 1);
+      copy.push(nextCursor);
+      return copy;
+    });
+    setPageIndex((p) => p + 1);
+  }
+
+  function goPrev() {
+    setPageIndex((p) => Math.max(0, p - 1));
+  }
 
   return (
     <section className="card overflow-hidden">
       <header className="px-5 py-4 border-b border-white/[0.08] flex items-center justify-between gap-3 flex-wrap">
         <div>
           <h2 className="section-h2">Reservations</h2>
-          <p className="text-xs muted mt-0.5">Real data from your API key. Read-only in v0.1.</p>
+          <p className="text-xs muted mt-0.5">Real data from your API key. Read-only in v0.2.</p>
         </div>
         <div className="flex gap-2 items-center">
           <select
             className="input"
             value={statusFilter}
-            onChange={(e) => {
-              setPage(0);
-              setStatusFilter(e.target.value);
-            }}
+            onChange={(e) => resetForFilter(e.target.value)}
             style={{ width: 'auto' }}
           >
             <option value="">all statuses</option>
@@ -135,23 +167,25 @@ export function ReservationsTable({ auth }: { auth: AuthState }) {
           <div className="flex items-center justify-between text-xs muted">
             <span>
               {showing.length > 0
-                ? `${page * PAGE_SIZE + 1}–${page * PAGE_SIZE + showing.length} of ${total}`
+                ? `${pageIndex * PAGE_SIZE + 1}–${pageIndex * PAGE_SIZE + showing.length}${
+                    total ? ` of ${total}` : ''
+                  }`
                 : '—'}
             </span>
             <div className="flex gap-2">
               <button
                 type="button"
                 className="btn"
-                onClick={() => setPage((p) => Math.max(0, p - 1))}
-                disabled={page === 0 || loading}
+                onClick={goPrev}
+                disabled={pageIndex === 0 || loading}
               >
                 Prev
               </button>
               <button
                 type="button"
                 className="btn"
-                onClick={() => setPage((p) => p + 1)}
-                disabled={loading || (page + 1) * PAGE_SIZE >= total}
+                onClick={goNext}
+                disabled={loading || !hasMore}
               >
                 Next
               </button>

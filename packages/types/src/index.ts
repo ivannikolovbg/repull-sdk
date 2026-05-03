@@ -1,5 +1,14 @@
 // Public surface for @repull/types — re-exports the generated openapi types
 // plus a small set of hand-curated convenience aliases.
+//
+// v0.2.0 — canonical shapes only:
+//   - Pagination is always `{ nextCursor, hasMore, total? }` (camelCase).
+//   - All ID fields are `string` (Listing.id, Property.id, Guest.id,
+//     Reservation.id, foreign keys like listingId/guestId/reservationId).
+//   - All field names are camelCase (no snake_case in response payloads).
+//   - List responses always wrap in `{ data, pagination }` — no bespoke
+//     shapes (`/v1/markets` no longer returns `markets`, /v1/reviews/{id}
+//     no longer wraps in `{ data }`, etc.).
 
 import type { components, paths } from './openapi.js';
 
@@ -8,6 +17,8 @@ export type { components, paths } from './openapi.js';
 /** Convenience aliases over the generated `components.schemas`. */
 export type Property = components['schemas']['Property'];
 export type Reservation = components['schemas']['Reservation'];
+export type Listing = components['schemas']['Listing'];
+export type ListingChannel = components['schemas']['ListingChannel'];
 export type Guest = components['schemas']['Guest'];
 export type CalendarDay = components['schemas']['CalendarDay'];
 export type Conversation = components['schemas']['Conversation'];
@@ -17,6 +28,7 @@ export type WebhookSubscription = components['schemas']['WebhookSubscription'];
 export type AIOperation = components['schemas']['AIOperation'];
 export type RepullErrorPayload = components['schemas']['Error'];
 export type Review = components['schemas']['Review'];
+
 /**
  * Custom field-mapping schema. Reshapes the `native` response payload into
  * your app's preferred field names. Apply one per request via the
@@ -37,30 +49,34 @@ export type CustomSchemaListResponse = components['schemas']['CustomSchemaListRe
 export type CustomSchemaDeleteResponse = components['schemas']['CustomSchemaDeleteResponse'];
 /** Mappings object — keys are output field names, values are expressions over the native payload. */
 export type CustomSchemaMappings = components['schemas']['CustomSchemaMappings'];
+
 /**
- * Standard offset+limit pagination metadata. Returned by most list endpoints.
+ * Canonical cursor-based pagination envelope returned by EVERY list endpoint.
  *
- * `/v1/reservations` and `/v1/listings` use {@link ReservationPagination} /
- * {@link CursorPagination} instead — they support cursor walks.
+ * Pass `nextCursor` back as `?cursor=<value>` to fetch the next page; stop
+ * when `hasMore` is `false`. The cursor is opaque base64 — do not parse or
+ * construct it by hand. `total` is included by default (omit
+ * `?include_total=true` semantics live on each endpoint) and may be absent
+ * on very large workspaces when `?include_total=false` is passed.
  */
 export type Pagination = components['schemas']['Pagination'];
-/**
- * Cursor-only pagination — used by `/v1/reviews`, `/v1/conversations`,
- * `/v1/conversations/{id}/messages`, `/v1/listings`, etc. Pass
- * `next_cursor` back as `?cursor=` to fetch the next page; stop when
- * `has_more` is `false`.
- */
-export type CursorPagination = components['schemas']['CursorPagination'];
-/**
- * Reservation-list pagination — supports both legacy offset/limit and the
- * new cursor walk during the deprecation window. Migrate to `next_cursor`.
- */
-export type ReservationPagination = components['schemas']['ReservationPagination'];
+/** @deprecated Alias for {@link Pagination}. Removed in a future major. */
+export type CursorPagination = components['schemas']['Pagination'];
+/** @deprecated Alias for {@link Pagination}. Removed in a future major. */
+export type ReservationPagination = components['schemas']['Pagination'];
 
-/** Hand-typed (the OpenAPI shape was loose). */
+/**
+ * Connect session, returned by `POST /v1/connect/airbnb` (and other
+ * single-provider Connect routes).
+ *
+ * v0.2.0 rename: `oauthUrl` → `url`. Send the user to `url` (hosted on
+ * `connect.repull.dev`) and they bounce back to the `redirectUrl` you
+ * supplied after consent.
+ */
 export interface ConnectSession {
-  oauthUrl: string;
   sessionId: string;
+  /** Hosted URL to redirect the user to. Renamed from `oauthUrl` in v0.2.0. */
+  url: string;
   provider: string;
   expiresAt: string;
 }
@@ -124,8 +140,11 @@ export interface ConnectHost {
 export interface ConnectStatus {
   connected: boolean;
   provider: string;
-  /** Repull-side connection ID. Stable across token refreshes. Present when `connected` is true. */
-  id?: number;
+  /**
+   * Repull-side connection ID. Stable across token refreshes. Present when
+   * `connected` is true. v0.2.0: now a string (was number in v0.1.x).
+   */
+  id?: string;
   externalAccountId?: string | null;
   status?: 'active' | 'inactive' | 'error';
   createdAt?: string;
@@ -152,51 +171,29 @@ export type RepullProvider =
   | (string & {});
 
 /**
- * Standard paginated list response used by `/v1/properties` (and other
- * legacy offset/limit endpoints). For cursor walks (e.g. `/v1/reviews`,
- * `/v1/conversations`) use {@link CursorListResponse}; reservations use
- * {@link ReservationListResponse} which has both shapes during the
- * deprecation window.
+ * Canonical paginated list response. Every list endpoint on
+ * `api.repull.dev` returns this exact shape in v0.2.0 — no more bespoke
+ * envelopes, no more legacy `offset/limit` pagination.
+ *
+ * Walk pages with `?cursor=<pagination.nextCursor>`; stop when
+ * `pagination.hasMore` is `false`.
  */
 export interface ListResponse<T> {
   data: T[];
-  pagination: {
-    total: number;
-    limit: number;
-    offset: number;
-    hasMore?: boolean;
-  };
+  pagination: Pagination;
 }
 
 /**
- * Cursor-paginated list response. Pass `pagination.next_cursor` back as
- * `?cursor=<value>` to fetch the next page; stop when `pagination.has_more`
- * is `false`.
+ * @deprecated Alias for {@link ListResponse}. v0.1.x called this
+ * `CursorListResponse`. Will be removed in a future major.
  */
-export interface CursorListResponse<T> {
-  data: T[];
-  pagination: {
-    next_cursor: string | null;
-    has_more: boolean;
-  };
-}
+export type CursorListResponse<T> = ListResponse<T>;
 
 /**
- * Reservation list response — supports both the legacy `?offset=` walk
- * (returns `total/limit/offset`) and the new `?cursor=` walk (returns
- * `next_cursor/has_more`) during the deprecation window. Migrate to
- * `next_cursor`; legacy fields are removed after the `Sunset` header date.
+ * @deprecated Alias for `ListResponse<Reservation>`. v0.1.x called this
+ * `ReservationListResponse`. Will be removed in a future major.
  */
-export interface ReservationListResponse<T = Reservation> {
-  data: T[];
-  pagination: {
-    next_cursor?: string | null;
-    has_more?: boolean;
-    total?: number;
-    limit?: number;
-    offset?: number;
-  };
-}
+export type ReservationListResponse<T = Reservation> = ListResponse<T>;
 
 /** Health endpoint response. */
 export interface HealthResponse {
@@ -210,59 +207,34 @@ export interface HealthResponse {
 // Atlas market intelligence (`GET /v1/markets`)
 // ============================================================================
 
-/**
- * One market (city) the customer operates in, with KPIs derived from the
- * customer's own listings and Atlas's competitor index.
- *
- * `priceDiffPct` is positive when the customer's ADR is above the market
- * average — i.e. they're priced higher than competitors.
- */
-export interface MarketSummary {
-  city: string;
-  myListings: number;
-  totalListings: number;
-  marketSharePct: number | null;
-  myAvgAdr: number | null;
-  marketAvgAdr: number | null;
-  priceDiffPct: number | null;
-  myAvgRating: number | null;
-  marketAvgRating: number | null;
-  myOccupancyPct: number | null;
-  marketOccupancyPct: number | null;
-  propertyTypes: number;
-}
+/** One market the customer operates in (per-city KPIs). */
+export type MarketSummary = components['schemas']['MarketSummary'];
 
 /** Customer listing pin for the markets map view (lat/lng + ADR). */
-export interface MarketListingPin {
-  id: number;
-  name: string | null;
-  city: string | null;
-  lat: number;
-  lng: number;
-  thumbnail: string | null;
-  todayPrice: number | null;
-  blocked: boolean;
-  bookedNights: number;
-  availableNights: number;
-  type: 'mine';
-}
+export type MarketMyListing = components['schemas']['MarketMyListing'];
+/** @deprecated Alias for {@link MarketMyListing}. Removed in a future major. */
+export type MarketListingPin = MarketMyListing;
 
 /** A market the customer doesn't yet operate in but Atlas has comp coverage for. */
-export interface BrowseMarket {
-  city: string;
-  listings: number;
-}
+export type MarketBrowseEntry = components['schemas']['MarketBrowseEntry'];
+/** @deprecated Alias for {@link MarketBrowseEntry}. Removed in a future major. */
+export type BrowseMarket = MarketBrowseEntry;
 
-export interface MarketsResponse {
-  markets: MarketSummary[];
-  totals: {
-    myListings: number;
-    markets: number;
-    totalCompetitors?: number;
-  };
-  myListings?: MarketListingPin[];
-  browseMarkets?: BrowseMarket[];
-}
+/** Featured discovery market entry on the markets overview. */
+export type MarketBrowseFeatured = components['schemas']['MarketBrowseFeatured'];
+/** Country bucket for the markets overview discovery summary. */
+export type MarketBrowseCategory = components['schemas']['MarketBrowseCategory'];
+
+/**
+ * `GET /v1/markets` overview response. v0.2.0 reshape: per-city KPIs now
+ * live in `data` (matches the canonical envelope), with auxiliary slices
+ * (`totals`, `myListings`, `browse`, `freeMarket`, `subscriptions`,
+ * `tier`) returned as siblings.
+ */
+export type MarketsResponse = components['schemas']['MarketsOverviewResponse'];
+
+/** `GET /v1/markets/browse` paginated discovery catalog. */
+export type MarketBrowseResponse = components['schemas']['MarketBrowseResponse'];
 
 // ============================================================================
 // Atlas pricing recommendations (`GET /v1/listings/{id}/pricing`)

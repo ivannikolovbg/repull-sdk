@@ -31,7 +31,7 @@ export function MarketsCard({ auth }: { auth: AuthState }) {
       .finally(() => setLoading(false));
   }, [ready, auth.apiKey, auth.useSandbox]);
 
-  const markets = (data?.markets ?? []).slice(0, 3);
+  const markets: MarketSummary[] = (data?.data ?? []).slice(0, 3);
 
   return (
     <div className="rounded-lg border border-white/[0.08] bg-black/30 p-4 space-y-3">
@@ -87,7 +87,7 @@ function MarketRow({ market }: { market: MarketSummary }) {
         <div className="min-w-0">
           <div className="text-xs font-medium text-white/90 truncate">{market.city}</div>
           <div className="text-[10px] muted">
-            {market.myListings} of {market.totalListings.toLocaleString()} comps
+            {market.myListings} of {(market.totalListings ?? 0).toLocaleString()} comps
             {market.marketSharePct != null ? ` · ${market.marketSharePct}% share` : ''}
           </div>
         </div>

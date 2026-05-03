@@ -11,7 +11,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Health check */
+        /**
+         * Health check
+         * @description Liveness probe. Returns `{ status: "ok", version }` when the API process is running. No auth required. Suitable for uptime monitors, load-balancer health checks, and SDK self-tests.
+         */
         get: operations["get_health"];
         put?: never;
         post?: never;
@@ -30,7 +33,9 @@ export interface paths {
         };
         /**
          * List properties
-         * @description Returns all properties across connected PMS platforms. Supports pagination and filtering by provider.
+         * @description Cursor-paginated list of properties for the authenticated workspace. Walk pages with `?cursor=<pagination.nextCursor>`; stop when `pagination.hasMore` is `false`. Cursor is opaque base64 — do not parse it.
+         *
+         *     **Breaking change:** `?offset=` is no longer accepted. Requests passing it return 422 with a `did_you_mean: 'cursor'` hint.
          */
         get: operations["list_properties"];
         put?: never;
@@ -48,7 +53,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get property details */
+        /**
+         * Get property details
+         * @description Fetch a single property by Repull id. Property ids are workspace-scoped — an id from one workspace is not valid in another. 404 means the id does not exist OR belongs to a different workspace.
+         */
         get: operations["get_property"];
         put?: never;
         post?: never;
@@ -69,13 +77,16 @@ export interface paths {
          * List reservations
          * @description Cursor-paginated list of reservations across all connected PMS platforms. Filter by platform, status, listing, or check-in date range.
          *
-         *     **Pagination:** Walk pages with `?cursor=` — pass `pagination.next_cursor` from one response back as `?cursor=` on the next request. Stop when `pagination.has_more` is `false`. `limit` defaults to 50, max 100; requesting more returns 422 (no silent truncation).
+         *     **Pagination:** Walk pages with `?cursor=` — pass `pagination.nextCursor` from one response back as `?cursor=` on the next request. Stop when `pagination.hasMore` is `false`. `limit` defaults to 50, max 100; requesting more returns 422 (no silent truncation).
          *
-         *     **Deprecation:** The `?offset=` query param is supported for backward compatibility but is deprecated and will be removed after the `Sunset` header date. Responses to offset requests carry a `Deprecation: true` header. Migrate to `?cursor=`.
+         *     **Breaking change:** `?offset=` is no longer accepted. Requests passing it return 422 with a `did_you_mean: 'cursor'` hint.
          */
         get: operations["list_reservations"];
         put?: never;
-        /** Create a reservation */
+        /**
+         * Create a reservation
+         * @description Create a reservation in the source PMS. Required fields depend on the connected provider (e.g. Airbnb requires guest email; Booking.com requires hotel id). Validation errors return 422 with the offending `field` populated.
+         */
         post: operations["create_reservation"];
         delete?: never;
         options?: never;
@@ -97,11 +108,17 @@ export interface paths {
         get: operations["get_reservation"];
         put?: never;
         post?: never;
-        /** Cancel reservation */
+        /**
+         * Cancel reservation
+         * @description Cancel an existing reservation. Cancellation rules vary by provider — Airbnb host-cancellations carry penalties; Booking.com cancellations apply the per-rate-plan policy. Once 200 is returned, the upstream PMS state is committed.
+         */
         delete: operations["cancel_reservation"];
         options?: never;
         head?: never;
-        /** Update reservation */
+        /**
+         * Update reservation
+         * @description Patch reservation fields (dates, status, special requests). Only fields included in the body are modified. Use the cancel endpoint for cancellations — DELETE handles cancellation but not partial updates.
+         */
         patch: operations["update_reservation"];
         trace?: never;
     };
@@ -138,7 +155,7 @@ export interface paths {
         };
         /**
          * List guests
-         * @description Cursor-paginated list of guests in the workspace. Walks `guests.id ASC` keyset for constant per-page cost regardless of how many guests the customer has. Use `pagination.next_cursor` from one response as the `cursor` query param of the next request.
+         * @description Cursor-paginated list of guests in the workspace. Walks `guests.id ASC` keyset for constant per-page cost regardless of how many guests the customer has. Use `pagination.nextCursor` from one response as the `cursor` query param of the next request.
          *
          *     Filters: `q` (substring on name/email/phone), `has_reservation` (`true`|`false`), `listing_id` (restrict to guests with at least one reservation on that listing).
          */
@@ -180,7 +197,7 @@ export interface paths {
         };
         /**
          * List conversations
-         * @description Cursor-paginated list of message threads owned by the workspace. Backed by main vanio's `/api/threads/list` which keyset-paginates against `(last_message_at, id)` for constant per-page cost. Use `pagination.next_cursor` from one response as the `cursor` query param of the next request.
+         * @description Cursor-paginated list of message threads owned by the workspace. Backed by main vanio's `/api/threads/list` which keyset-paginates against `(last_message_at, id)` for constant per-page cost. Use `pagination.nextCursor` from one response as the `cursor` query param of the next request.
          *
          *     Filters: `platform` (`airbnb`|`booking`|`vrbo`|`website`|`email`), `status` (`open`|`archived` — `archived` is a stable no-op until the bit lands on `message_threads`).
          */
@@ -222,7 +239,7 @@ export interface paths {
         };
         /**
          * List messages in a conversation
-         * @description Cursor-paginated messages within one thread. Defaults to newest-first (`?order=desc`); pass `?order=asc` for chronological replay. Use `pagination.next_cursor` from one response as the `cursor` query param of the next request.
+         * @description Cursor-paginated messages within one thread. Defaults to newest-first (`?order=desc`); pass `?order=asc` for chronological replay. Use `pagination.nextCursor` from one response as the `cursor` query param of the next request.
          */
         get: operations["listConversationMessages"];
         put?: never;
@@ -264,7 +281,7 @@ export interface paths {
         };
         /**
          * Get review
-         * @description Returns one review (matching the list-endpoint `Review` shape) wrapped in `{ data: Review }`. Scoped to the authenticated workspace via the listings join — reviews that don't belong to the workspace return 404 (we don't differentiate to avoid leaking other customers' ids).
+         * @description Returns one review (the bare `Review` object — NOT wrapped in `{ data: ... }`). Scoped to the authenticated workspace via the listings join — reviews that don't belong to the workspace return 404 (we don't differentiate to avoid leaking other customers' ids).
          */
         get: operations["getReview"];
         put?: never;
@@ -363,7 +380,10 @@ export interface paths {
          *     Airbnb-specific: pass `redirectUrl` (where to send the user after consent) and optionally `accessType` (`read_only` for calendar-only OAuth scopes, or `full_access` — the default — for full host scopes). The response returns a hosted `oauthUrl` to redirect the user to.
          */
         post: operations["create_connection"];
-        /** Disconnect provider */
+        /**
+         * Disconnect provider
+         * @description Disconnect a PMS or OTA from this workspace. Revokes the OAuth token (where applicable), purges credentials, and stops all sync jobs. Resources synced from the provider remain queryable but become read-only and stop receiving updates.
+         */
         delete: operations["delete_connection"];
         options?: never;
         head?: never;
@@ -447,7 +467,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List webhook subscriptions */
+        /**
+         * List webhook subscriptions
+         * @description List every webhook subscription registered for this workspace. Each row includes the destination URL, subscribed event types, and the most recent delivery summary.
+         */
         get: operations["list_webhooks"];
         put?: never;
         /**
@@ -488,11 +511,17 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get webhook subscription */
+        /**
+         * Get webhook subscription
+         * @description Fetch a single webhook subscription by id. Use the `deliveries` sub-resource to list recent attempts, and `ping` to send a test event.
+         */
         get: operations["get_webhook"];
         put?: never;
         post?: never;
-        /** Delete webhook subscription */
+        /**
+         * Delete webhook subscription
+         * @description Delete a webhook subscription. In-flight deliveries already on the queue are still attempted; new events stop firing immediately.
+         */
         delete: operations["delete_webhook"];
         options?: never;
         head?: never;
@@ -572,7 +601,7 @@ export interface paths {
         };
         /**
          * List webhook deliveries
-         * @description Paginated history of every delivery attempt for this subscription.
+         * @description Cursor-paginated history of every delivery attempt for this subscription. Walk pages with `?cursor=<pagination.nextCursor>`; stop when `pagination.hasMore` is `false`. The cursor is opaque base64 — do not parse it.
          */
         get: operations["list_webhook_deliveries"];
         put?: never;
@@ -650,10 +679,16 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Airbnb listings */
+        /**
+         * List Airbnb listings
+         * @description List every Airbnb listing this workspace has access to via the connected Airbnb account. Sourced from the Airbnb Listing API. Listings sync automatically every few minutes — pass `?refresh=true` to force a fresh upstream pull.
+         */
         get: operations["list_airbnb_listings"];
         put?: never;
-        /** Create/push Airbnb listing */
+        /**
+         * Create/push Airbnb listing
+         * @description Create a new Airbnb listing or push an existing Repull listing to Airbnb. Requires a connected Airbnb account. Returns the created listing id; publishing happens via the listing-action endpoint.
+         */
         post: operations["create_airbnb_listing"];
         delete?: never;
         options?: never;
@@ -668,10 +703,16 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Airbnb listing */
+        /**
+         * Get Airbnb listing
+         * @description Fetch a single Airbnb listing by id with full pricing, availability, and content. Listing ids are Airbnb-side ids (numeric strings).
+         */
         get: operations["get_airbnb_listing"];
         put?: never;
-        /** Listing action (push/publish/unlist/delete) */
+        /**
+         * Listing action (push/publish/unlist/delete)
+         * @description Apply a state action to an Airbnb listing — `push` (sync local changes upstream), `publish` (make publicly bookable), `unlist` (hide), or `delete` (permanent). Each action has different reversibility — see docs.
+         */
         post: operations["airbnb_listing_action"];
         delete?: never;
         options?: never;
@@ -686,9 +727,15 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Airbnb pricing */
+        /**
+         * Get Airbnb pricing
+         * @description Read the current pricing config (base price, weekend uplift, length-of-stay discounts, smart-pricing bounds) for an Airbnb listing.
+         */
         get: operations["get_airbnb_listing_pricing"];
-        /** Update Airbnb pricing */
+        /**
+         * Update Airbnb pricing
+         * @description Push pricing changes to Airbnb. The full pricing object is replaced — to patch a single field, GET first, mutate locally, then PUT the whole object.
+         */
         put: operations["update_airbnb_listing_pricing"];
         post?: never;
         delete?: never;
@@ -704,9 +751,15 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Airbnb availability */
+        /**
+         * Get Airbnb availability
+         * @description Read the per-day availability calendar for an Airbnb listing. Returns one row per day including price overrides, min-stay, and blocked status.
+         */
         get: operations["get_airbnb_listing_availability"];
-        /** Update Airbnb availability */
+        /**
+         * Update Airbnb availability
+         * @description Push per-day availability + pricing overrides to Airbnb. Accepts a sparse map (date → fields) — only included dates are updated.
+         */
         put: operations["update_airbnb_listing_availability"];
         post?: never;
         delete?: never;
@@ -722,10 +775,16 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Airbnb photos */
+        /**
+         * List Airbnb photos
+         * @description List photos attached to an Airbnb listing in display order. Returns the public CDN URL plus Airbnb-side metadata (id, caption, room).
+         */
         get: operations["list_airbnb_listing_photos"];
         put?: never;
-        /** Upload photos to Airbnb */
+        /**
+         * Upload photos to Airbnb
+         * @description Upload one or more photos to an Airbnb listing. Accepts public image URLs (Airbnb fetches them) — direct binary upload is not supported on this endpoint.
+         */
         post: operations["upload_airbnb_listing_photos"];
         delete?: never;
         options?: never;
@@ -740,7 +799,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Airbnb message threads */
+        /**
+         * List Airbnb message threads
+         * @description List Airbnb message threads (one per guest conversation). Cursor-paginated. Each thread includes a preview of the latest message.
+         */
         get: operations["list_airbnb_threads"];
         put?: never;
         post?: never;
@@ -757,10 +819,16 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Airbnb messages */
+        /**
+         * Get Airbnb messages
+         * @description Fetch the full message log for an Airbnb thread, ordered oldest-to-newest. Walk pages with `?cursor=` until `pagination.hasMore` is `false`.
+         */
         get: operations["list_airbnb_thread_messages"];
         put?: never;
-        /** Send Airbnb message */
+        /**
+         * Send Airbnb message
+         * @description Send a message in an Airbnb thread as the host. Airbnb enforces content rules (no off-platform contact info, no external URLs) — violating messages are rejected upstream and surface as `airbnb_error`.
+         */
         post: operations["send_airbnb_message"];
         delete?: never;
         options?: never;
@@ -775,7 +843,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Airbnb reservations */
+        /**
+         * List Airbnb reservations
+         * @description List reservations sourced directly from Airbnb. Use this when you need Airbnb-specific fields (guest payout split, cancellation policy snapshot) that the unified `/v1/reservations` endpoint flattens away.
+         */
         get: operations["list_airbnb_reservations"];
         put?: never;
         post?: never;
@@ -792,10 +863,16 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Airbnb reservation */
+        /**
+         * Get Airbnb reservation
+         * @description Fetch a single Airbnb reservation by Airbnb confirmation code (e.g. `HMABCDEF12`).
+         */
         get: operations["get_airbnb_reservation"];
         put?: never;
-        /** Accept/decline/cancel Airbnb reservation */
+        /**
+         * Accept/decline/cancel Airbnb reservation
+         * @description Apply a state action to an Airbnb reservation — `accept` / `decline` (for inquiries and reservation requests), `cancel` (host cancellation, carries penalties), `pre-approve` (for inquiries).
+         */
         post: operations["airbnb_reservation_action"];
         delete?: never;
         options?: never;
@@ -810,10 +887,16 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Airbnb reviews */
+        /**
+         * List Airbnb reviews
+         * @description List reviews left by guests on Airbnb listings in this workspace. Includes both reviews of the host and reviews of the guest (where the host has not yet submitted theirs).
+         */
         get: operations["list_airbnb_reviews"];
         put?: never;
-        /** Respond to Airbnb review */
+        /**
+         * Respond to Airbnb review
+         * @description Post a public response to a guest review. Airbnb allows one response per review — repeated POSTs return 409.
+         */
         post: operations["respond_airbnb_review"];
         delete?: never;
         options?: never;
@@ -850,7 +933,7 @@ export interface paths {
         };
         /**
          * List listings
-         * @description Cursor-paginated list of listings owned by the authenticated workspace. Use `pagination.next_cursor` from one response as the `cursor` query param of the next request to walk the full set. Filters: `q` (substring on name/street/city), `status`, `channel`.
+         * @description Cursor-paginated list of listings owned by the authenticated workspace. Use `pagination.nextCursor` from one response as the `cursor` query param of the next request to walk the full set. Filters: `q` (substring on name/street/city), `status`, `channel`.
          */
         get: operations["listListings"];
         put?: never;
@@ -859,6 +942,26 @@ export interface paths {
          * @description Create a new vacation-rental listing under the authenticated workspace. The listing is stored in the canonical Vanio listings tables and can be published to multiple channels (Airbnb, Booking.com) via the publish endpoints.
          */
         post: operations["createListing"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/listings/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get a listing
+         * @description Fetch a single listing by id. Returns the same shape as one element of the `GET /v1/listings` response, so you can bind the result to the same model. Cross-tenant access (a listing that belongs to a different workspace) returns 404 — never 403, never reveals the listing's existence.
+         */
+        get: operations["getListing"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -952,10 +1055,16 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Booking.com properties */
+        /**
+         * List Booking.com properties
+         * @description List Booking.com hotels claimed by this workspace. Each row includes the Booking-side hotel id and the connected room types.
+         */
         get: operations["list_booking_properties"];
         put?: never;
-        /** Create Booking.com property */
+        /**
+         * Create Booking.com property
+         * @description Onboard a new Booking.com hotel via the OAuth Connect flow. Returns the hotel id once Stage-1 designation completes in the Extranet.
+         */
         post: operations["create_booking_property"];
         delete?: never;
         options?: never;
@@ -971,7 +1080,10 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        /** Update Booking.com rates/availability */
+        /**
+         * Update Booking.com rates/availability
+         * @description Push availability + rate changes to Booking.com's OTA system. Accepts the standard OTA rate message — see Booking's OTA docs for the field shape. Errors from upstream surface as `booking_error`.
+         */
         put: operations["update_booking_availability"];
         post?: never;
         delete?: never;
@@ -987,10 +1099,16 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Booking.com content */
+        /**
+         * Get Booking.com content
+         * @description Fetch the current content (descriptions, amenities, photos) for a Booking.com property. Used to round-trip edits through Repull.
+         */
         get: operations["get_booking_content"];
         put?: never;
-        /** Update Booking.com content */
+        /**
+         * Update Booking.com content
+         * @description Push content changes (descriptions, amenities, photos) to Booking.com. Booking enforces editorial review on text fields — changes appear after their content moderation queue clears.
+         */
         post: operations["update_booking_content"];
         delete?: never;
         options?: never;
@@ -1005,10 +1123,16 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Booking.com conversations */
+        /**
+         * List Booking.com conversations
+         * @description List Booking.com guest conversations. Cursor-paginated. Use the messaging POST to send a reply.
+         */
         get: operations["list_booking_conversations"];
         put?: never;
-        /** Send Booking.com message */
+        /**
+         * Send Booking.com message
+         * @description Send a message in a Booking.com conversation as the host. Booking enforces content rules similar to Airbnb.
+         */
         post: operations["send_booking_message"];
         delete?: never;
         options?: never;
@@ -1025,7 +1149,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Bulk sync to Booking.com */
+        /**
+         * Bulk sync to Booking.com
+         * @description Trigger a full bulk sync of properties + availability + rates to Booking.com. Runs async — returns 202 with a job id; poll `/v1/sync/jobs/{id}` for status.
+         */
         post: operations["sync_booking"];
         delete?: never;
         options?: never;
@@ -1066,7 +1193,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List VRBO listings */
+        /**
+         * List VRBO listings
+         * @description List VRBO listings this workspace owns. VRBO is agency-model — Repull reads listings via the public iCal/HTTP feeds.
+         */
         get: operations["list_vrbo_listings"];
         put?: never;
         post?: never;
@@ -1109,7 +1239,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List VRBO reservations */
+        /**
+         * List VRBO reservations
+         * @description List VRBO reservations sourced from the public booking feed. Lag is typically 5-10 minutes vs. Airbnb / Booking.com.
+         */
         get: operations["list_vrbo_reservations"];
         put?: never;
         post?: never;
@@ -1126,7 +1259,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Plumguide listings */
+        /**
+         * List Plumguide listings
+         * @description List Plumguide listings this workspace has access to. Plumguide is approval-based — listings appear once Plumguide has accepted them.
+         */
         get: operations["list_plumguide_listings"];
         put?: never;
         post?: never;
@@ -1143,9 +1279,15 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Plumguide availability */
+        /**
+         * Get Plumguide availability
+         * @description Read the per-day availability calendar for a Plumguide listing. Returns the same row shape as Airbnb availability for SDK convenience.
+         */
         get: operations["get_plumguide_availability"];
-        /** Push availability to Plumguide */
+        /**
+         * Push availability to Plumguide
+         * @description Push per-day availability changes to Plumguide. Plumguide accepts only the next 24 months — dates beyond that are silently ignored.
+         */
         put: operations["update_plumguide_availability"];
         post?: never;
         delete?: never;
@@ -1161,9 +1303,15 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Plumguide pricing */
+        /**
+         * Get Plumguide pricing
+         * @description Read the current pricing for a Plumguide listing (base price, currency, weekend uplift).
+         */
         get: operations["get_plumguide_pricing"];
-        /** Push pricing to Plumguide */
+        /**
+         * Push pricing to Plumguide
+         * @description Push pricing changes to Plumguide. Plumguide rounds all prices to whole units of the listing currency — sub-unit precision is silently truncated.
+         */
         put: operations["update_plumguide_pricing"];
         post?: never;
         delete?: never;
@@ -1255,7 +1403,7 @@ export interface paths {
         };
         /**
          * Pricing recommendation audit trail
-         * @description Cursor-paginated audit trail of pricing recommendations vs applied prices for a listing across a date window. Use `pagination.next_cursor` from one response as the `cursor` query param of the next request.
+         * @description Cursor-paginated audit trail of pricing recommendations vs applied prices for a listing across a date window. Use `pagination.nextCursor` from one response as the `cursor` query param of the next request.
          *
          *     Defaults to ±90 days from today. Cursor is a keyset on `date ASC` — stable even if rows are added during a partner's pagination walk. `limit` is capped at 500 — exceeding returns 422.
          */
@@ -1344,7 +1492,9 @@ export interface paths {
         };
         /**
          * Paginated discovery catalog
-         * @description Cursor-paginated, search-filterable catalog of every Atlas-tracked market the customer could expand into. Backed by the precomputed `market_summaries` table (>=5 active comps per city). Supports fuzzy `q` substring search (trigram-indexed), `country` (ISO 3166-1 alpha-2) filter, and `sort` (`listings_desc` | `name_asc`). Use the `next_cursor` from `pagination` to walk pages — the cursor is an opaque base64 token; do not parse it.
+         * @description Cursor-paginated, search-filterable catalog of every Atlas-tracked market the customer could expand into. Backed by the precomputed `market_summaries` table (>=5 active comps per city). Supports fuzzy `q` substring search (trigram-indexed), `country` (ISO 3166-1 alpha-2) filter, and `sort` (`listings_desc` | `name_asc`). Use the `nextCursor` from `pagination` to walk pages — the cursor is an opaque base64 token; do not parse it.
+         *
+         *     `pagination.total` is the count of markets matching the current `q`/`country`/`min_listings` filter (across all pages). Renamed from the upstream's legacy `total_in_filter` so SDK consumers see the same `pagination.total` field as on every other list endpoint.
          */
         get: operations["list_market_browse"];
         put?: never;
@@ -1429,7 +1579,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get plan and usage */
+        /**
+         * Get plan and usage
+         * @description Fetch the current plan, usage counters, and billing-cycle reset date for this workspace. Use this to surface a "you have used X / Y" indicator in your dashboard.
+         */
         get: operations["get_billing"];
         put?: never;
         /**
@@ -1506,7 +1659,7 @@ export interface components {
         /** @description A vacation rental property from a connected PMS */
         Property: {
             /** @description Internal Repull property ID */
-            id?: number;
+            id?: string;
             /** @description ID in the source PMS */
             externalId?: string;
             /**
@@ -1546,11 +1699,11 @@ export interface components {
         /** @description A booking/reservation from a connected PMS. Identical shape between list-row (`GET /v1/reservations`) and detail (`GET /v1/reservations/{id}`) — SDK consumers can use the same type for both. */
         Reservation: {
             /** @description Internal Repull reservation ID */
-            id: number;
+            id: string;
             /** @description Internal Repull listing ID this reservation is on. */
-            listingId: number;
+            listingId: string;
             /** @description Internal Repull guest ID. Use `GET /v1/guests/{id}` for the full profile. */
-            guestId: number;
+            guestId: string;
             /**
              * Format: date
              * @example 2026-04-15
@@ -1601,7 +1754,7 @@ export interface components {
         };
         /** @description Guest list-row shape returned by `GET /v1/guests`. Pre-resolved primary phone/email + display name + cumulative stay aggregates so list UIs can render without a per-row round-trip. */
         Guest: {
-            id?: number;
+            id?: string;
             /**
              * @description Short display name (first name).
              * @example Jane
@@ -1637,7 +1790,7 @@ export interface components {
             /** Format: date-time */
             firstStayedAt?: string | null;
             /** Format: date-time */
-            created_at?: string;
+            createdAt?: string;
         };
         /** @description One contact channel attached to a guest profile (phone, email, etc.). */
         GuestContact: {
@@ -1649,9 +1802,9 @@ export interface components {
             /** @example +15551234567 */
             value?: string;
             verified?: boolean;
-            is_primary?: boolean;
+            isPrimary?: boolean;
             /** Format: date-time */
-            last_used?: string | null;
+            lastUsed?: string | null;
         };
         /** @description A risk/operational flag attached to a guest profile (e.g. blacklist, do-not-host, VIP). Severity comes from main vanio's flag taxonomy. */
         GuestFlag: {
@@ -1659,17 +1812,17 @@ export interface components {
             type?: string;
             /** @description Reason text when present. */
             note?: string | null;
-            is_active?: boolean;
+            isActive?: boolean;
             /** Format: date-time */
-            created_at?: string | null;
+            createdAt?: string | null;
         };
         GuestNote: {
-            id?: number;
+            id?: string;
             body?: string | null;
             category?: string | null;
             /** Format: date-time */
-            created_at?: string | null;
-            created_by?: string | null;
+            createdAt?: string | null;
+            createdBy?: string | null;
         };
         /** @description Aggregate counts of reservations attached to the guest. `future` is derived from `total - past - cancelled`. */
         GuestReservationsSummary: {
@@ -1680,7 +1833,7 @@ export interface components {
         };
         /** @description Full guest profile returned by `GET /v1/guests/{id}`. Aggregates the base list-row fields plus contacts, flags, notes, risk metadata, and a reservations-summary rollup. */
         GuestProfile: {
-            id?: number;
+            id?: string;
             displayName?: string;
             displayNameLong?: string;
             /** Format: uri */
@@ -1700,11 +1853,11 @@ export interface components {
             riskLevel?: string | null;
             verificationLevel?: string | null;
             /** Format: date-time */
-            created_at?: string | null;
+            createdAt?: string | null;
             contacts?: components["schemas"]["GuestContact"][];
             flags?: components["schemas"]["GuestFlag"][];
             notes?: components["schemas"]["GuestNote"][];
-            reservations_summary?: components["schemas"]["GuestReservationsSummary"];
+            reservationsSummary?: components["schemas"]["GuestReservationsSummary"];
         };
         CalendarDay: {
             /**
@@ -1720,35 +1873,35 @@ export interface components {
         };
         /** @description Channel-agnostic message thread between the host workspace and a guest. Returned by `GET /v1/conversations`. The `id` is the internal Repull thread id (integer) — pass it back as the `{id}` path param on detail / messages calls. */
         Conversation: {
-            id?: number;
+            id?: string;
             /**
              * @example airbnb
              * @enum {string|null}
              */
             platform?: "airbnb" | "booking" | "vrbo" | "website" | "email" | null;
-            guest_id?: number | null;
-            listing_id?: number | null;
-            reservation_id?: number | null;
+            guestId?: string | null;
+            listingId?: string | null;
+            reservationId?: string | null;
             /** @description Thread subject (email/website channels) or null when not applicable. */
             subject?: string | null;
             /** Format: date-time */
-            last_message_at?: string | null;
+            lastMessageAt?: string | null;
             /** @description Short preview of the most recent message body for list-UI rendering. */
-            last_message_preview?: string | null;
-            unread_count?: number;
+            lastMessagePreview?: string | null;
+            unreadCount?: number;
             /**
              * @description `archived` is reserved for a future bit on `message_threads` — currently always `open`.
              * @enum {string}
              */
             status?: "open" | "archived";
             /** Format: date-time */
-            created_at?: string;
+            createdAt?: string;
             /** Format: date-time */
-            updated_at?: string;
+            updatedAt?: string;
         };
         /** @description Linked host metadata for a conversation thread. Currently populated for Airbnb threads (resolved through `airbnb_hosts`); null for other channels until per-channel host enrichment lands. */
         ConversationHost: {
-            id?: number;
+            id?: string;
             /** @description Airbnb-side host id. */
             airbnbId?: string;
             firstName?: string;
@@ -1765,7 +1918,7 @@ export interface components {
         };
         /** @description Linked guest metadata for a conversation thread. Resolved through the thread's `reservation_id` → `reservations.guest_id`. Up to 50 contacts are returned. */
         ConversationGuest: {
-            id?: number;
+            id?: string;
             displayName?: string;
             /** Format: uri */
             avatarUrl?: string | null;
@@ -1777,7 +1930,7 @@ export interface components {
             guest?: components["schemas"]["ConversationGuest"] | null;
         };
         ConversationMessageAttachment: {
-            id?: number;
+            id?: string;
             /** Format: uri */
             imageUrl?: string;
             /** @example image/jpeg */
@@ -1787,33 +1940,33 @@ export interface components {
         };
         /** @description A single message inside a conversation thread. Returned by `GET /v1/conversations/{id}/messages`. `direction` is normalized to `inbound` (from the guest) / `outbound` (from the host or an automation). */
         Message: {
-            id?: number;
+            id?: string;
             /** @description ID assigned by the source channel (Airbnb message id, Booking message id, etc.). Stable across syncs. */
-            external_message_id?: string | null;
+            externalMessageId?: string | null;
             /** @enum {string} */
             direction?: "inbound" | "outbound";
             /** @description Free-form sender role from the channel (e.g. `guest`, `host`, `system`, `airbnb`). Use `direction` for binary inbound/outbound logic. */
-            sender_type?: string | null;
-            sender_name?: string;
+            senderType?: string | null;
+            senderName?: string;
             /** Format: uri */
-            sender_avatar?: string | null;
+            senderAvatar?: string | null;
             /** @description Delivery channel — `airbnb`, `booking`, `sms`, `email`, etc. */
             channel?: string | null;
             /** @description Message body in the original language. */
             body?: string;
             /** @description English translation when the original language is non-English and a translation has been computed. */
-            translated_body?: string | null;
+            translatedBody?: string | null;
             attachments?: components["schemas"]["ConversationMessageAttachment"][];
             /** @description `true` when the message was sent by a Vanio automation (template, schedule, etc.). */
-            is_automated?: boolean;
+            isAutomated?: boolean;
             /** @description `true` when the body was authored by Vanio AI (autopilot, draft). */
-            ai_generated?: boolean;
+            aiGenerated?: boolean;
             /** Format: date-time */
-            sent_at?: string;
+            sentAt?: string;
             /** Format: date-time */
-            delivered_at?: string;
+            deliveredAt?: string;
             /** Format: date-time */
-            read_at?: string | null;
+            readAt?: string | null;
         };
         /** @description One scored sub-category of a multi-axis review (cleanliness, communication, accuracy, etc.). Categories vary by platform. */
         ReviewCategory: {
@@ -1827,55 +1980,55 @@ export interface components {
         ReviewResponse: {
             body?: string;
             /** Format: date-time */
-            submitted_at?: string | null;
+            submittedAt?: string | null;
         };
         /** @description A guest or host review unified across channels. Returned by `GET /v1/reviews` and `GET /v1/reviews/{id}`. Populated from main vanio's unified `reviews` table after the per-channel backfill cron has run. */
         Review: {
             /** @description Internal Repull review id — pass back to `/v1/reviews/{id}`. */
-            id?: number;
+            id?: string;
             /** @description ID in the source channel (Airbnb review id, Booking review id, etc.). */
-            external_id?: string;
+            externalId?: string;
             /** @enum {string|null} */
             platform?: "airbnb" | "booking" | "vrbo" | null;
             /** @description Internal Repull listing id the review is attached to. */
-            listing_id?: number | null;
-            reservation_id?: number | null;
+            listingId?: string | null;
+            reservationId?: string | null;
             /** @description Channel-side confirmation code for the reservation being reviewed. */
-            reservation_confirmation_code?: string | null;
-            guest_id?: number | null;
-            guest_name?: string | null;
+            reservationConfirmationCode?: string | null;
+            guestId?: string | null;
+            guestName?: string | null;
             /** Format: uri */
-            guest_avatar?: string | null;
+            guestAvatar?: string | null;
             /**
              * @description Who wrote the review — `guest` (about the host/property) or `host` (about the guest).
              * @enum {string}
              */
-            reviewer_role?: "guest" | "host";
+            reviewerRole?: "guest" | "host";
             /** @description Overall rating on the platform's scale (typically 1..5). May be `null` for review types that lack a numeric overall score. */
             rating?: number | null;
             categories?: components["schemas"]["ReviewCategory"][];
             /** @description Public-facing review text shown on the listing page. */
-            public_review?: string | null;
+            publicReview?: string | null;
             /** @description Private feedback the reviewer sent only to the host. */
-            private_feedback?: string | null;
+            privateFeedback?: string | null;
             /** @description Did the reviewer recommend the reviewee? Used for guest-side reviews. */
-            is_reviewee_recommended?: boolean | null;
+            isRevieweeRecommended?: boolean | null;
             response?: components["schemas"]["ReviewResponse"] | null;
             /** Format: date-time */
-            submitted_at?: string | null;
+            submittedAt?: string | null;
             /** Format: date-time */
-            updated_at?: string | null;
+            updatedAt?: string | null;
             /**
              * Format: date-time
              * @description When the review window closes (Airbnb has a 14-day window after checkout).
              */
-            expires_at?: string | null;
+            expiresAt?: string | null;
             hidden?: boolean;
             /** @description Detected language (ISO 639-1) of the review body. */
             language?: string | null;
         };
         Connection: {
-            id?: number;
+            id?: string;
             /** @example hostaway */
             provider?: string;
             /**
@@ -2002,7 +2155,7 @@ export interface components {
              * @description Repull-side connection ID. Stable across token refreshes.
              * @example 3
              */
-            id?: number;
+            id?: string;
             /**
              * @example active
              * @enum {string}
@@ -2094,11 +2247,7 @@ export interface components {
         };
         WebhookDeliveryListResponse: {
             data?: components["schemas"]["WebhookDelivery"][];
-            pagination?: {
-                limit?: number;
-                hasMore?: boolean;
-                nextCursor?: string | null;
-            };
+            pagination?: components["schemas"]["Pagination"];
         };
         WebhookEventCatalog: {
             domains?: {
@@ -2294,79 +2443,135 @@ export interface components {
         /** @description Returned by `GET /v1/schema/custom`. Returns every custom schema owned by the workspace. */
         CustomSchemaListResponse: {
             data?: components["schemas"]["CustomSchemaSummary"][];
+            pagination?: components["schemas"]["Pagination"];
         };
         CustomSchemaDeleteResponse: {
             /** @example true */
             deleted: boolean;
         };
+        /** @description Standardized error envelope. Returned by EVERY 4xx/5xx response on this API. Required fields (`code`, `message`, `fix`, `docs_url`, `request_id`) are designed for LLM-driven self-recovery — an AI agent should be able to fix the underlying problem and retry without escalating to a human. Lead with `fix` and `docs_url` in your tooling; demote `support` (rare) to a last resort. */
         Error: {
-            error?: {
-                /** @example invalid_api_key */
-                code?: string;
-                /** @example The API key provided is invalid. */
-                message?: string;
+            error: {
+                /**
+                 * @description Stable machine-parseable error identifier. Match on this for retry logic. Codes are namespaced and never change meaning.
+                 * @example invalid_params
+                 */
+                code: string;
+                /**
+                 * @description Human-readable cause. Echoes the offending value when relevant.
+                 * @example The check_in_after parameter must be an ISO 8601 date (YYYY-MM-DD or YYYY-MM-DDTHH:mm:ssZ). You sent: 'garbage'.
+                 */
+                message: string;
+                /**
+                 * @description Exact recovery steps. Surface this verbatim in your UI / agent reasoning trace — it is written to be actionable without further reading.
+                 * @example Pass check_in_after as a string in ISO 8601 format. Example: ?check_in_after=2026-01-15
+                 */
+                fix: string;
                 /**
                  * Format: uri
-                 * @example https://repull.dev/docs/errors#invalid_api_key
+                 * @description Canonical write-up for this error code. URL pattern: `https://repull.dev/docs/errors/{code}`.
+                 * @example https://repull.dev/docs/errors/invalid_params
                  */
-                docs_url?: string;
-                /** @description Example of correct usage */
-                example?: string;
+                docs_url: string;
+                /**
+                 * @description Opaque per-request id. Mirrors the `x-request-id` response header. Capture it before retrying so logs can be correlated.
+                 * @example req_01J5X7Y8Z9ABCDEF12345678
+                 */
+                request_id: string;
+                /**
+                 * @description Body field, query param, or path segment the error is about. Present when the error is parameter-specific.
+                 * @example check_in_after
+                 */
+                field?: string;
+                /**
+                 * @description Echo of the offending value (truncated to 200 chars). Useful for debugging — helps callers see what the server actually parsed.
+                 * @example garbage
+                 */
+                value_received?: unknown;
+                /**
+                 * @description Allowed values when the error is enum-related (e.g. unknown `provider`, unknown `status`).
+                 * @example [
+                 *       "airbnb",
+                 *       "booking",
+                 *       "vrbo",
+                 *       "plumguide"
+                 *     ]
+                 */
+                valid_values?: string[];
+                /**
+                 * @description Sorted list of every query param this endpoint accepts. Present on `code: "unknown_params"` (HTTP 422) so SDK consumers can self-correct without reading docs.
+                 * @example [
+                 *       "cursor",
+                 *       "has_reservation",
+                 *       "include_total",
+                 *       "limit",
+                 *       "listingId",
+                 *       "q"
+                 *     ]
+                 */
+                validParams?: string[];
+                /**
+                 * @description The endpoint path that produced the error. Present on `code: "unknown_params"` so consumers can match validation failures to the operation they invoked.
+                 * @example /v1/guests
+                 */
+                endpoint?: string;
+                /**
+                 * @description Suggestion for typos and near-matches. Present when the server can guess the intent.
+                 * @example check_in_after
+                 */
+                did_you_mean?: string;
+                /**
+                 * @description Seconds the client should wait before retrying. Mirrors the `Retry-After` HTTP header. Present on rate-limit responses and on transient upstream failures that are safe to retry.
+                 * @example 60
+                 */
+                retry_after?: number;
+                /** @description LAST-RESORT contact handle. Only set on errors that genuinely cannot be self-fixed (billing dispute, account-state corruption, OAuth partner intervention). Never fall back to support before trying `fix` and `docs_url`. */
+                support?: {
+                    /** Format: email */
+                    email?: string;
+                    /** Format: uri */
+                    url?: string;
+                    /** @description Internal reference to quote when contacting support. */
+                    reference?: string;
+                };
             };
         };
+        /** @description Canonical cursor-based pagination envelope. Pass `nextCursor` back as `?cursor=` to fetch the next page; stop when `hasMore` is `false`. The cursor is opaque base64 — do not parse or construct it by hand. */
         Pagination: {
+            /** @description Opaque base64 cursor — pass back as `?cursor=<value>`. `null` when there are no more pages. */
+            nextCursor: string | null;
+            hasMore: boolean;
+            /** @description Total rows matching the current filter (across all pages). Present when `?include_total=true` (the default on most endpoints). Omit `?include_total=false` to skip the COUNT(*) on very large workspaces. */
             total?: number;
-            limit?: number;
-            offset?: number;
-            hasMore?: boolean;
         };
         PropertyListResponse: {
             data?: components["schemas"]["Property"][];
             pagination?: components["schemas"]["Pagination"];
         };
-        /**
-         * @description Cursor-paginated reservation list. Pass `pagination.next_cursor` back as `?cursor=` to fetch the next page; stop when `pagination.has_more` is `false`. The `total` field is the count of rows matching the current filter (across all pages).
-         *
-         *     Legacy `?offset=` consumers continue to receive `pagination.limit` + `pagination.offset` during the deprecation window. A `Deprecation: true` header (with a `Sunset` date) is set on responses that came in via `?offset=` — migrate to `?cursor=`.
-         */
+        /** @description Cursor-paginated reservation list. Pass `pagination.nextCursor` back as `?cursor=` to fetch the next page; stop when `pagination.hasMore` is `false`. The `total` field is the count of rows matching the current filter (across all pages); pass `?include_total=false` to skip the COUNT(*) on very large workspaces. */
         ReservationListResponse: {
             data?: components["schemas"]["Reservation"][];
-            pagination?: components["schemas"]["ReservationPagination"];
+            pagination?: components["schemas"]["Pagination"];
         };
-        /** @description Hybrid pagination envelope for `/v1/reservations`. Always populates `next_cursor` + `has_more` + `total`. When the request used the deprecated `?offset=` path, also populates `limit` + `offset`. */
-        ReservationPagination: {
-            /** @description Opaque base64 cursor — pass back as `?cursor=<value>`. `null` when there are no more pages. */
-            next_cursor: string | null;
-            has_more: boolean;
-            /** @description Total rows matching the current filter (across all pages). */
-            total: number;
-            /** @description Deprecated — only present on responses to `?offset=` requests. */
-            limit?: number;
-            /** @description Deprecated — only present on responses to `?offset=` requests. */
-            offset?: number;
-        };
-        /** @description Cursor-paginated guest list. Pass `pagination.next_cursor` back as `?cursor=` to fetch the next page. */
+        /** @description Cursor-paginated guest list. Pass `pagination.nextCursor` back as `?cursor=` to fetch the next page. */
         GuestListResponse: {
             data?: components["schemas"]["Guest"][];
             pagination?: components["schemas"]["CursorPagination"];
         };
-        /** @description Cursor-paginated conversation list. Pass `pagination.next_cursor` back as `?cursor=` to fetch the next page. */
+        /** @description Cursor-paginated conversation list. Pass `pagination.nextCursor` back as `?cursor=` to fetch the next page. */
         ConversationListResponse: {
             data?: components["schemas"]["Conversation"][];
             pagination?: components["schemas"]["CursorPagination"];
         };
-        /** @description Cursor-paginated message list. Pass `pagination.next_cursor` back as `?cursor=` to fetch the next page. */
+        /** @description Cursor-paginated message list. Pass `pagination.nextCursor` back as `?cursor=` to fetch the next page. */
         MessageListResponse: {
             data?: components["schemas"]["Message"][];
             pagination?: components["schemas"]["CursorPagination"];
         };
-        /** @description Cursor-paginated review list. Pass `pagination.next_cursor` back as `?cursor=` to fetch the next page. */
+        /** @description Cursor-paginated review list. Pass `pagination.nextCursor` back as `?cursor=` to fetch the next page. */
         ReviewListResponse: {
             data?: components["schemas"]["Review"][];
             pagination?: components["schemas"]["CursorPagination"];
-        };
-        ReviewGetResponse: {
-            data?: components["schemas"]["Review"];
         };
         ConnectionListResponse: {
             data?: components["schemas"]["Connection"][];
@@ -2461,7 +2666,7 @@ export interface components {
         };
         ListingCreateResponse: {
             /** @description New listing ID — use for follow-up generate-content / publish calls */
-            id?: number;
+            id?: string;
         };
         ListingGenerateContentRequest: {
             /** @description Up to 8 reference photos. When present, Kimi K2 vision is used for grounded copy. */
@@ -2490,14 +2695,14 @@ export interface components {
             amenities?: string[];
         };
         ListingGenerateContentResponse: {
-            listingId?: number;
+            listingId?: string;
             persisted?: boolean;
             content?: components["schemas"]["ListingContent"];
         };
         /** @description Pass either `airbnbConnectionId` (update an already-mapped listing) or `hostId` (create a brand-new Airbnb listing under that host). */
         ListingPublishAirbnbRequest: {
             /** @description Existing Airbnb connection row id */
-            airbnbConnectionId?: number;
+            airbnbConnectionId?: string;
             /** @description Airbnb host id (required for first-time creates) */
             hostId?: string;
             /**
@@ -2507,7 +2712,7 @@ export interface components {
             force: boolean;
         };
         ListingPublishResponse: {
-            listingId?: number;
+            listingId?: string;
             /** @enum {string} */
             channel?: "airbnb" | "booking";
             /** @description Channel-specific push result (sections pushed, errors, etc.) */
@@ -2526,7 +2731,7 @@ export interface components {
             platformHasChanges?: boolean;
         };
         ListingPublishStatusResponse: {
-            listingId?: number;
+            listingId?: string;
             channels?: components["schemas"]["ListingPublishStatusChannel"][];
         };
         /** @description Per-platform connection for a listing — one row per channel the listing is published to. */
@@ -2541,7 +2746,7 @@ export interface components {
         /** @description A vacation rental listing in your Repull workspace. */
         Listing: {
             /** @description Repull listing id */
-            id?: number;
+            id?: string;
             /** @example I - Stafford Apartment */
             name?: string;
             address?: {
@@ -2559,12 +2764,7 @@ export interface components {
             /** Format: date-time */
             updatedAt?: string;
         };
-        /** @description Cursor-based pagination. Pass `next_cursor` back as `cursor` to fetch the next page. When `has_more` is `false` you are done. */
-        CursorPagination: {
-            /** @description Opaque base64-encoded cursor — pass back as `?cursor=<value>`. `null` when there are no more pages. */
-            next_cursor?: string | null;
-            has_more?: boolean;
-        };
+        CursorPagination: components["schemas"]["Pagination"];
         ListingListResponse: {
             data?: components["schemas"]["Listing"][];
             pagination?: components["schemas"]["CursorPagination"];
@@ -2603,7 +2803,7 @@ export interface components {
             generatedAt?: string;
         };
         ListingPricingResponse: {
-            listingId?: number;
+            listingId?: string;
             dateRange?: {
                 /** Format: date */
                 start?: string;
@@ -2644,9 +2844,9 @@ export interface components {
         };
         /** @description Strategy that constrains the Atlas pricing model for one listing. */
         ListingPricingStrategy: {
-            id?: number | null;
-            listingId?: number;
-            customerId?: number;
+            id?: string | null;
+            listingId?: string;
+            customerId?: string;
             /**
              * @description `recommend` surfaces suggestions; `auto` applies them on the next sync.
              * @enum {string}
@@ -2705,10 +2905,10 @@ export interface components {
             eventBoostEnabled?: boolean;
             eventBoostMaxPct?: number;
         };
-        /** @description A single (listing_id, dates) pair in a bulk pricing request. The action in the parent request body applies to every date in `dates` for this listing. */
+        /** @description A single (listingId, dates) pair in a bulk pricing request. The action in the parent request body applies to every date in `dates` for this listing. */
         BulkPricingItem: {
             /** @example 4118 */
-            listing_id: number;
+            listingId: string;
             /**
              * @example [
              *       "2026-05-14",
@@ -2728,13 +2928,13 @@ export interface components {
         };
         /** @description Per-item failure entry. Per-item failures DO NOT fail the whole batch — partial-success is the norm at this scale. */
         BulkPricingFailure: {
-            listing_id?: number;
+            listingId?: string;
             dates?: string[];
             /**
              * @example not_owned
              * @enum {string}
              */
-            error_code?: "not_owned" | "no_pending_recommendations" | "calendar_update_failed" | "internal_error";
+            errorCode?: "not_owned" | "no_pending_recommendations" | "calendar_update_failed" | "internal_error";
             error?: string;
         };
         /** @description Response for `POST /v1/listings/pricing/bulk`. Per-item failures are returned granularly so the SDK consumer can retry just the bad entries. */
@@ -2750,22 +2950,22 @@ export interface components {
             /** Format: date */
             date?: string;
             /** @description The Atlas model's recommended price for the date. */
-            recommended_rate?: number;
+            recommendedRate?: number;
             /** @description Price actually written to the calendar. `null` when status is `pending` or `declined`. For now, when `status=applied` this equals `recommended_rate` because the apply path writes the recommendation verbatim. */
-            applied_rate?: number | null;
+            appliedRate?: number | null;
             /**
              * @description `overridden` is reserved for a future signal — it never appears today.
              * @enum {string}
              */
             status?: "pending" | "applied" | "declined" | "overridden";
             /** @description Raw model factors (comp distance, event boost, weekend, demand, etc.). */
-            recommendation_factors?: {
+            recommendationFactors?: {
                 [key: string]: unknown;
             };
             /** Format: date-time */
-            applied_at?: string | null;
+            appliedAt?: string | null;
             /** @description Who applied it (e.g. `auto`, `api`, `user`). */
-            applied_by?: string | null;
+            appliedBy?: string | null;
         };
         /** @description Cursor-paginated audit trail. Pagination is keyset on `date ASC` — stable across concurrent writes. */
         ListingPricingHistoryResponse: {
@@ -2780,19 +2980,19 @@ export interface components {
         };
         /** @description A single competitor listing in a comp set, sorted closest-first. Includes per-day rate/availability for the requested calendar window. */
         ListingComp: {
-            comp_id?: number;
-            listing_name?: string | null;
+            compId?: string;
+            listingName?: string | null;
             /** @description Haversine distance from the source listing in km, rounded to 3 decimals. */
-            distance_km?: number | null;
+            distanceKm?: number | null;
             bedrooms?: number | null;
-            max_guests?: number | null;
+            maxGuests?: number | null;
             ratings?: {
                 avg?: number | null;
                 count?: number;
             };
             currency?: string | null;
             /** @description Latest snapshot ADR — fallback to render when the calendar window is empty. */
-            current_nightly_rate?: number | null;
+            currentNightlyRate?: number | null;
             /** @description Per-day rate + availability for the requested window. May be empty if Atlas hasn't snapshotted the comp recently. */
             nightly?: components["schemas"]["ListingCompNightly"][];
             lat?: number | null;
@@ -2803,11 +3003,11 @@ export interface components {
              * Format: uri
              * @description Link to the listing on its source platform when one is available.
              */
-            external_url?: string | null;
+            externalUrl?: string | null;
         };
         /** @description Returned by `GET /v1/listings/{id}/comps`. Comps without coordinates are excluded — there's no way to rank them by distance. May include a `warning` field when the source listing itself has no coordinates. */
         ListingCompsResponse: {
-            listingId?: number;
+            listingId?: string;
             dateRange?: {
                 /** Format: date */
                 start?: string;
@@ -2825,25 +3025,25 @@ export interface components {
             /** @example upscale-modern-2br */
             name?: string;
             /** @description Percent of analyzed comps in the scope that fall in this segment. */
-            share_pct?: number;
-            sample_size?: number;
-            avg_adr_in_segment?: number | null;
+            sharePct?: number;
+            sampleSize?: number;
+            avgAdrInSegment?: number | null;
             currency?: string | null;
             /** @enum {string|null} */
-            quality_tier?: "budget" | "standard" | "upscale" | "luxury" | null;
+            qualityTier?: "budget" | "standard" | "upscale" | "luxury" | null;
             /** @description Decomposed style token (e.g. `modern`, `mid-century`). */
-            design_style?: string | null;
+            designStyle?: string | null;
             /** @description Decomposed bedroom count. `0` indicates studio. */
             bedrooms?: number | null;
             /** @description True when the source listing's `ai_segment` matches this segment. */
-            my_listing_match?: boolean;
+            myListingMatch?: boolean;
         };
         ListingQualityTier: {
             /** @enum {string} */
             tier?: "budget" | "standard" | "upscale" | "luxury";
-            share_pct?: number;
-            avg_adr?: number | null;
-            sample_size?: number;
+            sharePct?: number;
+            avgAdr?: number | null;
+            sampleSize?: number;
         };
         /** @description Structural observation about the segment landscape — not LLM-generated. */
         ListingSegmentRecommendation: {
@@ -2859,7 +3059,7 @@ export interface components {
         };
         /** @description Returned by `GET /v1/listings/{id}/segments`. Honest about DNA coverage — when no comps in the scope have been DNA-scored, returns `totalCompsAnalyzed: 0` plus a `low_dna_coverage` recommendation rather than fabricated data. */
         ListingSegmentsResponse: {
-            listingId?: number;
+            listingId?: string;
             /** @enum {string} */
             level?: "comp_set" | "market";
             /** @description When `level=comp_set` carries `radiusKm`; when `level=market` carries `city`. May be empty when neither could be resolved. */
@@ -2909,8 +3109,8 @@ export interface components {
             updates: components["schemas"]["BookingPricingRateUpdate"][];
         };
         BookingPricingUpdateResponse: {
-            hotel_id?: string;
-            listing_id?: number;
+            hotelId?: string;
+            listingId?: string;
             /** @description Number of updates Booking.com accepted as `success`. Falls back to total update count when Booking omits per-update status on full success. */
             pushed?: number;
             requested?: number;
@@ -2923,10 +3123,10 @@ export interface components {
                 [key: string]: unknown;
             };
         };
-        /** @description Returned by `GET /v1/channels/booking/listings/{id}/pricing`. Mirrors Booking's `getRoomRateAvailability` response with `hotel_id` and `listing_id` echoed back for SDK consumers. */
+        /** @description Returned by `GET /v1/channels/booking/listings/{id}/pricing`. Mirrors Booking's `getRoomRateAvailability` response with `hotelId` and `listingId` echoed back for SDK consumers. */
         BookingPricingResponse: {
-            hotel_id?: string;
-            listing_id?: number;
+            hotelId?: string;
+            listingId?: string;
         } & {
             [key: string]: unknown;
         };
@@ -2952,7 +3152,7 @@ export interface components {
         };
         /** @description Lightweight customer listing entry for map rendering. */
         MarketMyListing: {
-            id?: number;
+            id?: string;
             name?: string;
             city?: string | null;
             lat?: number;
@@ -2978,7 +3178,7 @@ export interface components {
             /** @description Atlas-tracked active comps in this city. */
             listings?: number;
             /** @description Atlas-aggregated avg nightly rate (mixed currency, dominated by the country base). */
-            avg_adr?: number | null;
+            avgAdr?: number | null;
             subscribed?: boolean;
         };
         MarketBrowseCategory: {
@@ -2994,24 +3194,20 @@ export interface components {
             country?: string;
             /** @description Atlas-tracked active comps in this city. */
             listings?: number;
-            avg_adr?: number | null;
+            avgAdr?: number | null;
             /** @description ISO 4217 currency derived from the country code. */
             currency?: string;
             subscribed?: boolean;
         };
-        MarketBrowsePagination: {
-            /** @description Opaque cursor for the next page; null when no more results. */
-            next_cursor?: string | null;
-            has_more?: boolean;
-            /** @description Total markets matching the current `q`/`country`/`min_listings` filter (ignores cursor). */
-            total_in_filter?: number;
-        };
         MarketBrowseResponse: {
             data?: components["schemas"]["MarketBrowseEntry"][];
-            pagination?: components["schemas"]["MarketBrowsePagination"];
+            pagination?: components["schemas"]["Pagination"];
         };
+        /** @description Overview of every market the customer operates in, plus auxiliary discovery slices. Wraps the canonical `{ data, pagination }` envelope around the per-city KPI list (`data`) so SDK consumers see the same shape they get from every other list endpoint. Auxiliary fields (`totals`, `myListings`, `browse`, `freeMarket`, `subscriptions`, `tier`) are returned as siblings because they are NOT paginated. The overview returns every market in one shot — `nextCursor` is always `null` and `hasMore` is always `false`. */
         MarketsOverviewResponse: {
-            markets?: components["schemas"]["MarketSummary"][];
+            /** @description Per-city KPIs for every market the customer operates in. */
+            data?: components["schemas"]["MarketSummary"][];
+            pagination?: components["schemas"]["Pagination"];
             totals?: {
                 myListings?: number;
                 markets?: number;
@@ -3019,7 +3215,7 @@ export interface components {
             };
             myListings?: components["schemas"]["MarketMyListing"][];
             /** @description City auto-assigned as the customer's free market (largest by listing count). Null for customers with no listings. */
-            free_market?: string | null;
+            freeMarket?: string | null;
             /** @description Active per-market unlocks vs the tier quota. */
             subscriptions?: {
                 active?: number;
@@ -3034,7 +3230,7 @@ export interface components {
                 /** @description Top 50 countries by tracked-city count. */
                 categories?: components["schemas"]["MarketBrowseCategory"][];
                 /** @description Total Atlas-tracked cities in the catalog. */
-                total_available?: number;
+                totalAvailable?: number;
             };
         };
         MarketEvent: {
@@ -3042,34 +3238,34 @@ export interface components {
             title?: string;
             category?: string | null;
             /** Format: date */
-            start_date?: string;
+            startDate?: string;
             /** Format: date */
-            end_date?: string | null;
+            endDate?: string | null;
             lat?: number | null;
             lng?: number | null;
             rank?: number | null;
-            local_rank?: number | null;
+            localRank?: number | null;
             attendance?: number | null;
-            demand_impact?: string | null;
+            demandImpact?: string | null;
             labels?: string[] | null;
         };
         MarketTopComp: {
-            id?: number;
-            platform_listing_id?: string;
+            id?: string;
+            platformListingId?: string;
             title?: string | null;
-            property_type?: string | null;
+            propertyType?: string | null;
             bedrooms?: number | null;
-            max_guests?: number | null;
+            maxGuests?: number | null;
             rating?: number | null;
-            review_count?: number | null;
-            current_nightly_rate?: number | null;
+            reviewCount?: number | null;
+            currentNightlyRate?: number | null;
             /** Format: uri */
-            thumbnail_url?: string | null;
+            thumbnailUrl?: string | null;
             lat?: number | null;
             lng?: number | null;
             /** Format: uri */
             url?: string;
-            distance_km?: number | null;
+            distanceKm?: number | null;
         };
         /** @description Detailed view for a single city. Several sub-objects are passed through verbatim from upstream — keys mirror the underlying SQL aggregations. */
         MarketDetailResponse: {
@@ -3170,7 +3366,7 @@ export interface components {
             valid: boolean;
             sessionId: string;
             /** @description Repull-side `pms_connections.id` for the linked Booking account. */
-            connectionId: number;
+            connectionId: string;
             hotelId: string;
             hotelName?: string | null;
             /** @description Booking.com hotel/property type code (e.g. `apartment`, `hotel`). */
@@ -3181,20 +3377,20 @@ export interface components {
         /** @description A Booking.com room imported from the claimed hotel. The customer maps each room to one of their Repull listings via `mapConnectBookingRooms`. */
         BookingConnectRoom: {
             /** @description Repull-side `listings_booking_rooms.id`. Pass this back in the mapping submission. */
-            roomId: number;
+            roomId: string;
             /** @example Deluxe King */
             roomName: string;
             maxGuests?: number | null;
             /** @description Number of inventory units of this room type at the hotel. */
             numberOfRooms: number;
             /** @description Currently mapped Repull listing ID, or null if not yet mapped. */
-            currentListingId?: number | null;
+            currentListingId?: string | null;
             /** @description Booking.com-side room ID (used internally for `listing_platform_links`). */
-            roomBookingId?: number | null;
+            roomBookingId?: string | null;
         };
         /** @description A Repull listing the customer can map a Booking room to. Mirrors the minimal shape needed for a select dropdown. */
         BookingConnectListingOption: {
-            id: number;
+            id: string;
             name: string;
             city?: string | null;
         };
@@ -3213,9 +3409,9 @@ export interface components {
         /** @description A single room→listing assignment. Pass `listingId: null` to explicitly UNMAP a room (e.g. "skip this room for now") — this also removes the corresponding `listing_platform_links` row. */
         BookingRoomMapping: {
             /** @description Repull-side `listings_booking_rooms.id` from `listConnectBookingRooms`. */
-            roomId: number;
+            roomId: string;
             /** @description Repull listing to bind to this room. `null` to unmap. */
-            listingId?: number | null;
+            listingId?: string | null;
         };
         /** @description Body for `POST /v1/connect/booking/map-rooms`. Submits all room→listing assignments in one transaction; on success the Connect session is marked `completed`. */
         MapConnectBookingRoomsRequest: {
@@ -3228,19 +3424,102 @@ export interface components {
             /** @description Number of rooms processed (mapped + unmapped). */
             mapped: number;
             sessionId: string;
-            connectionId: number;
+            connectionId: string;
         };
     };
-    responses: never;
+    responses: {
+        /** @description Malformed request — invalid JSON, missing required field, wrong content-type, or a parameter that fundamentally cannot be parsed. */
+        BadRequest: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /** @description No API key on the request, or the key is unknown / revoked. */
+        Unauthorized: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /** @description The API key is valid but lacks access to this resource or product. */
+        Forbidden: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /** @description The resource id is well-formed but no matching row exists in this workspace. */
+        NotFound: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /** @description The request conflicts with the current resource state (already-exists, terminal, mid-flight). */
+        Conflict: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /** @description Request is well-formed but a parameter value is out of range or fails validation. */
+        UnprocessableEntity: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /** @description Quota exceeded. Wait `retry_after` seconds (or until `X-RateLimit-Reset`) before retrying. */
+        TooManyRequests: {
+            headers: {
+                /** @description Seconds to wait before retrying. */
+                "Retry-After"?: number;
+                /** @description Total requests allowed in the current window. */
+                "X-RateLimit-Limit"?: number;
+                /** @description Requests remaining in the current window. */
+                "X-RateLimit-Remaining"?: number;
+                /** @description When the window resets (ISO 8601). */
+                "X-RateLimit-Reset"?: string;
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /** @description Unexpected server-side failure. Always retryable with backoff. */
+        InternalError: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+    };
     parameters: {
-        /** @description Max items per page */
+        /** @description Max items per page (cap is 100; over-cap returns 422). */
         limit: number;
-        /** @description Pagination offset */
-        offset: number;
+        /** @description Opaque base64 cursor returned in the previous response's `pagination.nextCursor`. Omit to fetch the first page. */
+        cursor: string;
         /** @description PMS provider slug (e.g., hostaway, guesty, ownerrez) */
         provider: string;
         /** @description Apply a custom or built-in schema to transform the response. Built-in: `native` (default), `calry`, `calry-v1`. Custom: any schema name created via `POST /v1/schema/custom`. Unknown / inactive schema names fall back to `native`. */
         XSchemaHeader: string;
+        /** @description When `true` (default), the response's `pagination.total` carries the count of rows matching the current filter, across all pages. Pass `false` to skip the count for very large workspaces where the per-page COUNT(*) cost matters. */
+        IncludeTotal: boolean;
     };
     requestBodies: never;
     headers: never;
@@ -3276,12 +3555,14 @@ export interface operations {
     list_properties: {
         parameters: {
             query?: {
-                /** @description Max items per page */
-                limit?: components["parameters"]["limit"];
-                /** @description Pagination offset */
-                offset?: components["parameters"]["offset"];
-                /** @description Filter by PMS provider */
-                provider?: string;
+                /** @description Page size (max 100). Requests over the cap return 422. */
+                limit?: number;
+                /** @description Opaque cursor returned in the previous response's `pagination.nextCursor`. Omit to fetch the first page. */
+                cursor?: string;
+                /** @description Filter by status. Default returns active only; pass `all` to include inactive. */
+                status?: "active" | "all";
+                /** @description When `true` (default), the response's `pagination.total` carries the count of rows matching the current filter, across all pages. Pass `false` to skip the count for very large workspaces where the per-page COUNT(*) cost matters. */
+                include_total?: components["parameters"]["IncludeTotal"];
             };
             header?: never;
             path?: never;
@@ -3298,15 +3579,8 @@ export interface operations {
                     "application/json": components["schemas"]["PropertyListResponse"];
                 };
             };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
+            401: components["responses"]["Unauthorized"];
+            422: components["responses"]["UnprocessableEntity"];
         };
     };
     get_property: {
@@ -3329,13 +3603,7 @@ export interface operations {
                     "application/json": components["schemas"]["Property"];
                 };
             };
-            /** @description Property not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
+            404: components["responses"]["NotFound"];
         };
     };
     list_reservations: {
@@ -3343,18 +3611,13 @@ export interface operations {
             query?: {
                 /** @description Page size (max 100). Requests over the cap return 422. */
                 limit?: number;
-                /** @description Opaque cursor returned in the previous response's `pagination.next_cursor`. Omit to fetch the first page. */
+                /** @description Opaque cursor returned in the previous response's `pagination.nextCursor`. Omit to fetch the first page. */
                 cursor?: string;
-                /**
-                 * @deprecated
-                 * @description Deprecated — use `cursor` instead. Will be removed after the `Sunset` response header date.
-                 */
-                offset?: number;
                 /** @description Filter by booking platform */
                 platform?: string;
                 status?: "confirmed" | "pending" | "cancelled" | "completed";
                 /** @description Filter to a single listing */
-                listing_id?: number;
+                listingId?: number;
                 /** @description Check-in date >= this value */
                 check_in_after?: string;
                 /** @description Check-in date <= this value */
@@ -3369,6 +3632,8 @@ export interface operations {
                  * @description Deprecated alias for `check_in_before`.
                  */
                 checkInTo?: string;
+                /** @description When `true` (default), the response's `pagination.total` carries the count of rows matching the current filter, across all pages. Pass `false` to skip the count for very large workspaces where the per-page COUNT(*) cost matters. */
+                include_total?: components["parameters"]["IncludeTotal"];
             };
             header?: {
                 /** @description Apply a custom or built-in schema to transform the response. Built-in: `native` (default), `calry`, `calry-v1`. Custom: any schema name created via `POST /v1/schema/custom`. Unknown / inactive schema names fall back to `native`. */
@@ -3388,13 +3653,7 @@ export interface operations {
                     "application/json": components["schemas"]["ReservationListResponse"];
                 };
             };
-            /** @description Invalid `limit`, `cursor`, `offset`, or filter param. */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
+            422: components["responses"]["UnprocessableEntity"];
         };
     };
     create_reservation: {
@@ -3407,7 +3666,7 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    propertyId: number;
+                    propertyId: string;
                     /** Format: date */
                     checkIn: string;
                     /** Format: date */
@@ -3458,42 +3717,10 @@ export interface operations {
                     "application/json": components["schemas"]["Reservation"];
                 };
             };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Reservation not found in this workspace */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Invalid `id` (must be a positive integer) */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Internal error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["UnprocessableEntity"];
+            500: components["responses"]["InternalError"];
         };
     };
     cancel_reservation: {
@@ -3601,7 +3828,7 @@ export interface operations {
     listGuests: {
         parameters: {
             query?: {
-                /** @description Opaque cursor returned in the previous response's `pagination.next_cursor`. Omit to fetch the first page. */
+                /** @description Opaque cursor returned in the previous response's `pagination.nextCursor`. Omit to fetch the first page. */
                 cursor?: string;
                 /** @description Max items per page. Hard cap is 100. */
                 limit?: number;
@@ -3610,7 +3837,7 @@ export interface operations {
                 /** @description Restrict to guests that do (`true`) or do not (`false`) have any reservation on file. */
                 has_reservation?: boolean;
                 /** @description Restrict to guests with at least one reservation on the given internal Repull listing id. */
-                listing_id?: number;
+                listingId?: number;
             };
             header?: {
                 /** @description Apply a custom or built-in schema to transform the response. Built-in: `native` (default), `calry`, `calry-v1`. Custom: any schema name created via `POST /v1/schema/custom`. Unknown / inactive schema names fall back to `native`. */
@@ -3630,42 +3857,10 @@ export interface operations {
                     "application/json": components["schemas"]["GuestListResponse"];
                 };
             };
-            /** @description Invalid params (e.g. malformed `cursor` / non-integer `listing_id`) */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description `limit` exceeds the 100-item cap */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Upstream main vanio failure */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            422: components["responses"]["UnprocessableEntity"];
+            500: components["responses"]["InternalError"];
         };
     };
     getGuest: {
@@ -3691,48 +3886,16 @@ export interface operations {
                     "application/json": components["schemas"]["GuestProfile"];
                 };
             };
-            /** @description Invalid params (`id` must be a positive integer) */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Guest not found in this workspace */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Upstream main vanio failure */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalError"];
         };
     };
     listConversations: {
         parameters: {
             query?: {
-                /** @description Opaque cursor returned in the previous response's `pagination.next_cursor`. Omit to fetch the first page. */
+                /** @description Opaque cursor returned in the previous response's `pagination.nextCursor`. Omit to fetch the first page. */
                 cursor?: string;
                 /** @description Max items per page. Hard cap is 100. */
                 limit?: number;
@@ -3759,42 +3922,10 @@ export interface operations {
                     "application/json": components["schemas"]["ConversationListResponse"];
                 };
             };
-            /** @description Invalid params (bad `platform` / `status` / malformed `cursor`) */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description `limit` exceeds the 100-item cap */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Upstream main vanio failure */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            422: components["responses"]["UnprocessableEntity"];
+            500: components["responses"]["InternalError"];
         };
     };
     getConversation: {
@@ -3821,48 +3952,16 @@ export interface operations {
                     "application/json": components["schemas"]["ConversationDetail"];
                 };
             };
-            /** @description Invalid params (`id` must be a positive integer) */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Conversation not found in this workspace */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Upstream main vanio failure */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalError"];
         };
     };
     listConversationMessages: {
         parameters: {
             query?: {
-                /** @description Opaque cursor returned in the previous response's `pagination.next_cursor`. */
+                /** @description Opaque cursor returned in the previous response's `pagination.nextCursor`. */
                 cursor?: string;
                 limit?: number;
                 /** @description `desc` (default) returns newest first. `asc` returns chronological replay. */
@@ -3889,68 +3988,28 @@ export interface operations {
                     "application/json": components["schemas"]["MessageListResponse"];
                 };
             };
-            /** @description Invalid params (bad `id` / `order` / malformed `cursor`) */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Conversation not found in this workspace */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description `limit` exceeds the 100-item cap */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Upstream main vanio failure */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["UnprocessableEntity"];
+            500: components["responses"]["InternalError"];
         };
     };
     listReviews: {
         parameters: {
             query?: {
-                /** @description Opaque cursor returned in the previous response's `pagination.next_cursor`. */
+                /** @description Opaque cursor returned in the previous response's `pagination.nextCursor`. */
                 cursor?: string;
                 limit?: number;
                 platform?: "airbnb" | "booking" | "vrbo";
                 /** @description Restrict to one internal Repull listing. */
-                listing_id?: number;
+                listingId?: number;
                 rating_min?: number;
                 rating_max?: number;
                 /** @description `responded` — host has replied. `unanswered` — host has not replied. `all` — no filter. */
                 status?: "responded" | "unanswered" | "all";
                 /** @description `guest` (default) — reviews written by guests about the host/property. `host` — reviews written by the host about guests. `all` — both. */
-                reviewer_role?: "guest" | "host" | "all";
+                reviewerRole?: "guest" | "host" | "all";
             };
             header?: {
                 /** @description Apply a custom or built-in schema to transform the response. Built-in: `native` (default), `calry`, `calry-v1`. Custom: any schema name created via `POST /v1/schema/custom`. Unknown / inactive schema names fall back to `native`. */
@@ -3970,42 +4029,10 @@ export interface operations {
                     "application/json": components["schemas"]["ReviewListResponse"];
                 };
             };
-            /** @description Invalid params (bad enum value, malformed cursor, non-numeric rating) */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description `limit` exceeds the 100-item cap */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Upstream main vanio failure */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            422: components["responses"]["UnprocessableEntity"];
+            500: components["responses"]["InternalError"];
         };
     };
     getReview: {
@@ -4029,45 +4056,13 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ReviewGetResponse"];
+                    "application/json": components["schemas"]["Review"];
                 };
             };
-            /** @description Invalid params (`id` must be a positive integer) */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Review not found (or does not belong to this workspace) */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Upstream main vanio failure */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalError"];
         };
     };
     list_connections: {
@@ -4108,7 +4103,7 @@ export interface operations {
                     /** @description Opaque pass-through correlation token. Echoed back in the response. */
                     state?: string | null;
                     /** @description Optional whitelist of provider IDs the picker should expose. Omit to show every channel in the registry. */
-                    allowed_providers?: string[] | null;
+                    allowedProviders?: string[] | null;
                 };
             };
         };
@@ -4288,33 +4283,9 @@ export interface operations {
                     "application/json": components["schemas"]["BookingVerifyHotelResponse"];
                 };
             };
-            /** @description Invalid params (missing sessionId/hotelId, malformed hotel ID) */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Session not found, or hotel not found at Booking.com */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Session bound to a different provider, or already in a terminal state */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
+            400: components["responses"]["BadRequest"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
             /** @description Session has expired — start a new one */
             410: {
                 headers: {
@@ -4374,33 +4345,9 @@ export interface operations {
                     "application/json": components["schemas"]["BookingConnectRoomsResponse"];
                 };
             };
-            /** @description Missing sessionId */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Session not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Session bound to a different provider */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
+            400: components["responses"]["BadRequest"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
             /** @description Session has expired */
             410: {
                 headers: {
@@ -4443,15 +4390,7 @@ export interface operations {
                     "application/json": components["schemas"]["MapConnectBookingRoomsResponse"];
                 };
             };
-            /** @description Invalid params (missing fields, duplicate listing in submission) */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
+            400: components["responses"]["BadRequest"];
             /** @description A room ID does not belong to this customer's claimed hotel */
             403: {
                 headers: {
@@ -4461,24 +4400,8 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description Session not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Session bound to a different provider, or already in a terminal state */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
             /** @description Session has expired */
             410: {
                 headers: {
@@ -5195,7 +5118,7 @@ export interface operations {
     listListings: {
         parameters: {
             query?: {
-                /** @description Opaque cursor returned in the previous response's `pagination.next_cursor`. Omit to fetch the first page. */
+                /** @description Opaque cursor returned in the previous response's `pagination.nextCursor`. Omit to fetch the first page. */
                 cursor?: string;
                 /** @description Max items per page. Hard cap is 100. */
                 limit?: number;
@@ -5224,24 +5147,8 @@ export interface operations {
                     "application/json": components["schemas"]["ListingListResponse"];
                 };
             };
-            /** @description Invalid params (e.g. malformed cursor) */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Limit exceeds the 100-item cap */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
+            400: components["responses"]["BadRequest"];
+            422: components["responses"]["UnprocessableEntity"];
         };
     };
     createListing: {
@@ -5266,13 +5173,36 @@ export interface operations {
                     "application/json": components["schemas"]["ListingCreateResponse"];
                 };
             };
-            /** @description Invalid input */
-            400: {
+            400: components["responses"]["BadRequest"];
+        };
+    };
+    getListing: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Apply a custom or built-in schema to transform the response. Built-in: `native` (default), `calry`, `calry-v1`. Custom: any schema name created via `POST /v1/schema/custom`. Unknown / inactive schema names fall back to `native`. */
+                "X-Schema"?: components["parameters"]["XSchemaHeader"];
+            };
+            path: {
+                /** @description Repull listing id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The listing */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["Listing"];
+                };
             };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["UnprocessableEntity"];
         };
     };
     generateListingContent: {
@@ -5299,13 +5229,7 @@ export interface operations {
                     "application/json": components["schemas"]["ListingGenerateContentResponse"];
                 };
             };
-            /** @description Listing not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
+            404: components["responses"]["NotFound"];
             /** @description AI provider failed or returned non-JSON */
             502: {
                 headers: {
@@ -5339,13 +5263,7 @@ export interface operations {
                     "application/json": components["schemas"]["ListingPublishResponse"];
                 };
             };
-            /** @description Invalid input or push rejected by Airbnb */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
+            400: components["responses"]["BadRequest"];
         };
     };
     publishListingToBooking: {
@@ -5368,13 +5286,7 @@ export interface operations {
                     "application/json": components["schemas"]["ListingPublishResponse"];
                 };
             };
-            /** @description No Booking mapping or push rejected */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
+            400: components["responses"]["BadRequest"];
         };
     };
     getListingPublishStatus: {
@@ -5552,7 +5464,7 @@ export interface operations {
     getBookingListingPricing: {
         parameters: {
             query?: {
-                start_date?: string;
+                startDate?: string;
                 number_of_days?: number;
                 room_id?: string;
                 /** @description When true, returns room-level (vs rate-plan-level) availability. */
@@ -5576,42 +5488,10 @@ export interface operations {
                     "application/json": components["schemas"]["BookingPricingResponse"];
                 };
             };
-            /** @description Invalid listing ID */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description No active Booking.com mapping for this listing, or no Booking.com connection on this workspace */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Booking.com call failed */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalError"];
         };
     };
     updateBookingListingPricing: {
@@ -5638,42 +5518,10 @@ export interface operations {
                     "application/json": components["schemas"]["BookingPricingUpdateResponse"];
                 };
             };
-            /** @description Invalid params (bad listing ID or per-update validation failed) */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description No active Booking.com mapping for this listing, or no Booking.com connection on this workspace */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Booking.com call failed */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalError"];
         };
     };
     list_vrbo_listings: {
@@ -5708,24 +5556,8 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description No active VRBO mapping for this listing */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
             /** @description Not implemented — VRBO is agency-model. Response includes the public rate URL VRBO fetches. */
             501: {
                 headers: {
@@ -5748,24 +5580,8 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description No active VRBO mapping for this listing */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
             /** @description Not implemented — VRBO accepts no rate pushes. Update the calendar instead. */
             501: {
                 headers: {
@@ -5915,20 +5731,8 @@ export interface operations {
                     "application/json": components["schemas"]["ListingPricingResponse"];
                 };
             };
-            /** @description Invalid params */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
             /** @description Upstream Atlas/main vanio failure */
             502: {
                 headers: {
@@ -5962,13 +5766,7 @@ export interface operations {
                     "application/json": components["schemas"]["ListingPricingApplyResponse"];
                 };
             };
-            /** @description Invalid params */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
+            400: components["responses"]["BadRequest"];
         };
     };
     get_listing_pricing_strategy: {
@@ -5991,13 +5789,7 @@ export interface operations {
                     "application/json": components["schemas"]["ListingPricingStrategy"];
                 };
             };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
+            401: components["responses"]["Unauthorized"];
         };
     };
     update_listing_pricing_strategy: {
@@ -6050,33 +5842,9 @@ export interface operations {
                     "application/json": components["schemas"]["BulkPricingResponse"];
                 };
             };
-            /** @description Invalid params (malformed body, bad item shape) */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description `items` exceeds the 500-item cap */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            422: components["responses"]["UnprocessableEntity"];
             /** @description Upstream Atlas/main vanio failure */
             502: {
                 headers: {
@@ -6092,11 +5860,11 @@ export interface operations {
         parameters: {
             query?: {
                 /** @description Inclusive. Defaults to today - 90 days. */
-                start_date?: string;
+                startDate?: string;
                 /** @description Inclusive. Defaults to today + 90 days. */
-                end_date?: string;
+                endDate?: string;
                 limit?: number;
-                /** @description Opaque cursor returned in the previous response's `pagination.next_cursor`. Omit to fetch the first page. */
+                /** @description Opaque cursor returned in the previous response's `pagination.nextCursor`. Omit to fetch the first page. */
                 cursor?: string;
             };
             header?: never;
@@ -6116,42 +5884,10 @@ export interface operations {
                     "application/json": components["schemas"]["ListingPricingHistoryResponse"];
                 };
             };
-            /** @description Invalid params (bad date, malformed cursor) */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Listing not found in this workspace */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description `limit` exceeds the 500-cap */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["UnprocessableEntity"];
             /** @description Upstream Atlas/main vanio failure */
             502: {
                 headers: {
@@ -6171,9 +5907,9 @@ export interface operations {
                 /** @description Closest-first. Max 100. */
                 limit?: number;
                 /** @description Defaults to today. */
-                start_date?: string;
+                startDate?: string;
                 /** @description Defaults to today + 30 days. */
-                end_date?: string;
+                endDate?: string;
             };
             header?: never;
             path: {
@@ -6192,33 +5928,9 @@ export interface operations {
                     "application/json": components["schemas"]["ListingCompsResponse"];
                 };
             };
-            /** @description Invalid params */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Listing not found in this workspace */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
             /** @description Upstream Atlas/main vanio failure */
             502: {
                 headers: {
@@ -6255,33 +5967,9 @@ export interface operations {
                     "application/json": components["schemas"]["ListingSegmentsResponse"];
                 };
             };
-            /** @description Invalid params */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Listing not found in this workspace */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
             /** @description Upstream Atlas/main vanio failure */
             502: {
                 headers: {
@@ -6311,13 +5999,7 @@ export interface operations {
                     "application/json": components["schemas"]["MarketsOverviewResponse"];
                 };
             };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
+            401: components["responses"]["Unauthorized"];
             /** @description Upstream Atlas/main vanio failure */
             502: {
                 headers: {
@@ -6336,7 +6018,7 @@ export interface operations {
                 country?: string;
                 /** @description Minimum comp-set size — cities with fewer active comps are excluded. */
                 min_listings?: number;
-                /** @description Opaque cursor returned by the previous page's `pagination.next_cursor`. */
+                /** @description Opaque cursor returned by the previous page's `pagination.nextCursor`. */
                 cursor?: string;
                 limit?: number;
                 sort?: "listings_desc" | "name_asc";
@@ -6356,15 +6038,7 @@ export interface operations {
                     "application/json": components["schemas"]["MarketBrowseResponse"];
                 };
             };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
+            401: components["responses"]["Unauthorized"];
             /** @description Upstream Atlas/main vanio failure */
             502: {
                 headers: {
@@ -6400,13 +6074,7 @@ export interface operations {
                     "application/json": components["schemas"]["MarketDetailResponse"];
                 };
             };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
+            401: components["responses"]["Unauthorized"];
             /** @description Upstream failure */
             502: {
                 headers: {
@@ -6443,13 +6111,7 @@ export interface operations {
                     "application/json": components["schemas"]["MarketCalendarResponse"];
                 };
             };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
+            401: components["responses"]["Unauthorized"];
             /** @description Upstream failure */
             502: {
                 headers: {
@@ -6547,24 +6209,8 @@ export interface operations {
                     "application/json": components["schemas"]["CustomSchemaListResponse"];
                 };
             };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Forbidden — API key is not permitted to manage schemas for this workspace. */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
         };
     };
     createCustomSchema: {
@@ -6589,42 +6235,10 @@ export interface operations {
                     "application/json": components["schemas"]["CustomSchemaCreateResponse"];
                 };
             };
-            /** @description Validation failed — bad name format, reserved name (`calry` / `calry-v1` / `native`), unsafe mapping expression, more than 50 mappings, or duplicate name in this workspace. */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Forbidden — API key is not permitted to manage schemas for this workspace. */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Request body shape was not parseable. */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            422: components["responses"]["UnprocessableEntity"];
         };
     };
     getCustomSchema: {
@@ -6648,33 +6262,9 @@ export interface operations {
                     "application/json": components["schemas"]["CustomSchema"];
                 };
             };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Forbidden — API key is not permitted to manage schemas for this workspace. */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Custom schema not found in this workspace. */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
         };
     };
     deleteCustomSchema: {
@@ -6697,33 +6287,9 @@ export interface operations {
                     "application/json": components["schemas"]["CustomSchemaDeleteResponse"];
                 };
             };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Forbidden — API key is not permitted to manage schemas for this workspace. */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Custom schema not found in this workspace. */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
         };
     };
     updateCustomSchema: {
@@ -6750,51 +6316,11 @@ export interface operations {
                     "application/json": components["schemas"]["CustomSchema"];
                 };
             };
-            /** @description Validation failed — unsafe mapping expression or invalid mapping shape. */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Forbidden — API key is not permitted to manage schemas for this workspace. */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Custom schema not found in this workspace. */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Request body shape was not parseable. */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["UnprocessableEntity"];
         };
     };
 }

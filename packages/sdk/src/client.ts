@@ -14,13 +14,13 @@
  */
 
 import type {
-  ConnectSession,
+  AirbnbAccessType,
   ConnectPickerSession,
   ConnectProvider,
+  ConnectSession,
   ConnectStatus,
   Connection,
   Conversation,
-  CursorListResponse,
   CustomSchema,
   CustomSchemaCreate,
   CustomSchemaCreateResponse,
@@ -29,20 +29,20 @@ import type {
   CustomSchemaUpdate,
   Guest,
   HealthResponse,
+  Listing,
   ListResponse,
+  MarketBrowseResponse,
   MarketsResponse,
   Message,
   PricingResponse,
   Property,
   Reservation,
-  ReservationListResponse,
   Review,
-  AirbnbAccessType,
 } from '@repull/types';
 import { RepullError } from './errors.js';
 
 const DEFAULT_BASE_URL = 'https://api.repull.dev';
-const DEFAULT_USER_AGENT = '@repull/sdk/0.1.2';
+const DEFAULT_USER_AGENT = '@repull/sdk/0.2.0';
 
 export type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
@@ -176,7 +176,7 @@ export class Repull {
         }
       }
 
-      // Retry on 429/5xx
+      // Retry on 429/5xx — honor Retry-After header (seconds).
       if ((res.status === 429 || res.status >= 500) && attempt < this.opts.maxRetries) {
         attempt++;
         const retryAfter = Number(res.headers.get('retry-after'));
@@ -234,7 +234,7 @@ class ConnectNamespace {
     return this.client.request<ConnectPickerSession>('POST', '/v1/connect', {
       body: {
         redirectUrl: opts.redirectUrl,
-        ...(opts.allowedProviders ? { allowed_providers: opts.allowedProviders } : {}),
+        ...(opts.allowedProviders ? { allowedProviders: opts.allowedProviders } : {}),
         ...(opts.state ? { state: opts.state } : {}),
       },
     });
@@ -270,9 +270,11 @@ class AirbnbConnectNamespace {
   /**
    * POST /v1/connect/airbnb — mint an OAuth Connect session.
    *
-   * Returns `{ oauthUrl, sessionId, provider, expiresAt }`. Send the user
-   * to `oauthUrl` (hosted at `connect.repull.dev`) and they'll bounce back
-   * to `redirectUrl` after consent.
+   * Returns `{ url, sessionId, provider, expiresAt }`. Send the user to
+   * `url` (hosted at `connect.repull.dev`) and they'll bounce back to
+   * `redirectUrl` after consent.
+   *
+   * v0.2.0: response field renamed `oauthUrl` → `url`.
    */
   create(opts: { redirectUrl: string; accessType?: AirbnbAccessType }): Promise<ConnectSession> {
     return this.client.request<ConnectSession>('POST', '/v1/connect/airbnb', {
@@ -316,31 +318,28 @@ class ReservationsNamespace {
   /**
    * GET /v1/reservations — cursor-paginated list.
    *
-   * Pass `cursor` from the previous response's `pagination.next_cursor` to
-   * walk forward; stop when `pagination.has_more` is `false`. The legacy
-   * `offset` parameter still works during the deprecation window but
-   * responses come back with a `Deprecation: true` header — migrate to
-   * `cursor`.
+   * Pass `cursor` from the previous response's `pagination.nextCursor` to
+   * walk forward; stop when `pagination.hasMore` is `false`. v0.2.0
+   * removed the legacy `?offset=` walk.
    */
   list(
     query: {
       limit?: number;
       cursor?: string;
-      /** @deprecated Use `cursor` instead. Removed after the response Sunset date. */
-      offset?: number;
       status?: 'confirmed' | 'pending' | 'cancelled' | 'completed' | string;
       platform?: string;
-      listing_id?: number;
+      listingId?: string | number;
       check_in_after?: string;
       check_in_before?: string;
       check_out_after?: string;
       check_out_before?: string;
       from?: string;
       to?: string;
+      include_total?: boolean;
     } = {},
     opts: { xSchema?: string } = {},
-  ): Promise<ReservationListResponse<Reservation>> {
-    return this.client.request<ReservationListResponse<Reservation>>('GET', '/v1/reservations', {
+  ): Promise<ListResponse<Reservation>> {
+    return this.client.request<ListResponse<Reservation>>('GET', '/v1/reservations', {
       query,
       xSchema: opts.xSchema,
     });
@@ -364,14 +363,14 @@ class ConversationsNamespace {
   /**
    * GET /v1/conversations — cursor-paginated list of conversation threads.
    *
-   * Pass `cursor` from the previous response's `pagination.next_cursor` to
-   * walk forward; stop when `pagination.has_more` is `false`.
+   * Pass `cursor` from the previous response's `pagination.nextCursor` to
+   * walk forward; stop when `pagination.hasMore` is `false`.
    */
   list(
-    query: { limit?: number; cursor?: string; channel?: string } = {},
+    query: { limit?: number; cursor?: string; channel?: string; include_total?: boolean } = {},
     opts: { xSchema?: string } = {},
-  ): Promise<CursorListResponse<Conversation>> {
-    return this.client.request<CursorListResponse<Conversation>>('GET', '/v1/conversations', {
+  ): Promise<ListResponse<Conversation>> {
+    return this.client.request<ListResponse<Conversation>>('GET', '/v1/conversations', {
       query,
       xSchema: opts.xSchema,
     });
@@ -389,10 +388,10 @@ class ConversationsNamespace {
   /** GET /v1/conversations/{id}/messages — messages on a thread, newest first. */
   messages(
     conversationId: string | number,
-    query: { limit?: number; cursor?: string } = {},
+    query: { limit?: number; cursor?: string; order?: 'asc' | 'desc' } = {},
     opts: { xSchema?: string } = {},
-  ): Promise<CursorListResponse<Message>> {
-    return this.client.request<CursorListResponse<Message>>(
+  ): Promise<ListResponse<Message>> {
+    return this.client.request<ListResponse<Message>>(
       'GET',
       `/v1/conversations/${encodeURIComponent(String(conversationId))}/messages`,
       { query, xSchema: opts.xSchema },
@@ -408,10 +407,17 @@ class GuestsNamespace {
 
   /** GET /v1/guests — cursor-paginated guest directory. */
   list(
-    query: { limit?: number; cursor?: string; search?: string } = {},
+    query: {
+      limit?: number;
+      cursor?: string;
+      q?: string;
+      has_reservation?: boolean;
+      listing_id?: string | number;
+      include_total?: boolean;
+    } = {},
     opts: { xSchema?: string } = {},
-  ): Promise<CursorListResponse<Guest>> {
-    return this.client.request<CursorListResponse<Guest>>('GET', '/v1/guests', {
+  ): Promise<ListResponse<Guest>> {
+    return this.client.request<ListResponse<Guest>>('GET', '/v1/guests', {
       query,
       xSchema: opts.xSchema,
     });
@@ -434,16 +440,33 @@ class ReviewsNamespace {
 
   /** GET /v1/reviews — cursor-paginated review stream across channels. */
   list(
-    query: { limit?: number; cursor?: string; channel?: string; listing_id?: number } = {},
+    query: {
+      limit?: number;
+      cursor?: string;
+      channel?: string;
+      platform?: string;
+      listing_id?: string | number;
+      rating_min?: number;
+      rating_max?: number;
+      status?: 'responded' | 'unanswered' | 'all';
+      reviewer_role?: 'guest' | 'host' | 'all';
+      include_total?: boolean;
+    } = {},
     opts: { xSchema?: string } = {},
-  ): Promise<CursorListResponse<Review>> {
-    return this.client.request<CursorListResponse<Review>>('GET', '/v1/reviews', {
+  ): Promise<ListResponse<Review>> {
+    return this.client.request<ListResponse<Review>>('GET', '/v1/reviews', {
       query,
       xSchema: opts.xSchema,
     });
   }
 
-  /** GET /v1/reviews/{id}. */
+  /**
+   * GET /v1/reviews/{id}.
+   *
+   * v0.2.0: the response is now the bare `Review` object (the v0.1.x
+   * `{ data: Review }` envelope was removed for consistency with other
+   * single-resource gets).
+   */
   get(id: string | number, opts: { xSchema?: string } = {}): Promise<Review> {
     return this.client.request<Review>('GET', `/v1/reviews/${encodeURIComponent(String(id))}`, {
       xSchema: opts.xSchema,
@@ -454,14 +477,34 @@ class ReviewsNamespace {
 class PropertiesNamespace {
   constructor(private readonly client: Repull) {}
 
-  /** GET /v1/properties — paginated list. */
-  list(query: { limit?: number; offset?: number } = {}): Promise<ListResponse<Property>> {
-    return this.client.request<ListResponse<Property>>('GET', '/v1/properties', { query });
+  /**
+   * GET /v1/properties — cursor-paginated list.
+   *
+   * v0.2.0: migrated from `?offset=` to `?cursor=`. Pass
+   * `pagination.nextCursor` back as `?cursor=`.
+   */
+  list(
+    query: {
+      limit?: number;
+      cursor?: string;
+      status?: 'active' | 'all';
+      include_total?: boolean;
+    } = {},
+    opts: { xSchema?: string } = {},
+  ): Promise<ListResponse<Property>> {
+    return this.client.request<ListResponse<Property>>('GET', '/v1/properties', {
+      query,
+      xSchema: opts.xSchema,
+    });
   }
 
   /** GET /v1/properties/{id}. */
-  get(id: string | number): Promise<Property> {
-    return this.client.request<Property>('GET', `/v1/properties/${encodeURIComponent(String(id))}`);
+  get(id: string | number, opts: { xSchema?: string } = {}): Promise<Property> {
+    return this.client.request<Property>(
+      'GET',
+      `/v1/properties/${encodeURIComponent(String(id))}`,
+      { xSchema: opts.xSchema },
+    );
   }
 }
 
@@ -493,21 +536,28 @@ class AirbnbChannelNamespace {
 class AirbnbListingsNamespace {
   constructor(private readonly client: Repull) {}
 
-  /** GET /v1/channels/airbnb/listings — read-only listing index with `connections` info. */
-  list(query: { limit?: number; offset?: number } = {}): Promise<unknown> {
-    return this.client.request<unknown>('GET', '/v1/channels/airbnb/listings', { query });
+  /**
+   * GET /v1/channels/airbnb/listings — read-only Airbnb listing index with
+   * `connections` info. v0.2.0: now wraps in the canonical
+   * `{ data, pagination }` envelope.
+   */
+  list(query: { limit?: number; cursor?: string; include_total?: boolean } = {}): Promise<ListResponse<unknown>> {
+    return this.client.request<ListResponse<unknown>>('GET', '/v1/channels/airbnb/listings', { query });
   }
 
   /** GET /v1/channels/airbnb/listings/{id}. */
   get(id: string | number): Promise<unknown> {
-    return this.client.request<unknown>('GET', `/v1/channels/airbnb/listings/${encodeURIComponent(String(id))}`);
+    return this.client.request<unknown>(
+      'GET',
+      `/v1/channels/airbnb/listings/${encodeURIComponent(String(id))}`,
+    );
   }
 }
 
 /**
  * Atlas market intelligence — every market the workspace operates in plus
  * KPIs (own ADR vs market ADR, occupancy, ratings, share). Backed by Atlas,
- * Vanio's market-intelligence fleet of 660 live workers.
+ * Vanio's market-intelligence fleet.
  */
 class MarketsNamespace {
   constructor(private readonly client: Repull) {}
@@ -516,25 +566,75 @@ class MarketsNamespace {
    * GET /v1/markets — overview of every market the customer has listings
    * in, plus discovery list of nearby Atlas-tracked markets.
    *
-   * Response is intentionally typed loosely (`unknown`) until the upstream
-   * shape stabilises — sandbox + live keys may return slightly different
-   * field sets while the endpoint is in beta.
+   * v0.2.0 reshape: per-city KPIs now live on `response.data` (canonical
+   * envelope) instead of `response.markets`. Auxiliary fields (`totals`,
+   * `myListings`, `browse`, `freeMarket`, `subscriptions`, `tier`) are
+   * still siblings.
    */
   list(): Promise<MarketsResponse> {
     return this.client.request<MarketsResponse>('GET', '/v1/markets');
   }
+
+  /**
+   * GET /v1/markets/browse — paginated discovery catalog of every
+   * Atlas-tracked market (>=5 active comps).
+   *
+   * v0.2.0: `pagination.total_in_filter` was renamed to `pagination.total`.
+   */
+  browse(
+    query: {
+      limit?: number;
+      cursor?: string;
+      q?: string;
+      country?: string;
+      sort?: 'listings_desc' | 'name_asc';
+      include_total?: boolean;
+    } = {},
+  ): Promise<MarketBrowseResponse> {
+    return this.client.request<MarketBrowseResponse>('GET', '/v1/markets/browse', { query });
+  }
 }
 
 /**
- * Atlas pricing recommendations + apply/decline action. Recommendations
- * are pre-computed by the model and stored in `pricing_recommendations`;
- * this surface reads them and writes back the user's response.
+ * Listings — cursor-paginated list + per-listing detail, plus Atlas
+ * pricing recommendations (`repull.listings.pricing`).
  */
 class ListingsNamespace {
   readonly pricing: ListingsPricingNamespace;
 
-  constructor(client: Repull) {
+  constructor(private readonly client: Repull) {
     this.pricing = new ListingsPricingNamespace(client);
+  }
+
+  /**
+   * GET /v1/listings — cursor-paginated list of listings owned by the
+   * authenticated workspace. New top-level surface in v0.2.0 (the v0.1.x
+   * facade only exposed `repull.listings.pricing`).
+   */
+  list(
+    query: {
+      limit?: number;
+      cursor?: string;
+      q?: string;
+      status?: 'active' | 'inactive' | 'archived';
+      channel?: string;
+      include_total?: boolean;
+    } = {},
+    opts: { xSchema?: string } = {},
+  ): Promise<ListResponse<Listing>> {
+    return this.client.request<ListResponse<Listing>>('GET', '/v1/listings', {
+      query,
+      xSchema: opts.xSchema,
+    });
+  }
+
+  /** GET /v1/listings/{id} — single listing. New in v0.2.0. */
+  get(id: string | number, opts: { xSchema?: string } = {}): Promise<Listing> {
+    return this.client.request<Listing>(
+      'GET',
+      `/v1/listings/${encodeURIComponent(String(id))}`,
+      { xSchema: opts.xSchema },
+    );
   }
 }
 

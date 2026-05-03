@@ -92,7 +92,7 @@ const session = await repull.connect.airbnb.create({
   accessType: ${JSON.stringify(accessType)},
 });
 
-// session.oauthUrl  -> send the user here
+// session.url       -> send the user here
 // session.sessionId -> poll status with repull.connect.airbnb.status()
 // session.expiresAt -> ISO timestamp
 `;
@@ -208,9 +208,9 @@ const session = await repull.connect.airbnb.create({
               <Field label="airbnb_user_id" value={flow.status?.externalAccountId ?? '—'} />
               <Field label="session" value={session?.sessionId ?? '—'} />
             </div>
-            {session?.oauthUrl ? (
+            {session?.url ? (
               <a
-                href={session.oauthUrl}
+                href={session.url}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="btn btn-primary w-full mt-2"
@@ -229,8 +229,8 @@ const session = await repull.connect.airbnb.create({
             snippets={snippets}
           />
           <p className="text-xs muted mt-3 leading-relaxed">
-            Returns <code className="kbd">{'{ oauthUrl, sessionId, provider, expiresAt }'}</code>. Send the
-            user to <code className="kbd">oauthUrl</code> — they&apos;ll land on{' '}
+            Returns <code className="kbd">{'{ url, sessionId, provider, expiresAt }'}</code>. Send the
+            user to <code className="kbd">url</code> — they&apos;ll land on{' '}
             <code className="kbd">connect.repull.dev</code>, grant consent on Airbnb, then bounce back to your
             redirect.
           </p>
