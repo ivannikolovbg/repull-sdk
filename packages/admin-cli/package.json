@@ -1,0 +1,46 @@
+{
+  "name": "@repull/admin-cli",
+  "version": "0.1.0",
+  "description": "Repull ops CLI — superadmin tooling for suspend/unsuspend, force-purge, deploy replay, host drain, and audit log queries.",
+  "license": "SEE LICENSE.md",
+  "type": "module",
+  "publishConfig": {
+    "access": "restricted"
+  },
+  "private": true,
+  "bin": {
+    "repull-admin": "./dist/cli.js"
+  },
+  "main": "./dist/cli.js",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "chalk": "^5.3.0",
+    "cli-table3": "^0.6.5",
+    "commander": "^12.1.0",
+    "ora": "^8.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.5"
+  },
+  "keywords": [
+    "repull",
+    "repull-admin",
+    "superadmin",
+    "ops",
+    "cli"
+  ],
+  "engines": {
+    "node": ">=20"
+  }
+}
