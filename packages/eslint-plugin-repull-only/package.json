@@ -1,0 +1,46 @@
+{
+  "name": "@repull/eslint-plugin-repull-only",
+  "version": "0.1.0",
+  "description": "ESLint plugin that bans non-Repull imports in Studio templates. Layer 3 of the SDK-only moat.",
+  "license": "SEE LICENSE.md",
+  "type": "module",
+  "publishConfig": {
+    "access": "public"
+  },
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "peerDependencies": {
+    "eslint": ">=8.0.0"
+  },
+  "devDependencies": {
+    "@types/eslint": "^9.6.1",
+    "@types/estree": "^1.0.6",
+    "@types/node": "^20.16.10",
+    "eslint": "^9.13.0",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.3"
+  },
+  "keywords": [
+    "eslint",
+    "eslint-plugin",
+    "repull",
+    "vacation-rental",
+    "studio"
+  ]
+}
