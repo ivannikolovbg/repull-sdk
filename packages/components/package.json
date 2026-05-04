@@ -1,0 +1,97 @@
+{
+  "name": "@repull/components",
+  "version": "0.1.0",
+  "description": "Pre-tested React primitives that wrap @repull/sdk — the safe building blocks for Studio agents and embedded apps.",
+  "license": "SEE LICENSE.md",
+  "type": "module",
+  "publishConfig": {
+    "access": "public"
+  },
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./RepullDataTable": {
+      "types": "./dist/components/RepullDataTable.d.ts",
+      "import": "./dist/components/RepullDataTable.js"
+    },
+    "./RepullCalendar": {
+      "types": "./dist/components/RepullCalendar.d.ts",
+      "import": "./dist/components/RepullCalendar.js"
+    },
+    "./RepullPropertyPicker": {
+      "types": "./dist/components/RepullPropertyPicker.d.ts",
+      "import": "./dist/components/RepullPropertyPicker.js"
+    },
+    "./RepullDateRangePicker": {
+      "types": "./dist/components/RepullDateRangePicker.d.ts",
+      "import": "./dist/components/RepullDateRangePicker.js"
+    },
+    "./RepullGuestProfile": {
+      "types": "./dist/components/RepullGuestProfile.d.ts",
+      "import": "./dist/components/RepullGuestProfile.js"
+    },
+    "./RepullPriceCell": {
+      "types": "./dist/components/RepullPriceCell.d.ts",
+      "import": "./dist/components/RepullPriceCell.js"
+    },
+    "./RepullPDFExport": {
+      "types": "./dist/components/RepullPDFExport.d.ts",
+      "import": "./dist/components/RepullPDFExport.js"
+    },
+    "./RepullStripePayoutWidget": {
+      "types": "./dist/components/RepullStripePayoutWidget.d.ts",
+      "import": "./dist/components/RepullStripePayoutWidget.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "peerDependencies": {
+    "@repull/sdk": "*",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "dependencies": {
+    "clsx": "^2.1.1",
+    "date-fns": "^4.1.0",
+    "lucide-react": "^0.460.0"
+  },
+  "devDependencies": {
+    "@repull/sdk": "workspace:*",
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.0.1",
+    "@testing-library/user-event": "^14.5.2",
+    "@types/node": "^20.14.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "happy-dom": "^15.11.6",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.5"
+  },
+  "keywords": [
+    "repull",
+    "react",
+    "components",
+    "sdk",
+    "vacation-rental",
+    "studio",
+    "agents"
+  ],
+  "engines": {
+    "node": ">=20"
+  }
+}
