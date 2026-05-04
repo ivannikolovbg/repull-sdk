@@ -35,7 +35,9 @@ export interface paths {
          * List properties
          * @description Cursor-paginated list of properties for the authenticated workspace. Walk pages with `?cursor=<pagination.nextCursor>`; stop when `pagination.hasMore` is `false`. Cursor is opaque base64 — do not parse it.
          *
-         *     **Breaking change:** `?offset=` is no longer accepted. Requests passing it return 422 with a `did_you_mean: 'cursor'` hint.
+         *     Filters: `q` (substring on name/street/city), `status` (active|inactive|all), `lifecycle_status` (exact match on the listing's lifecycle state).
+         *
+         *     **Breaking change:** `?offset=` is no longer accepted. Requests passing it return 422 with a `did_you_mean: 'cursor'` hint. Other unknown params (e.g. `?search=` or `?propertyId=`) are also rejected with 422 — no silent unfiltered results.
          */
         get: operations["list_properties"];
         put?: never;
@@ -377,7 +379,7 @@ export interface paths {
          * Connect to PMS/OTA provider
          * @description Establish a connection to a PMS or OTA platform. Credentials vary by provider — see docs for each provider.
          *
-         *     Airbnb-specific: pass `redirectUrl` (where to send the user after consent) and optionally `accessType` (`read_only` for calendar-only OAuth scopes, or `full_access` — the default — for full host scopes). The response returns a hosted `oauthUrl` to redirect the user to.
+         *     Airbnb-specific: pass `redirectUrl` (where to send the user after consent) and optionally `accessType` (`read_only` for calendar-only OAuth scopes, or `full_access` — the default — for full host scopes). The response returns a hosted `url` to redirect the user to.
          */
         post: operations["create_connection"];
         /**
@@ -681,7 +683,9 @@ export interface paths {
         };
         /**
          * List Airbnb listings
-         * @description List every Airbnb listing this workspace has access to via the connected Airbnb account. Sourced from the Airbnb Listing API. Listings sync automatically every few minutes — pass `?refresh=true` to force a fresh upstream pull.
+         * @description List every Airbnb listing this workspace has access to via the connected Airbnb account. Default response is a fast DB read pairing each Vanio listing with its `listings_airbnb` connection rows.
+         *
+         *     Pass `?include=amenities` to enrich each connection with its current Airbnb amenity set (one extra upstream call per unique Airbnb id, fanned out in parallel). Per-connection failures surface in `_errors.amenities` rather than failing the whole request.
          */
         get: operations["list_airbnb_listings"];
         put?: never;
@@ -705,7 +709,7 @@ export interface paths {
         };
         /**
          * Get Airbnb listing
-         * @description Fetch a single Airbnb listing by id with full pricing, availability, and content. Listing ids are Airbnb-side ids (numeric strings).
+         * @description Fetch all Airbnb connection rows for a single Vanio listing id. A property may be linked from multiple Airbnb hosts — every match is returned. Pass `?include=amenities` to enrich each row with its current Airbnb amenities.
          */
         get: operations["get_airbnb_listing"];
         put?: never;
@@ -845,7 +849,11 @@ export interface paths {
         };
         /**
          * List Airbnb reservations
-         * @description List reservations sourced directly from Airbnb. Use this when you need Airbnb-specific fields (guest payout split, cancellation policy snapshot) that the unified `/v1/reservations` endpoint flattens away.
+         * @description Cursor-paginated list of reservations sourced directly from Airbnb. Use this when you need Airbnb-specific fields (guest payout split, cancellation policy snapshot) that the unified `/v1/reservations` endpoint flattens away.
+         *
+         *     Walk pages with `?cursor=<pagination.next_cursor>` until `pagination.has_more` is `false`. The cursor is opaque — never construct or parse it client-side.
+         *
+         *     When `status` is omitted, all statuses are returned (Airbnb defaults to `accepted` only on its own surface, but this endpoint normalises to "all"). Pass `?status=accepted` to scope.
          */
         get: operations["list_airbnb_reservations"];
         put?: never;
@@ -894,8 +902,51 @@ export interface paths {
         get: operations["list_airbnb_reviews"];
         put?: never;
         /**
+         * Respond to / submit Airbnb review (legacy)
+         * @deprecated
+         * @description Legacy action-based shape. Body `{ action: "respond"|"submit", reviewId, response?, review? }`. Kept for backwards compatibility — prefer `PUT /v1/channels/airbnb/reviews/{id}` (edit) and `POST /v1/channels/airbnb/reviews/{id}/respond` (reply) for new integrations.
+         */
+        post: operations["respond_airbnb_review_legacy"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/airbnb/reviews/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Edit Airbnb host review
+         * @description Edit a host-side review for an Airbnb stay. Airbnb collapses POST + PUT into the same upstream call (`PUT /v2/listing_reviews/{id}`), so this endpoint covers both initial submit and subsequent edits while the review window is open.
+         *
+         *     Body is a partial `AirbnbReview` — pass the fields you want to change (rating, public review, private feedback, category ratings).
+         */
+        put: operations["edit_airbnb_review"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/airbnb/reviews/{id}/respond": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
          * Respond to Airbnb review
-         * @description Post a public response to a guest review. Airbnb allows one response per review — repeated POSTs return 409.
+         * @description Post a public host response to a guest review. Airbnb allows one response per review — repeated POSTs return 409. Response text is capped at 1000 characters.
          */
         post: operations["respond_airbnb_review"];
         delete?: never;
@@ -1154,6 +1205,32 @@ export interface paths {
          * @description Trigger a full bulk sync of properties + availability + rates to Booking.com. Runs async — returns 202 with a job id; poll `/v1/sync/jobs/{id}` for status.
          */
         post: operations["sync_booking"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/booking/reviews": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Booking.com reviews
+         * @description List guest reviews for a Booking.com property. Pass `property_id` (the Booking.com hotel id) as a query param — required.
+         */
+        get: operations["list_booking_reviews"];
+        put?: never;
+        /**
+         * Reply to Booking.com review
+         * @description Post a public host reply to a guest review on Booking.com. Booking allows one host reply per review — repeated POSTs are rejected by upstream.
+         *
+         *     Booking.com does NOT support host-authored reviews of guests via the API (platform-level limitation), so this endpoint is reply-only.
+         */
+        post: operations["reply_booking_review"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1494,7 +1571,7 @@ export interface paths {
          * Paginated discovery catalog
          * @description Cursor-paginated, search-filterable catalog of every Atlas-tracked market the customer could expand into. Backed by the precomputed `market_summaries` table (>=5 active comps per city). Supports fuzzy `q` substring search (trigram-indexed), `country` (ISO 3166-1 alpha-2) filter, and `sort` (`listings_desc` | `name_asc`). Use the `nextCursor` from `pagination` to walk pages — the cursor is an opaque base64 token; do not parse it.
          *
-         *     `pagination.total` is the count of markets matching the current `q`/`country`/`min_listings` filter (across all pages). Renamed from the upstream's legacy `total_in_filter` so SDK consumers see the same `pagination.total` field as on every other list endpoint.
+         *     `pagination.total` is the count of markets matching the current `q`/`country`/`min_listings` filter (across all pages) — same shape as every other list endpoint.
          */
         get: operations["list_market_browse"];
         put?: never;
@@ -2184,7 +2261,7 @@ export interface components {
              *       "reservation.updated"
              *     ]
              */
-            events?: string[];
+            events?: components["schemas"]["WebhookEventType"][];
             /** @example 2026-04 */
             apiVersion?: string;
             /** @enum {string} */
@@ -2208,6 +2285,7 @@ export interface components {
             /** @description Plaintext signing secret. Only returned by create + rotate. Capture and store securely. */
             secret?: string | null;
         };
+        /** @description A single delivery attempt for a webhook event. The actual `WebhookEvent` envelope POSTed to the subscription URL is captured on `WebhookDeliveryDetail.payload` (this list view omits the body for size). */
         WebhookDelivery: {
             /** Format: uuid */
             id?: string;
@@ -2216,7 +2294,7 @@ export interface components {
              * @description Stable across retries of the same logical event.
              */
             eventId?: string;
-            eventType?: string;
+            eventType?: components["schemas"]["WebhookEventType"];
             statusCode?: number | null;
             responseTimeMs?: number | null;
             attempt?: number;
@@ -2229,11 +2307,12 @@ export interface components {
             /** Format: date-time */
             failedAt?: string | null;
         };
+        /** @description Full request + response capture for one delivery attempt. `payload` is the exact `WebhookEvent` envelope that was (or would have been) POSTed to the subscription URL. */
         WebhookDeliveryDetail: {
             id?: string;
             eventId?: string;
-            eventType?: string;
-            payload?: Record<string, never>;
+            eventType?: components["schemas"]["WebhookEventType"];
+            payload?: components["schemas"]["WebhookEvent"];
             requestHeaders?: Record<string, never> | null;
             statusCode?: number | null;
             responseHeaders?: Record<string, never> | null;
@@ -2249,37 +2328,634 @@ export interface components {
             data?: components["schemas"]["WebhookDelivery"][];
             pagination?: components["schemas"]["Pagination"];
         };
+        /** @description Canonical catalog of every event the API can deliver, grouped by domain. Each entry includes a realistic `samplePayload` matching the discriminated `WebhookEvent` union — so SDKs can render docs and dashboards from this single source of truth. */
         WebhookEventCatalog: {
             domains?: {
                 id?: string;
                 title?: string;
-                events?: {
-                    type?: string;
-                    domain?: string;
-                    title?: string;
-                    description?: string;
-                    samplePayload?: Record<string, never>;
-                }[];
+                events?: components["schemas"]["WebhookEventCatalogEntry"][];
             }[];
+            /** @description All events in a flat list (same entries as `domains[].events`, ungrouped). */
+            flat?: components["schemas"]["WebhookEventCatalogEntry"][];
         };
-        /** @description An Airbnb listing in the host account. Mirrors the Airbnb partner API shape with light normalization. */
-        AirbnbListing: {
+        WebhookEventCatalogEntry: {
+            type?: components["schemas"]["WebhookEventType"];
+            /** @enum {string} */
+            domain?: "reservations" | "listings" | "calendar" | "connections" | "ai" | "payments" | "system";
+            title?: string;
+            description?: string;
+            /** @description Realistic example of the `data` payload an event of this `type` will deliver. Shape matches the matching variant in the `WebhookEvent` discriminated union. */
+            samplePayload?: Record<string, never>;
+        };
+        /**
+         * @description Canonical event type identifier. Every webhook delivery declares one of these in its `type` field; SDKs key the discriminated `WebhookEvent` union on this value.
+         * @enum {string}
+         */
+        WebhookEventType: "reservation.created" | "reservation.updated" | "reservation.cancelled" | "reservation.message.received" | "listing.created" | "listing.updated" | "listing.deleted" | "calendar.updated" | "connection.created" | "connection.disconnected" | "ai.operation.completed" | "ai.operation.failed" | "payment.completed" | "payment.refunded" | "repull.ping";
+        /** @description Payload for `reservation.created`. A new reservation arrived from any connected channel or direct booking. */
+        ReservationCreatedPayload: {
+            /** @example 215906 */
+            id?: number;
+            /** @example HMA1234567 */
+            confirmationCode?: string;
+            /** @example 6250 */
+            listingId?: number;
+            /** @example airbnb */
+            platform?: string;
+            /** @example confirmed */
+            status?: string;
             /**
-             * @description Airbnb listing ID
-             * @example 12345678
+             * Format: date
+             * @example 2026-06-01
+             */
+            checkIn?: string;
+            /**
+             * Format: date
+             * @example 2026-06-05
+             */
+            checkOut?: string;
+            /** @example 4 */
+            nights?: number;
+            guests?: {
+                /** @example 2 */
+                adults?: number;
+                /** @example 0 */
+                children?: number;
+                /** @example 0 */
+                infants?: number;
+            };
+            primaryGuest?: {
+                /** @example Alex */
+                firstName?: string;
+                /** @example Morgan */
+                lastName?: string;
+                /**
+                 * Format: email
+                 * @example alex@example.com
+                 */
+                email?: string;
+            };
+            pricing?: {
+                /** @example 1200.00 */
+                subtotal?: string;
+                /** @example 120.00 */
+                taxes?: string;
+                /** @example 1320.00 */
+                total?: string;
+                /** @example USD */
+                currency?: string;
+            };
+            /**
+             * Format: date-time
+             * @example 2026-05-01T12:34:56.000Z
+             */
+            createdAt?: string;
+        };
+        /** @description Payload for `reservation.updated`. Dates, guest count, status, or pricing changed on an existing reservation. The `changes` map carries `{ from, to }` deltas for each field that moved. */
+        ReservationUpdatedPayload: {
+            /** @example 215906 */
+            id?: number;
+            /** @example HMA1234567 */
+            confirmationCode?: string;
+            /**
+             * @description Map of `field` → `{ from, to }` pairs describing what changed.
+             * @example {
+             *       "checkOut": {
+             *         "from": "2026-06-05",
+             *         "to": "2026-06-07"
+             *       },
+             *       "pricing": {
+             *         "from": {
+             *           "total": "1320.00"
+             *         },
+             *         "to": {
+             *           "total": "1640.00"
+             *         }
+             *       }
+             *     }
+             */
+            changes?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Format: date-time
+             * @example 2026-05-01T13:00:00.000Z
+             */
+            updatedAt?: string;
+        };
+        /** @description Payload for `reservation.cancelled`. A reservation was cancelled by the guest, host, or platform. */
+        ReservationCancelledPayload: {
+            /** @example 215906 */
+            id?: number;
+            /** @example HMA1234567 */
+            confirmationCode?: string;
+            /**
+             * Format: date-time
+             * @example 2026-05-01T14:00:00.000Z
+             */
+            cancelledAt?: string;
+            /**
+             * @description Who initiated the cancellation (guest, host, platform).
+             * @example guest
+             */
+            cancelledBy?: string;
+            /** @example guest_requested */
+            reason?: string | null;
+            refund?: {
+                /** @example 1320.00 */
+                amount?: string;
+                /** @example USD */
+                currency?: string;
+            } | null;
+        };
+        /** @description Payload for `reservation.message.received`. A new inbound message arrived on a reservation thread. */
+        ReservationMessageReceivedPayload: {
+            /** @example 215906 */
+            reservationId?: number;
+            /** @example thr_01HX5XPQ2K */
+            threadId?: string;
+            from?: {
+                /**
+                 * @description Message author (guest, host, system).
+                 * @example guest
+                 */
+                type?: string;
+                /** @example Alex Morgan */
+                name?: string;
+            };
+            /** @example Hi! What time can we check in? */
+            body?: string;
+            /**
+             * Format: date-time
+             * @example 2026-05-01T15:00:00.000Z
+             */
+            sentAt?: string;
+        };
+        /** @description Payload for `listing.created`. A new property was synced into Repull from a connected PMS or channel. */
+        ListingCreatedPayload: {
+            /** @example 6250 */
+            id?: number;
+            /** @example R-Sable 1302 — Radium Hot Springs */
+            title?: string;
+            address?: {
+                /** @example Radium Hot Springs */
+                city?: string;
+                /** @example BC */
+                region?: string;
+                /** @example CA */
+                country?: string;
+            };
+            /** @example 2 */
+            bedrooms?: number;
+            /** @example 2 */
+            bathrooms?: number;
+            /** @example 6 */
+            maxGuests?: number;
+            /**
+             * Format: date-time
+             * @example 2026-05-01T12:00:00.000Z
+             */
+            createdAt?: string;
+        };
+        /** @description Payload for `listing.updated`. Listing content, amenities, photos, or status changed. */
+        ListingUpdatedPayload: {
+            /** @example 6250 */
+            id?: number;
+            /**
+             * @description Map of `field` → `{ from, to }` pairs describing what changed.
+             * @example {
+             *       "title": {
+             *         "from": "R-Sable 1302",
+             *         "to": "R-Sable 1302 — Radium Hot Springs"
+             *       }
+             *     }
+             */
+            changes?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Format: date-time
+             * @example 2026-05-01T12:30:00.000Z
+             */
+            updatedAt?: string;
+        };
+        /** @description Payload for `listing.deleted`. A property was removed from Repull or the upstream PMS. */
+        ListingDeletedPayload: {
+            /** @example 6250 */
+            id?: number;
+            /**
+             * Format: date-time
+             * @example 2026-05-01T16:00:00.000Z
+             */
+            deletedAt?: string;
+            /** @example deactivated_by_owner */
+            reason?: string | null;
+        };
+        /** @description Payload for `calendar.updated`. Availability or pricing for a listing was updated. */
+        CalendarUpdatedPayload: {
+            /** @example 6250 */
+            listingId?: number;
+            range?: {
+                /**
+                 * Format: date
+                 * @example 2026-06-01
+                 */
+                start?: string;
+                /**
+                 * Format: date
+                 * @example 2026-06-15
+                 */
+                end?: string;
+            };
+            /** @example 14 */
+            affectedDates?: number;
+            /** @example true */
+            pricingChanged?: boolean;
+            /** @example false */
+            availabilityChanged?: boolean;
+        };
+        /** @description Payload for `connection.created`. An OAuth or API credential connection was completed by an end user. */
+        ConnectionCreatedPayload: {
+            /**
+             * Format: uuid
+             * @example 47f8883d-28c2-4d2c-b020-c7cef1aff62c
+             */
+            workspaceId?: string;
+            /** @example acc_01HX5XPQ2K */
+            accountId?: string;
+            /**
+             * @description PMS or channel provider id (e.g. airbnb, booking, hostaway).
+             * @example airbnb
+             */
+            provider?: string;
+            /** @example full_access */
+            accessType?: string;
+            /**
+             * Format: date-time
+             * @example 2026-05-01T12:00:00.000Z
+             */
+            createdAt?: string;
+        };
+        /** @description Payload for `connection.disconnected`. A PMS or channel connection was revoked or expired. */
+        ConnectionDisconnectedPayload: {
+            /**
+             * Format: uuid
+             * @example 47f8883d-28c2-4d2c-b020-c7cef1aff62c
+             */
+            workspaceId?: string;
+            /** @example acc_01HX5XPQ2K */
+            accountId?: string;
+            /** @description Stable connection identifier — alias of accountId for this event variant. */
+            connectionId?: string | null;
+            /** @example airbnb */
+            provider?: string;
+            /**
+             * Format: date-time
+             * @example 2026-05-01T17:00:00.000Z
+             */
+            disconnectedAt?: string;
+            /** @example revoked_by_user */
+            reason?: string | null;
+        };
+        /** @description Payload for `ai.operation.completed`. An async AI run (review response, message draft, pricing suggestion) finished. */
+        AiOperationCompletedPayload: {
+            /** @example aiop_01HX5XPQ2K */
+            operationId?: string;
+            /**
+             * @description AI operation kind — e.g. respond-to-guest, price-suggestion, review-response.
+             * @example respond-to-guest
+             */
+            type?: string;
+            /** @example Guest asked about parking */
+            inputSummary?: string;
+            /**
+             * @description Operation-specific output object.
+             * @example {
+             *       "message": "Free underground parking is included with your stay."
+             *     }
+             */
+            output?: {
+                [key: string]: unknown;
+            };
+            /** @example 184 */
+            tokensUsed?: number;
+            /**
+             * Format: date-time
+             * @example 2026-05-01T18:00:00.000Z
+             */
+            completedAt?: string;
+        };
+        /** @description Payload for `ai.operation.failed`. An async AI run terminated with an error and will not be retried. */
+        AiOperationFailedPayload: {
+            /** @example aiop_01HX5XPQ2L */
+            operationId?: string;
+            /** @example price-suggestion */
+            type?: string;
+            error?: {
+                /** @example no_market_data */
+                code?: string;
+                /** @example Insufficient comparable listings. */
+                message?: string;
+            };
+            /**
+             * Format: date-time
+             * @example 2026-05-01T18:01:00.000Z
+             */
+            failedAt?: string;
+        };
+        /** @description Payload for `payment.completed`. A guest payment was successfully captured. */
+        PaymentCompletedPayload: {
+            /** @example pay_01HX5XPQ2K */
+            id?: string;
+            /** @example 215906 */
+            reservationId?: number;
+            /** @example 1320.00 */
+            amount?: string;
+            /** @example USD */
+            currency?: string;
+            /** @example card */
+            method?: string;
+            /**
+             * Format: date-time
+             * @example 2026-05-01T12:35:00.000Z
+             */
+            capturedAt?: string;
+        };
+        /** @description Payload for `payment.refunded`. A previous payment was refunded in part or in full. */
+        PaymentRefundedPayload: {
+            /** @example pay_01HX5XPQ2K */
+            id?: string;
+            /** @example rfn_01HX5XPQ2K */
+            refundId?: string;
+            /** @example 215906 */
+            reservationId?: number;
+            /** @example 1320.00 */
+            amount?: string;
+            /** @example USD */
+            currency?: string;
+            /**
+             * Format: date-time
+             * @example 2026-05-01T19:00:00.000Z
+             */
+            refundedAt?: string;
+        };
+        /** @description Payload for `repull.ping`. A diagnostic delivery used by the dashboard to verify endpoint reachability. */
+        RepullPingPayload: {
+            /** @example Ping from Repull. If you can read this, your endpoint is reachable. */
+            message?: string;
+        };
+        ReservationCreatedEvent: {
+            /**
+             * Format: uuid
+             * @description Stable event id — same across delivery retries of the same logical event.
              */
             id?: string;
-            /** @description Listing title */
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "reservation.created";
+            /** Format: date-time */
+            createdAt?: string;
+            /** @example 2026-04 */
+            apiVersion?: string;
+            data: components["schemas"]["ReservationCreatedPayload"];
+        };
+        ReservationUpdatedEvent: {
+            /** Format: uuid */
+            id?: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "reservation.updated";
+            /** Format: date-time */
+            createdAt?: string;
+            apiVersion?: string;
+            data: components["schemas"]["ReservationUpdatedPayload"];
+        };
+        ReservationCancelledEvent: {
+            /** Format: uuid */
+            id?: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "reservation.cancelled";
+            /** Format: date-time */
+            createdAt?: string;
+            apiVersion?: string;
+            data: components["schemas"]["ReservationCancelledPayload"];
+        };
+        ReservationMessageReceivedEvent: {
+            /** Format: uuid */
+            id?: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "reservation.message.received";
+            /** Format: date-time */
+            createdAt?: string;
+            apiVersion?: string;
+            data: components["schemas"]["ReservationMessageReceivedPayload"];
+        };
+        ListingCreatedEvent: {
+            /** Format: uuid */
+            id?: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "listing.created";
+            /** Format: date-time */
+            createdAt?: string;
+            apiVersion?: string;
+            data: components["schemas"]["ListingCreatedPayload"];
+        };
+        ListingUpdatedEvent: {
+            /** Format: uuid */
+            id?: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "listing.updated";
+            /** Format: date-time */
+            createdAt?: string;
+            apiVersion?: string;
+            data: components["schemas"]["ListingUpdatedPayload"];
+        };
+        ListingDeletedEvent: {
+            /** Format: uuid */
+            id?: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "listing.deleted";
+            /** Format: date-time */
+            createdAt?: string;
+            apiVersion?: string;
+            data: components["schemas"]["ListingDeletedPayload"];
+        };
+        CalendarUpdatedEvent: {
+            /** Format: uuid */
+            id?: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "calendar.updated";
+            /** Format: date-time */
+            createdAt?: string;
+            apiVersion?: string;
+            data: components["schemas"]["CalendarUpdatedPayload"];
+        };
+        ConnectionCreatedEvent: {
+            /** Format: uuid */
+            id?: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "connection.created";
+            /** Format: date-time */
+            createdAt?: string;
+            apiVersion?: string;
+            data: components["schemas"]["ConnectionCreatedPayload"];
+        };
+        ConnectionDisconnectedEvent: {
+            /** Format: uuid */
+            id?: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "connection.disconnected";
+            /** Format: date-time */
+            createdAt?: string;
+            apiVersion?: string;
+            data: components["schemas"]["ConnectionDisconnectedPayload"];
+        };
+        AiOperationCompletedEvent: {
+            /** Format: uuid */
+            id?: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "ai.operation.completed";
+            /** Format: date-time */
+            createdAt?: string;
+            apiVersion?: string;
+            data: components["schemas"]["AiOperationCompletedPayload"];
+        };
+        AiOperationFailedEvent: {
+            /** Format: uuid */
+            id?: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "ai.operation.failed";
+            /** Format: date-time */
+            createdAt?: string;
+            apiVersion?: string;
+            data: components["schemas"]["AiOperationFailedPayload"];
+        };
+        PaymentCompletedEvent: {
+            /** Format: uuid */
+            id?: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "payment.completed";
+            /** Format: date-time */
+            createdAt?: string;
+            apiVersion?: string;
+            data: components["schemas"]["PaymentCompletedPayload"];
+        };
+        PaymentRefundedEvent: {
+            /** Format: uuid */
+            id?: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "payment.refunded";
+            /** Format: date-time */
+            createdAt?: string;
+            apiVersion?: string;
+            data: components["schemas"]["PaymentRefundedPayload"];
+        };
+        RepullPingEvent: {
+            /** Format: uuid */
+            id?: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "repull.ping";
+            /** Format: date-time */
+            createdAt?: string;
+            apiVersion?: string;
+            data: components["schemas"]["RepullPingPayload"];
+        };
+        /** @description The full event envelope POSTed to your webhook URL. Discriminated on `type` — narrow `event.data` by switching on `event.type`. Use the matching `*Event` variant directly if your SDK lacks discriminator support. */
+        WebhookEvent: components["schemas"]["ReservationCreatedEvent"] | components["schemas"]["ReservationUpdatedEvent"] | components["schemas"]["ReservationCancelledEvent"] | components["schemas"]["ReservationMessageReceivedEvent"] | components["schemas"]["ListingCreatedEvent"] | components["schemas"]["ListingUpdatedEvent"] | components["schemas"]["ListingDeletedEvent"] | components["schemas"]["CalendarUpdatedEvent"] | components["schemas"]["ConnectionCreatedEvent"] | components["schemas"]["ConnectionDisconnectedEvent"] | components["schemas"]["AiOperationCompletedEvent"] | components["schemas"]["AiOperationFailedEvent"] | components["schemas"]["PaymentCompletedEvent"] | components["schemas"]["PaymentRefundedEvent"] | components["schemas"]["RepullPingEvent"];
+        /** @description A Vanio listing paired with its Airbnb connection rows. The list endpoint groups every `listings_airbnb` row that points at the same Vanio `listingId` under a single `connections[]` array. */
+        AirbnbListing: {
+            /**
+             * @description Vanio (Repull) listing id
+             * @example 6248
+             */
+            listingId?: number;
+            /**
+             * @description Listing title
+             * @example Oceanview Villa
+             */
             name?: string;
-            /** @description Listing status (active, unlisted, etc.) */
-            status?: string;
-            propertyType?: string | null;
-            roomType?: string | null;
-            bedrooms?: number | null;
-            bathrooms?: number | null;
-            maxGuests?: number | null;
-            /** Format: uri */
-            thumbnailUrl?: string | null;
+            /** @example Malibu */
+            city?: string | null;
+            connections?: components["schemas"]["AirbnbConnection"][];
+        };
+        /** @description An Airbnb-side connection record for a Vanio listing. The same property may appear under multiple connections if it has been linked from multiple Airbnb host accounts. */
+        AirbnbConnection: {
+            /** @description Connection row id */
+            id?: number;
+            /**
+             * @description Airbnb-side listing id
+             * @example 1116939745194659457
+             */
+            airbnbId?: string;
+            /** @description Airbnb host user id */
+            hostId?: string;
+            active?: boolean;
+            syncEnabled?: boolean;
+            primary?: boolean;
+            /** @description Decimal markup (e.g. "1.10" for +10%). */
+            markup?: string | null;
+            /** Format: date-time */
+            createdAt?: string;
+            /** @description Present only when `?include=amenities` is passed. Sourced from `GET /v2/listings/:id/amenities` on Airbnb. */
+            amenities?: {
+                id?: string;
+                is_present?: boolean;
+                name?: string | null;
+                category?: string | null;
+                icon?: string | null;
+            }[] | null;
+            /** @description Present only when `?include=amenities` is passed. */
+            accessibility_amenities?: Record<string, never>[] | null;
+            /** @description Per-expansion failures. Present only when an `?include=` upstream call failed for this connection (others may still succeed). */
+            _errors?: {
+                [key: string]: {
+                    message?: string;
+                    status?: number | null;
+                };
+            } | null;
         };
         /** @description A property registered in the Booking.com extranet for the connected hotel ID. */
         BookingProperty: {
@@ -2588,9 +3264,10 @@ export interface components {
             data?: components["schemas"]["AirbnbListing"][];
             pagination?: components["schemas"]["Pagination"];
         };
+        /** @description Cursor-paginated Airbnb reservation list. Pass `pagination.next_cursor` back as `?cursor=` to fetch the next page; stop when `pagination.has_more` is `false`. */
         AirbnbReservationListResponse: {
             data?: components["schemas"]["AirbnbReservation"][];
-            pagination?: components["schemas"]["Pagination"];
+            pagination?: components["schemas"]["CursorPagination"];
         };
         AirbnbThreadListResponse: {
             data?: components["schemas"]["AirbnbThread"][];
@@ -3221,7 +3898,7 @@ export interface components {
                 active?: number;
                 limit?: number;
             };
-            /** @description Resolved Repull tier (free / pro / scale). */
+            /** @description Resolved Repull tier (free / starter / custom). */
             tier?: string;
             /** @description Lightweight discovery summary. Use `/v1/markets/browse` for the full paginated catalog. */
             browse?: {
@@ -3559,8 +4236,12 @@ export interface operations {
                 limit?: number;
                 /** @description Opaque cursor returned in the previous response's `pagination.nextCursor`. Omit to fetch the first page. */
                 cursor?: string;
-                /** @description Filter by status. Default returns active only; pass `all` to include inactive. */
-                status?: "active" | "all";
+                /** @description Case-insensitive substring search on name, street, or city. */
+                q?: string;
+                /** @description Filter by status. Default returns active only; pass `inactive` to invert or `all` to include both. */
+                status?: "active" | "inactive" | "all";
+                /** @description Filter by lifecycle status (e.g. `live`, `draft`, `archived`). Pass `all` to disable the filter. */
+                lifecycle_status?: string;
                 /** @description When `true` (default), the response's `pagination.total` carries the count of rows matching the current filter, across all pages. Pass `false` to skip the count for very large workspaces where the per-page COUNT(*) cost matters. */
                 include_total?: components["parameters"]["IncludeTotal"];
             };
@@ -4454,7 +5135,7 @@ export interface operations {
                 "application/json": {
                     /** Format: uri */
                     url: string;
-                    events: string[];
+                    events: components["schemas"]["WebhookEventType"][];
                     description?: string | null;
                     /** @example 2026-04 */
                     apiVersion?: string;
@@ -4550,7 +5231,7 @@ export interface operations {
                     /** Format: uri */
                     url?: string;
                     description?: string | null;
-                    events?: string[];
+                    events?: components["schemas"]["WebhookEventType"][];
                     /** @enum {string} */
                     status?: "active" | "paused";
                 };
@@ -4621,7 +5302,8 @@ export interface operations {
             header?: never;
             path: {
                 id: string;
-                event_type: string;
+                /** @example reservation.created */
+                event_type: components["schemas"]["WebhookEventType"];
             };
             cookie?: never;
         };
@@ -4718,7 +5400,7 @@ export interface operations {
                 "application/json": {
                     /** Format: uri */
                     url?: string;
-                    event_type?: string;
+                    event_type?: components["schemas"]["WebhookEventType"];
                     signing_secret?: string;
                 };
             };
@@ -4735,7 +5417,10 @@ export interface operations {
     };
     list_airbnb_listings: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Comma-separated expansions. Currently supported: `amenities` (adds `amenities` and `accessibility_amenities` arrays to each connection). Each expansion adds one upstream Airbnb call per unique listing id. */
+                include?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -4775,7 +5460,10 @@ export interface operations {
     };
     get_airbnb_listing: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Comma-separated expansions. Currently supported: `amenities`. */
+                include?: string;
+            };
             header?: never;
             path: {
                 id: string;
@@ -4999,7 +5687,22 @@ export interface operations {
     };
     list_airbnb_reservations: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Opaque cursor returned by the previous response's `pagination.next_cursor`. Omit to fetch the first page. */
+                cursor?: string;
+                /** @description Max items per page. Hard cap is 100. */
+                limit?: number;
+                /** @description Filter to one Airbnb listing id (numeric string). */
+                listing_id?: string;
+                /** @description Filter by reservation status. Omit to receive all statuses. */
+                status?: "pending" | "accepted" | "denied" | "cancelled" | "completed" | "failed_verification" | "request_voided";
+                /** @description ISO 8601 (YYYY-MM-DD) lower bound on Airbnb's date range filter. */
+                start_date?: string;
+                /** @description ISO 8601 (YYYY-MM-DD) upper bound on Airbnb's date range filter. */
+                end_date?: string;
+                /** @description Whether to include `pagination.total`. Always populated when Airbnb returns a total count (effectively always); accepted for shape symmetry with the rest of the API. */
+                include_total?: boolean;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -5079,7 +5782,7 @@ export interface operations {
             };
         };
     };
-    respond_airbnb_review: {
+    respond_airbnb_review_legacy: {
         parameters: {
             query?: never;
             header?: never;
@@ -5095,6 +5798,78 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description Review submitted */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    edit_airbnb_review: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Airbnb review id (`HRabc123` style). */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AirbnbReview"];
+            };
+        };
+        responses: {
+            /** @description Updated review */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AirbnbReview"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["UnprocessableEntity"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    respond_airbnb_review: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Airbnb review id. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Public response text. Capped at 1000 characters. */
+                    response: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Response posted */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AirbnbReview"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["UnprocessableEntity"];
+            500: components["responses"]["InternalError"];
         };
     };
     sync_airbnb: {
@@ -5458,6 +6233,74 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    list_booking_reviews: {
+        parameters: {
+            query: {
+                /** @description Booking.com hotel/property id. */
+                property_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Reviews */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    reply_booking_review: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Booking.com hotel/property id. */
+                    property_id: string;
+                    /** @description Booking.com review id (from `GET /v1/channels/booking/reviews`). */
+                    review_id: string;
+                    /** @description Public host reply text. */
+                    response: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Reply posted */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        success?: boolean;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            422: components["responses"]["UnprocessableEntity"];
+            /** @description Booking.com upstream rejected the reply. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
             };
         };
     };

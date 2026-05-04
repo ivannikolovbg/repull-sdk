@@ -3,6 +3,24 @@
 All notable changes to `@repull/sdk` and `@repull/types` are recorded here.
 This project follows [Semantic Versioning](https://semver.org/).
 
+## v0.2.1 — 2026-05-03
+
+### Added
+- **Typed webhook event handling.** The OpenAPI spec now declares a discriminated `WebhookEvent` union (15 variants — one per canonical event type, keyed on `type`). The regenerated `@repull/types` exports `WebhookEvent`, `WebhookEventType`, and per-event payload + envelope schemas (`ReservationCreatedEvent`, `ConnectionDisconnectedEvent`, `PaymentCompletedPayload`, etc.). Endpoint handlers can now narrow `event.data` by switching on `event.type`:
+
+  ```ts
+  import type { components } from '@repull/types/openapi'
+  type WebhookEvent = components['schemas']['WebhookEvent']
+
+  function handle(event: WebhookEvent) {
+    if (event.type === 'connection.disconnected') {
+      // event.data.connectionId, event.data.provider, event.data.reason — all typed
+    }
+  }
+  ```
+
+- `WebhookSubscription.events`, the create/update bodies, and `test_fire_webhook` are now typed against `WebhookEventType` instead of bare `string`, so passing an unknown event id fails at compile time.
+
 ## v0.2.0 — 2026-05-02
 
 MAJOR — canonical contract release. The api.repull.dev surface was unified end-to-end (camelCase fields, string IDs, single `{ data, pagination }` envelope, self-documenting errors, rate-limit headers). This SDK regen aligns the TypeScript types and the hand-written facade with that contract.
