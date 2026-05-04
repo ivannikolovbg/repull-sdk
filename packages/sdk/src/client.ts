@@ -42,7 +42,7 @@ import type {
 import { RepullError } from './errors.js';
 
 const DEFAULT_BASE_URL = 'https://api.repull.dev';
-const DEFAULT_USER_AGENT = '@repull/sdk/0.2.0';
+const DEFAULT_USER_AGENT = '@repull/sdk/0.2.1';
 
 export type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
@@ -78,6 +78,7 @@ export class Repull {
   readonly markets: MarketsNamespace;
   readonly listings: ListingsNamespace;
   readonly schemas: SchemasNamespace;
+  readonly studio: StudioNamespace;
 
   private readonly opts: {
     apiKey?: string;
@@ -128,6 +129,7 @@ export class Repull {
     this.markets = new MarketsNamespace(this);
     this.listings = new ListingsNamespace(this);
     this.schemas = new SchemasNamespace(this);
+    this.studio = new StudioNamespace(this);
   }
 
   /** @internal */
@@ -738,6 +740,138 @@ class SchemasNamespace {
       'DELETE',
       `/v1/schema/custom/${encodeURIComponent(String(id))}`,
     );
+  }
+}
+
+/**
+ * Repull Studio — vibe-coded apps backed by per-project files, generations,
+ * and live deployments. Maps 1:1 to the 16 `/api/studio/*` operations on
+ * api.repull.dev. Path segment is `/api/studio/...` (note the literal `api`
+ * prefix — Studio routes are not under `/v1/`).
+ */
+class StudioNamespace {
+  readonly projects: StudioProjectsNamespace;
+  readonly deployments: StudioDeploymentsNamespace;
+
+  constructor(private readonly client: Repull) {
+    this.projects = new StudioProjectsNamespace(client);
+    this.deployments = new StudioDeploymentsNamespace(client);
+  }
+
+  /** POST /api/studio/generate — one-shot LLM completion endpoint. */
+  generate(body: Record<string, unknown>): Promise<unknown> {
+    return this.client.request('POST', '/api/studio/generate', { body });
+  }
+}
+
+class StudioProjectsNamespace {
+  readonly files: StudioProjectFilesNamespace;
+  readonly generations: StudioProjectGenerationsNamespace;
+
+  constructor(private readonly client: Repull) {
+    this.files = new StudioProjectFilesNamespace(client);
+    this.generations = new StudioProjectGenerationsNamespace(client);
+  }
+
+  /** GET /api/studio/projects — list projects on this workspace. */
+  list(query: Record<string, unknown> = {}): Promise<unknown> {
+    return this.client.request('GET', '/api/studio/projects', { query });
+  }
+
+  /** POST /api/studio/projects — create a new project from a prompt or template. */
+  create(body: Record<string, unknown>): Promise<unknown> {
+    return this.client.request('POST', '/api/studio/projects', { body });
+  }
+
+  /** GET /api/studio/projects/{id} — single project. */
+  get(id: string): Promise<unknown> {
+    return this.client.request('GET', `/api/studio/projects/${encodeURIComponent(id)}`);
+  }
+
+  /** PATCH /api/studio/projects/{id} — rename, change status, etc. */
+  update(id: string, body: Record<string, unknown>): Promise<unknown> {
+    return this.client.request('PATCH', `/api/studio/projects/${encodeURIComponent(id)}`, { body });
+  }
+
+  /** DELETE /api/studio/projects/{id} — soft-delete the project. */
+  delete(id: string): Promise<unknown> {
+    return this.client.request('DELETE', `/api/studio/projects/${encodeURIComponent(id)}`);
+  }
+}
+
+class StudioProjectFilesNamespace {
+  constructor(private readonly client: Repull) {}
+
+  /** GET /api/studio/projects/{id}/files — list files for a project. */
+  list(projectId: string): Promise<unknown> {
+    return this.client.request('GET', `/api/studio/projects/${encodeURIComponent(projectId)}/files`);
+  }
+
+  /** PUT /api/studio/projects/{id}/files/{path} — create or replace a file. */
+  upsert(projectId: string, path: string, body: Record<string, unknown>): Promise<unknown> {
+    return this.client.request(
+      'PUT',
+      `/api/studio/projects/${encodeURIComponent(projectId)}/files/${encodeURI(path)}`,
+      { body },
+    );
+  }
+
+  /** DELETE /api/studio/projects/{id}/files/{path} — delete a single file. */
+  delete(projectId: string, path: string): Promise<unknown> {
+    return this.client.request(
+      'DELETE',
+      `/api/studio/projects/${encodeURIComponent(projectId)}/files/${encodeURI(path)}`,
+    );
+  }
+}
+
+class StudioProjectGenerationsNamespace {
+  constructor(private readonly client: Repull) {}
+
+  /** POST /api/studio/projects/{id}/generations — kick off a new generation. */
+  create(projectId: string, body: Record<string, unknown>): Promise<unknown> {
+    return this.client.request(
+      'POST',
+      `/api/studio/projects/${encodeURIComponent(projectId)}/generations`,
+      { body },
+    );
+  }
+}
+
+class StudioDeploymentsNamespace {
+  constructor(private readonly client: Repull) {}
+
+  /** GET /api/studio/deployments — list deployments. */
+  list(query: Record<string, unknown> = {}): Promise<unknown> {
+    return this.client.request('GET', '/api/studio/deployments', { query });
+  }
+
+  /** POST /api/studio/deployments — start a new deployment. */
+  create(body: Record<string, unknown>): Promise<unknown> {
+    return this.client.request('POST', '/api/studio/deployments', { body });
+  }
+
+  /** GET /api/studio/deployments/{id} — single deployment. */
+  get(id: string): Promise<unknown> {
+    return this.client.request('GET', `/api/studio/deployments/${encodeURIComponent(id)}`);
+  }
+
+  /** DELETE /api/studio/deployments/{id} — destroy a deployment. */
+  delete(id: string): Promise<unknown> {
+    return this.client.request('DELETE', `/api/studio/deployments/${encodeURIComponent(id)}`);
+  }
+
+  /** POST /api/studio/deployments/{id}/suspend — pause a running deployment. */
+  suspend(id: string): Promise<unknown> {
+    return this.client.request(
+      'POST',
+      `/api/studio/deployments/${encodeURIComponent(id)}/suspend`,
+    );
+  }
+
+  /** POST /api/studio/deployments/{id}/wake — resume a suspended deployment. */
+  wake(id: string): Promise<unknown> {
+    return this.client.request('POST', `/api/studio/deployments/${encodeURIComponent(id)}/wake`);
   }
 }
 

@@ -3,6 +3,27 @@
 All notable changes to `@repull/sdk` and `@repull/types` are recorded here.
 This project follows [Semantic Versioning](https://semver.org/).
 
+## v0.2.1 — 2026-05-04
+
+### Added — Studio routes (16 ops)
+
+Repull Studio is now reachable from the TypeScript SDK. The `Repull` client
+gains a new `studio` namespace covering all 10 paths and 16 operations:
+
+- `repull.studio.projects.list / create / get / update / delete`
+- `repull.studio.projects.files.list / upsert / delete`
+- `repull.studio.projects.generations.create`
+- `repull.studio.generate(...)`
+- `repull.studio.deployments.list / create / get / delete / suspend / wake`
+
+New types in `@repull/types`: `StudioProject`, `StudioFile`,
+`StudioGeneration`, `StudioDeployment`, `StudioError` (re-exported from
+`./openapi`).
+
+The 16 corresponding `operations[...]` shapes are emitted by
+`openapi-typescript` straight from the merged spec. `User-Agent` bumped to
+`@repull/sdk/0.2.1`.
+
 ## v0.2.0 — 2026-05-02
 
 MAJOR — canonical contract release. The api.repull.dev surface was unified end-to-end (camelCase fields, string IDs, single `{ data, pagination }` envelope, self-documenting errors, rate-limit headers). This SDK regen aligns the TypeScript types and the hand-written facade with that contract.
