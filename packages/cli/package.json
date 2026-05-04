@@ -1,0 +1,45 @@
+{
+  "name": "@repull/cli",
+  "version": "0.1.0",
+  "description": "Repull Studio CLI — scaffold, pull, push, deploy, tail logs and open the Studio IDE from your terminal.",
+  "license": "SEE LICENSE.md",
+  "type": "module",
+  "publishConfig": {
+    "access": "public"
+  },
+  "bin": {
+    "repull": "./dist/cli.js"
+  },
+  "main": "./dist/cli.js",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "chalk": "^5.3.0",
+    "commander": "^12.1.0",
+    "ora": "^8.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.5"
+  },
+  "keywords": [
+    "repull",
+    "repull-studio",
+    "cli",
+    "vacation-rental",
+    "deploy",
+    "scaffold"
+  ],
+  "engines": {
+    "node": ">=20"
+  }
+}
