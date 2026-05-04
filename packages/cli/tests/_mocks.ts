@@ -1,7 +1,12 @@
 import { vi, type Mock } from 'vitest';
 import { promises as fs } from 'node:fs';
 import type { StudioApi } from '../src/lib/api.js';
-import type { CommandIO, CommandRuntime, SpinnerLike } from '../src/lib/runtime.js';
+import type {
+  CommandIO,
+  CommandRuntime,
+  ExecResult,
+  SpinnerLike,
+} from '../src/lib/runtime.js';
 
 export interface MockIO extends CommandIO {
   out: string[];
@@ -56,6 +61,7 @@ export function createMockApi(overrides: Partial<{ [K in keyof StudioApi]: Mock 
     getDeployment: overrides.getDeployment ?? vi.fn(),
     getLatestDeployment: overrides.getLatestDeployment ?? vi.fn(),
     getLogs: overrides.getLogs ?? vi.fn(),
+    gitInit: overrides.gitInit ?? vi.fn(),
   };
   const api: StudioApi = {
     createProject: (...a) => mocks.createProject(...a),
@@ -66,6 +72,7 @@ export function createMockApi(overrides: Partial<{ [K in keyof StudioApi]: Mock 
     getDeployment: (...a) => mocks.getDeployment(...a),
     getLatestDeployment: (...a) => mocks.getLatestDeployment(...a),
     getLogs: (...a) => mocks.getLogs(...a),
+    gitInit: (...a) => mocks.gitInit(...a),
   };
   return { api, mocks };
 }
@@ -76,10 +83,22 @@ export interface MockRuntimeOptions {
   api?: StudioApi;
 }
 
+export interface ExecCall {
+  command: string;
+  args: string[];
+  cwd?: string;
+}
+
 export interface MockRuntime extends CommandRuntime {
   io: MockIO;
   openCalls: string[];
   sleepCalls: number[];
+  execCalls: ExecCall[];
+  /**
+   * Per-command result map keyed by `command + ' ' + first-arg`. Tests
+   * may set entries before invoking commands. Default is exit 0.
+   */
+  execResults: Map<string, ExecResult>;
 }
 
 export function createMockRuntime(opts: MockRuntimeOptions = {}): MockRuntime {
@@ -90,10 +109,15 @@ export function createMockRuntime(opts: MockRuntimeOptions = {}): MockRuntime {
   const apiKey = opts.apiKey ?? 'sk_test_mock';
   const apiInstance = opts.api ?? createMockApi().api;
 
+  const execCalls: ExecCall[] = [];
+  const execResults = new Map<string, ExecResult>();
+
   const rt: MockRuntime = {
     io,
     openCalls,
     sleepCalls,
+    execCalls,
+    execResults,
     spinner: () => createMockSpinner(),
     apiFactory: () => apiInstance,
     resolveApiKey: async () => apiKey,
@@ -110,6 +134,13 @@ export function createMockRuntime(opts: MockRuntimeOptions = {}): MockRuntime {
       writeFile: fs.writeFile,
       mkdir: fs.mkdir,
       stat: fs.stat,
+    },
+    exec: async (command, args, options) => {
+      execCalls.push({ command, args, cwd: options?.cwd });
+      const key = `${command} ${args[0] ?? ''}`;
+      return (
+        execResults.get(key) ?? { exitCode: 0, stdout: '', stderr: '' }
+      );
     },
   };
   return rt;

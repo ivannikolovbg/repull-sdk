@@ -7,12 +7,12 @@ import { promises as fs } from 'node:fs';
 import { writeStudioConfig } from '../src/lib/config.js';
 
 describe('buildCli', () => {
-  it('exposes a `studio` command tree with init/pull/push/deploy/logs/open', () => {
+  it('exposes a `studio` command tree with init/pull/push/deploy/logs/open/git-init', () => {
     const program = buildCli({ runtime: createMockRuntime(), exit: () => {} });
     const studio = program.commands.find((c) => c.name() === 'studio');
     expect(studio).toBeDefined();
     const names = studio!.commands.map((c) => c.name()).sort();
-    expect(names).toEqual(['deploy', 'init', 'logs', 'open', 'pull', 'push']);
+    expect(names).toEqual(['deploy', 'git-init', 'init', 'logs', 'open', 'pull', 'push']);
   });
 
   it('prints the version string with --version', async () => {
