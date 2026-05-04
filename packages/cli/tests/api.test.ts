@@ -76,4 +76,67 @@ describe('createStudioApi', () => {
     });
     await api.createProject({ name: 'n' });
   });
+
+  it('gitInit POSTs JSON, returns the binary body and decoded headers', async () => {
+    const tarBytes = new Uint8Array([0x1f, 0x8b, 0x08, 0x00, 0x42]); // not a real gz, fine for this test
+    const fetchMock = vi.fn<Parameters<FetchLike>, ReturnType<FetchLike>>(async (url, init) => {
+      expect(String(url)).toBe(
+        'https://api.example.com/api/studio/projects/proj_abc/git/init',
+      );
+      expect(init?.method).toBe('POST');
+      const headers = init?.headers as Record<string, string>;
+      expect(headers.Authorization).toBe('Bearer k');
+      expect(headers['Content-Type']).toBe('application/json');
+      expect(headers['User-Agent']).toBe('@repull/cli/0.1.0');
+      const body = JSON.parse(String(init?.body));
+      expect(body).toEqual({
+        remote: 'https://github.com/me/x.git',
+        branch: 'trunk',
+      });
+      return new Response(tarBytes, {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/gzip',
+          'Content-Disposition': 'attachment; filename="my-app-git.tar.gz"',
+          'X-Studio-Git-Branch': 'trunk',
+          'X-Studio-Git-Slug': 'my-app',
+          'X-Repull-Push-Instructions': JSON.stringify([
+            { label: 'Add remote', command: 'git remote add origin https://github.com/me/x.git' },
+            { label: 'Push', command: 'git push -u origin trunk' },
+          ]),
+        },
+      });
+    });
+    const api = createStudioApi({
+      apiKey: 'k',
+      apiUrl: 'https://api.example.com',
+      fetch: fetchMock,
+    });
+    const res = await api.gitInit('proj_abc', {
+      remote: 'https://github.com/me/x.git',
+      branch: 'trunk',
+    });
+    expect(res.filename).toBe('my-app-git.tar.gz');
+    expect(res.branch).toBe('trunk');
+    expect(res.slug).toBe('my-app');
+    expect(Array.from(res.body)).toEqual(Array.from(tarBytes));
+    expect(res.pushInstructions).toEqual([
+      { label: 'Add remote', command: 'git remote add origin https://github.com/me/x.git' },
+      { label: 'Push', command: 'git push -u origin trunk' },
+    ]);
+  });
+
+  it('gitInit raises StudioApiError on a non-2xx with the API message', async () => {
+    const fetchMock: FetchLike = async () =>
+      jsonResponse(400, { error: { code: 'invalid_remote', message: 'Invalid remote URL' } });
+    const api = createStudioApi({
+      apiKey: 'k',
+      apiUrl: 'https://api.example.com',
+      fetch: fetchMock,
+    });
+    await expect(api.gitInit('proj_abc', { remote: 'bad' })).rejects.toBeInstanceOf(
+      StudioApiError,
+    );
+    await expect(api.gitInit('proj_abc', { remote: 'bad' })).rejects.toThrow(/Invalid remote/);
+  });
 });

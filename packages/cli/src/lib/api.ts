@@ -10,6 +10,7 @@
  *   - GET    /api/studio/deployments/{id}                         → poll deploy status
  *   - GET    /api/studio/projects/{id}/deployments?limit=1        → latest deployment
  *   - GET    /api/studio/deployments/{id}/logs?tail=N             → tail logs
+ *   - POST   /api/studio/projects/{id}/git/init                   → init+tar download
  *
  * The fetch impl is injectable so tests can mock the wire without monkey-patching globals.
  */
@@ -82,6 +83,31 @@ export class StudioApiError extends Error {
   }
 }
 
+export interface GitInitInput {
+  /** Optional remote URL the server echoes back into push instructions. */
+  remote?: string;
+  /** Branch name for the initial commit. Defaults to `main`. */
+  branch?: string;
+}
+
+export interface GitInitPushInstruction {
+  label: string;
+  command: string;
+}
+
+export interface GitInitResponse {
+  /** The raw `.tar.gz` payload bytes. */
+  body: Uint8Array;
+  /** Filename suggested by the server, e.g. `<slug>-git.tar.gz`. */
+  filename: string;
+  /** Branch the initial commit was made on. */
+  branch: string;
+  /** Slug of the project. */
+  slug: string;
+  /** Decoded `X-Repull-Push-Instructions` header (when remote was given). */
+  pushInstructions?: GitInitPushInstruction[];
+}
+
 export interface StudioApi {
   createProject(input: { name: string; slug?: string }): Promise<StudioProject>;
   listFiles(projectId: string): Promise<StudioFile[]>;
@@ -91,6 +117,13 @@ export interface StudioApi {
   getDeployment(deploymentId: string): Promise<StudioDeployment>;
   getLatestDeployment(projectId: string): Promise<StudioDeployment | null>;
   getLogs(deploymentId: string, tail?: number): Promise<StudioLogsResponse>;
+  /**
+   * Init a git repo of the project's files and download the result as a
+   * `.tar.gz`. The server commits as `Repull Studio <studio@repull.dev>`
+   * on `branch` (default `main`) and — when `remote` is provided —
+   * surfaces ready-to-run push commands.
+   */
+  gitInit(projectId: string, input?: GitInitInput): Promise<GitInitResponse>;
 }
 
 export function createStudioApi(opts: StudioApiOptions): StudioApi {
@@ -188,7 +221,81 @@ export function createStudioApi(opts: StudioApiOptions): StudioApi {
         { query: { tail } },
       );
     },
+    async gitInit(projectId, input) {
+      const url = new URL(
+        `${baseUrl}/api/studio/projects/${encodeURIComponent(projectId)}/git/init`,
+      );
+      const body: Record<string, string> = {};
+      if (input?.remote !== undefined) body.remote = input.remote;
+      if (input?.branch !== undefined) body.branch = input.branch;
+      const headers: Record<string, string> = {
+        Authorization: `Bearer ${opts.apiKey}`,
+        Accept: 'application/gzip, */*',
+        'Content-Type': 'application/json',
+        'User-Agent': userAgent,
+      };
+      const res = await fetchImpl(url.toString(), {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        // On error the server returns JSON, not a tarball.
+        const text = await res.text();
+        let parsed: unknown = undefined;
+        if (text) {
+          try {
+            parsed = JSON.parse(text);
+          } catch {
+            parsed = text;
+          }
+        }
+        const message =
+          (parsed && typeof parsed === 'object' && 'error' in parsed
+            ? typeof (parsed as { error: unknown }).error === 'string'
+              ? (parsed as { error: string }).error
+              : (parsed as { error: { message?: string } }).error?.message
+            : undefined) ?? `git init failed with ${res.status}`;
+        throw new StudioApiError(res.status, message, parsed);
+      }
+      const ab = await res.arrayBuffer();
+      const bytes = new Uint8Array(ab);
+      // Filename — prefer Content-Disposition, fall back to a sensible default.
+      const cd = res.headers.get('Content-Disposition') ?? '';
+      const filename = parseContentDispositionFilename(cd) ?? `project-${projectId}-git.tar.gz`;
+      const branch = res.headers.get('X-Studio-Git-Branch') ?? input?.branch ?? 'main';
+      const slug = res.headers.get('X-Studio-Git-Slug') ?? '';
+      const rawInstructions = res.headers.get('X-Repull-Push-Instructions');
+      let pushInstructions: GitInitPushInstruction[] | undefined;
+      if (rawInstructions) {
+        try {
+          const parsed = JSON.parse(rawInstructions) as unknown;
+          if (Array.isArray(parsed)) {
+            pushInstructions = parsed
+              .filter(
+                (i): i is GitInitPushInstruction =>
+                  !!i &&
+                  typeof i === 'object' &&
+                  typeof (i as { label: unknown }).label === 'string' &&
+                  typeof (i as { command: unknown }).command === 'string',
+              )
+              .map((i) => ({ label: i.label, command: i.command }));
+          }
+        } catch {
+          // Ignore malformed header — the user can still use the tarball.
+        }
+      }
+      return { body: bytes, filename, branch, slug, pushInstructions };
+    },
   };
+}
+
+function parseContentDispositionFilename(cd: string): string | undefined {
+  // attachment; filename="x.tar.gz"
+  const m = cd.match(/filename\*?=("([^"]+)"|([^;]+))/i);
+  if (!m) return undefined;
+  const v = m[2] ?? m[3];
+  return v?.trim();
 }
 
 function failNoFetch(): Promise<Response> {

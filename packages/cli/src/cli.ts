@@ -7,6 +7,7 @@ import { runPush } from './commands/push.js';
 import { runDeploy } from './commands/deploy.js';
 import { runLogs } from './commands/logs.js';
 import { runOpen } from './commands/open.js';
+import { runGitInit } from './commands/git-init.js';
 import { defaultRuntime, type CommandRuntime } from './lib/runtime.js';
 
 export const CLI_VERSION = '0.1.0';
@@ -79,6 +80,22 @@ export function buildCli(opts: BuildCliOptions = {}): Command {
     .description('Open the Studio IDE for the linked project in your browser')
     .action(async () => {
       const code = await runOpen(rt);
+      exit(code);
+    });
+
+  studio
+    .command('git-init')
+    .description(
+      'Init a git repo from the linked Studio project and download it as <slug>-git.tar.gz',
+    )
+    .option('--remote <url>', 'remote URL to echo into push instructions (and --push to)')
+    .option('--branch <name>', 'branch name for the initial commit (default: main)')
+    .option('--push', 'after extracting, run `git remote add origin <url>` + `git push -u origin <branch>` (requires --remote)')
+    .action(async (options: { remote?: string; branch?: string; push?: boolean }) => {
+      const code = await runGitInit(
+        { remote: options.remote, branch: options.branch, push: options.push },
+        rt,
+      );
       exit(code);
     });
 

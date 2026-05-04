@@ -34,6 +34,16 @@ export interface SleepFn {
   (ms: number): Promise<void>;
 }
 
+export interface ExecResult {
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+}
+
+export interface ExecFn {
+  (command: string, args: string[], options?: { cwd?: string }): Promise<ExecResult>;
+}
+
 export interface CommandRuntime {
   io: CommandIO;
   spinner: SpinnerFactory;
@@ -49,6 +59,12 @@ export interface CommandRuntime {
   cwd: () => string;
   /** Filesystem (default to node:fs/promises). */
   fs: Pick<typeof fs, 'readFile' | 'writeFile' | 'mkdir' | 'stat'>;
+  /**
+   * Run a child process and resolve with its exit code + captured
+   * stdout/stderr. Used by `studio git-init --push` to drive `git`.
+   * Tests inject a recording stub.
+   */
+  exec: ExecFn;
 }
 
 export function defaultRuntime(): CommandRuntime {
@@ -70,7 +86,36 @@ export function defaultRuntime(): CommandRuntime {
       mkdir: fs.mkdir,
       stat: fs.stat,
     },
+    exec: defaultExec,
   };
+}
+
+async function defaultExec(
+  command: string,
+  args: string[],
+  options: { cwd?: string } = {},
+): Promise<ExecResult> {
+  const { spawn } = await import('node:child_process');
+  return new Promise((resolve) => {
+    const child = spawn(command, args, {
+      cwd: options.cwd,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let stdout = '';
+    let stderr = '';
+    child.stdout?.on('data', (chunk: Buffer | string) => {
+      stdout += typeof chunk === 'string' ? chunk : chunk.toString('utf8');
+    });
+    child.stderr?.on('data', (chunk: Buffer | string) => {
+      stderr += typeof chunk === 'string' ? chunk : chunk.toString('utf8');
+    });
+    child.on('error', (err) => {
+      resolve({ exitCode: 1, stdout, stderr: stderr + (err.message ?? String(err)) });
+    });
+    child.on('close', (code) => {
+      resolve({ exitCode: code ?? 1, stdout, stderr });
+    });
+  });
 }
 
 function wrapOra(o: Ora): SpinnerLike {
