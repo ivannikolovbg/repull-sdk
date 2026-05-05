@@ -2011,14 +2011,61 @@ export interface components {
              */
             provider?: string;
         };
-        /** @description A booking/reservation from a connected PMS. Identical shape between list-row (`GET /v1/reservations`) and detail (`GET /v1/reservations/{id}`) — SDK consumers can use the same type for both. */
+        /** @description Inline guest summary resolved by JOIN-ing the `guests` table. Populated for every reservation that has a linked guest row; OMITTED entirely (not null) for owner-blocks / pre-arrival rows / partial-sync gaps. Always optional-chain in SDK consumers. */
+        ReservationPrimaryGuest: {
+            /** @description Internal Repull guest ID. Use `GET /v1/guests/{id}` for the full profile. */
+            id?: string;
+            firstName?: string | null;
+            lastName?: string | null;
+            /**
+             * Format: email
+             * @description Primary email contact (or first non-primary if no primary set).
+             */
+            email?: string | null;
+            /** @description Primary phone contact (or first non-primary if no primary set). */
+            phone?: string | null;
+            /** @description Guest's preferred language (BCP-47 / ISO 639-1). */
+            language?: string | null;
+        };
+        /** @description Normalized guest counts for the stay. Mirrors the legacy `guestDetails.numberOf*` fields under canonical short names. Omitted when no count fields are present on the reservation. */
+        ReservationOccupancy: {
+            adults?: number | null;
+            children?: number | null;
+            infants?: number | null;
+            pets?: number | null;
+            /** @description Total guests (sum across all categories as reported by the source channel). */
+            total?: number | null;
+        };
+        /** @description Normalized money block. `totalPrice` is a `number` (NOT a decimal-as-string) — the legacy top-level `totalPrice` string field is kept on the parent for back-compat but is deprecated. */
+        ReservationFinancials: {
+            /**
+             * @description Stay total in `currency`. Number, not string.
+             * @example 1250
+             */
+            totalPrice?: number | null;
+            /**
+             * @description ISO 4217 currency code.
+             * @example USD
+             */
+            currency?: string | null;
+            /** @description Payment lifecycle status (e.g. `pending`, `paid`, `refunded`). */
+            paymentStatus?: string | null;
+        };
+        /**
+         * @description A booking/reservation from a connected PMS. Identical shape between list-row (`GET /v1/reservations`) and detail (`GET /v1/reservations/{id}`) — SDK consumers can use the same type for both.
+         *
+         *     The canonical (post-2026-05) shape uses nested `primaryGuest`, `occupancy`, `financials` blocks. The legacy flat fields (`guestId`, `totalPrice`, `currency`, `guestDetails`) remain populated for back-compat and are marked `deprecated` here. New consumers should read from the nested blocks; existing consumers continue to work unchanged.
+         */
         Reservation: {
             /** @description Internal Repull reservation ID */
             id: string;
             /** @description Internal Repull listing ID this reservation is on. */
             listingId: string;
-            /** @description Internal Repull guest ID. Use `GET /v1/guests/{id}` for the full profile. */
-            guestId: string;
+            /**
+             * @deprecated
+             * @description DEPRECATED — use `primaryGuest.id`. Internal Repull guest ID. Kept populated for back-compat.
+             */
+            guestId?: string;
             /**
              * Format: date
              * @example 2026-04-15
@@ -2035,28 +2082,46 @@ export interface components {
              */
             status: "confirmed" | "pending" | "cancelled" | "completed";
             /**
-             * @description Booking source. Lowercase. May be null on legacy rows.
+             * @description Booking source / channel. Lowercase. May be null on legacy rows. Canonical name as of 2026-05; `platform` is kept as an alias.
+             * @example airbnb
+             * @enum {string|null}
+             */
+            source?: "airbnb" | "booking.com" | "vrbo" | "direct" | "website" | "owner" | "other" | null;
+            /**
+             * @deprecated
+             * @description DEPRECATED alias for `source`. Same value, kept for back-compat.
              * @example airbnb
              * @enum {string|null}
              */
             platform?: "airbnb" | "booking.com" | "vrbo" | "direct" | "website" | "owner" | "other" | null;
             /**
-             * @description Decimal-as-string (precision 10, scale 2) to preserve precision across mixed-currency totals.
-             * @example 1250.00
-             */
-            totalPrice: string;
-            /**
-             * @description ISO 4217 currency code.
-             * @example USD
-             */
-            currency: string;
-            /**
              * @description Channel-side confirmation code (Airbnb HMxxx, Booking.com numeric, etc.).
              * @example HMXYZ123
              */
             confirmationCode: string;
-            /** @description Raw guest details from the source channel (firstName, lastName, email, phone, count, etc.). Shape varies by platform — use the dedicated guest endpoint for a normalized profile. */
-            guestDetails: {
+            /** @description Inline guest summary. May be undefined for owner-blocks / pre-arrival rows. */
+            primaryGuest?: components["schemas"]["ReservationPrimaryGuest"];
+            /** @description Normalized guest counts. May be undefined when the source channel did not provide counts. */
+            occupancy?: components["schemas"]["ReservationOccupancy"];
+            /** @description Normalized money block. Always populated for paid reservations. */
+            financials?: components["schemas"]["ReservationFinancials"];
+            /**
+             * @deprecated
+             * @description DEPRECATED — use `financials.totalPrice` (a number). Decimal-as-string (precision 10, scale 2) kept for back-compat.
+             * @example 1250.00
+             */
+            totalPrice?: string;
+            /**
+             * @deprecated
+             * @description DEPRECATED — use `financials.currency`. ISO 4217 currency code.
+             * @example USD
+             */
+            currency?: string;
+            /**
+             * @deprecated
+             * @description DEPRECATED — use `occupancy` for normalized counts and `primaryGuest` for guest identity. Raw guest details from the source channel; shape varies by platform.
+             */
+            guestDetails?: {
                 [key: string]: unknown;
             };
             /**
@@ -2064,7 +2129,12 @@ export interface components {
              * @description When the reservation row was created in Repull (not the booking-on-channel timestamp).
              */
             createdAt: string;
-            /** @description Pre-resolved display name (`firstName lastName`) extracted from `guestDetails`. Null when no first name is available. */
+            /**
+             * Format: date-time
+             * @description When the booking was made on the source channel (when reported by the channel).
+             */
+            bookedAt?: string | null;
+            /** @description Pre-resolved display name (`firstName lastName`) from the joined guest row. Undefined when no first name is available. */
             guestName?: string | null;
         };
         /** @description Guest list-row shape returned by `GET /v1/guests`. Pre-resolved primary phone/email + display name + cumulative stay aggregates so list UIs can render without a per-row round-trip. */
@@ -2590,121 +2660,89 @@ export interface components {
          * @enum {string}
          */
         WebhookEventType: "reservation.created" | "reservation.updated" | "reservation.cancelled" | "reservation.message.received" | "listing.created" | "listing.updated" | "listing.deleted" | "calendar.updated" | "account.created" | "account.disconnected" | "ai.operation.completed" | "ai.operation.failed" | "payment.completed" | "payment.refunded" | "repull.ping";
-        /** @description Payload for `reservation.created`. A new reservation arrived from any connected channel or direct booking. */
-        ReservationCreatedPayload: {
-            /** @example 215906 */
-            id?: number;
-            /** @example HMA1234567 */
-            confirmationCode?: string;
-            /** @example 6250 */
-            listingId?: number;
-            /** @example airbnb */
-            platform?: string;
-            /** @example confirmed */
-            status?: string;
+        /** @description Lightweight reservation snapshot delivered as `data.object` on every reservation webhook event. Stable across `reservation.created`, `reservation.updated`, and `reservation.cancelled`. Fetch the full reservation via `GET /v1/reservations/{id}` if you need pricing, guest contact info, or audit history — those are deliberately omitted to keep deliveries small. */
+        ReservationWebhookObject: {
+            /**
+             * @description Repull-internal reservation id. Pass to `GET /v1/reservations/{id}`.
+             * @example 212605
+             */
+            id: number;
+            /**
+             * @description Channel-side confirmation code (Airbnb HM-prefixed, Booking.com numeric, etc.). Stable across the lifetime of the reservation.
+             * @example HMX4CMA2X9
+             */
+            uid: string;
+            /**
+             * @description Source channel — `airbnb`, `booking`, `vrbo`, `direct`, `owner`, `mid_stay_clean`, etc.
+             * @example airbnb
+             */
+            channel: string;
+            /**
+             * @description Repull listing id this reservation is on.
+             * @example 5668
+             */
+            listingId: number;
+            /**
+             * @description Workspace (customer) id this reservation belongs to.
+             * @example 1
+             */
+            customerId: number;
             /**
              * Format: date
-             * @example 2026-06-01
+             * @description Check-in date (local property date, no timezone).
+             * @example 2026-06-10
              */
-            checkIn?: string;
+            checkinDate: string;
             /**
              * Format: date
-             * @example 2026-06-05
+             * @description Check-out date (local property date, no timezone).
+             * @example 2026-06-16
              */
-            checkOut?: string;
-            /** @example 4 */
-            nights?: number;
-            guests?: {
-                /** @example 2 */
-                adults?: number;
-                /** @example 0 */
-                children?: number;
-                /** @example 0 */
-                infants?: number;
-            };
-            primaryGuest?: {
-                /** @example Alex */
-                firstName?: string;
-                /** @example Morgan */
-                lastName?: string;
-                /**
-                 * Format: email
-                 * @example alex@example.com
-                 */
-                email?: string;
-            };
-            pricing?: {
-                /** @example 1200.00 */
-                subtotal?: string;
-                /** @example 120.00 */
-                taxes?: string;
-                /** @example 1320.00 */
-                total?: string;
-                /** @example USD */
-                currency?: string;
-            };
+            checkoutDate: string;
             /**
-             * Format: date-time
-             * @example 2026-05-01T12:34:56.000Z
+             * @description Lifecycle status — typically `confirmed`, `cancelled`, `pending`, `inquiry`.
+             * @example confirmed
              */
-            createdAt?: string;
+            status: string;
         };
-        /** @description Payload for `reservation.updated`. Dates, guest count, status, or pricing changed on an existing reservation. The `changes` map carries `{ from, to }` deltas for each field that moved. */
+        /** @description Payload for `reservation.created`. A new reservation arrived from any connected channel or direct booking. Stripe-pattern envelope: `data.object` carries the reservation snapshot. */
+        ReservationCreatedPayload: {
+            object: components["schemas"]["ReservationWebhookObject"];
+        };
+        /** @description Payload for `reservation.updated`. Dates, status, or any tracked field changed on an existing reservation. `data.object` is the post-change snapshot; `data.previousAttributes` lists ONLY the fields that actually moved, with their prior values. Fields not in `previousAttributes` did not change. */
         ReservationUpdatedPayload: {
-            /** @example 215906 */
-            id?: number;
-            /** @example HMA1234567 */
-            confirmationCode?: string;
+            object: components["schemas"]["ReservationWebhookObject"];
             /**
-             * @description Map of `field` → `{ from, to }` pairs describing what changed.
+             * @description Sparse map: every key here is a field on the reservation snapshot whose value changed in this event, mapped to its prior value. Mirrors the keys of `ReservationWebhookObject` (e.g. `checkinDate`, `checkoutDate`, `status`). Receivers can diff `object[k]` vs `previousAttributes[k]` to know what moved.
              * @example {
-             *       "checkOut": {
-             *         "from": "2026-06-05",
-             *         "to": "2026-06-07"
-             *       },
-             *       "pricing": {
-             *         "from": {
-             *           "total": "1320.00"
-             *         },
-             *         "to": {
-             *           "total": "1640.00"
-             *         }
-             *       }
+             *       "checkinDate": "2026-06-11",
+             *       "checkoutDate": "2026-06-16"
              *     }
              */
-            changes?: {
+            previousAttributes?: {
                 [key: string]: unknown;
             };
-            /**
-             * Format: date-time
-             * @example 2026-05-01T13:00:00.000Z
-             */
-            updatedAt?: string;
         };
-        /** @description Payload for `reservation.cancelled`. A reservation was cancelled by the guest, host, or platform. */
+        /** @description Payload for `reservation.cancelled`. A reservation was cancelled by the guest, host, or platform. `data.object` reflects the post-cancel snapshot (status will be `cancelled`); top-level fields capture cancellation metadata. */
         ReservationCancelledPayload: {
-            /** @example 215906 */
-            id?: number;
-            /** @example HMA1234567 */
-            confirmationCode?: string;
+            object: components["schemas"]["ReservationWebhookObject"];
             /**
              * Format: date-time
+             * @description When the cancellation was recorded.
              * @example 2026-05-01T14:00:00.000Z
              */
             cancelledAt?: string;
             /**
-             * @description Who initiated the cancellation (guest, host, platform).
+             * @description Who initiated the cancellation.
              * @example guest
+             * @enum {string}
              */
-            cancelledBy?: string;
-            /** @example guest_requested */
+            cancelledBy?: "guest" | "host" | "platform";
+            /**
+             * @description Free-form cancellation reason from the source channel, if available.
+             * @example guest_requested
+             */
             reason?: string | null;
-            refund?: {
-                /** @example 1320.00 */
-                amount?: string;
-                /** @example USD */
-                currency?: string;
-            } | null;
         };
         /** @description Payload for `reservation.message.received`. A new inbound message arrived on a reservation thread. */
         ReservationMessageReceivedPayload: {
