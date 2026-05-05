@@ -246,6 +246,8 @@ export interface paths {
         /**
          * List messages in a conversation
          * @description Cursor-paginated messages within one thread. Defaults to newest-first (`?order=desc`); pass `?order=asc` for chronological replay. Use `pagination.nextCursor` from one response as the `cursor` query param of the next request.
+         *
+         *     `?offset=` is also accepted as a first-class alias for shallow paging (0..10000) — see the `offset` parameter below. Mutually exclusive with `cursor`.
          */
         get: operations["listConversationMessages"];
         put?: never;
@@ -1038,7 +1040,7 @@ export interface paths {
         put?: never;
         /**
          * AI-generate listing content
-         * @description Generate guest-facing copy (title, summary, description, amenities, etc.) for a listing using Kimi K2. When `photos` are provided the vision model is used for photo-grounded copy. Persists into the listing by default.
+         * @description Generate guest-facing copy (title, summary, description, amenities, etc.) for a listing using Repull AI. When `photos` are provided the vision model is used for photo-grounded copy. Persists into the listing by default.
          */
         post: operations["generateListingContent"];
         delete?: never;
@@ -1491,6 +1493,8 @@ export interface paths {
          * @description Cursor-paginated audit trail of pricing recommendations vs applied prices for a listing across a date window. Use `pagination.nextCursor` from one response as the `cursor` query param of the next request.
          *
          *     Defaults to ±90 days from today. Cursor is a keyset on `date ASC` — stable even if rows are added during a partner's pagination walk. `limit` is capped at 500 — exceeding returns 422.
+         *
+         *     `?offset=` is also accepted as a first-class alias for shallow paging (0..10000) — see the `offset` parameter below. Mutually exclusive with `cursor`.
          */
         get: operations["getListingPricingHistory"];
         put?: never;
@@ -3584,7 +3588,7 @@ export interface components {
             id?: string;
         };
         ListingGenerateContentRequest: {
-            /** @description Up to 8 reference photos. When present, Kimi K2 vision is used for grounded copy. */
+            /** @description Up to 8 reference photos. When present, Repull AI vision is used for grounded copy. */
             photos?: string[];
             /**
              * @default warm
@@ -4655,6 +4659,10 @@ export interface operations {
                 check_in_after?: string;
                 /** @description Check-in date <= this value */
                 check_in_before?: string;
+                /** @description Check-out date >= this value */
+                check_out_after?: string;
+                /** @description Check-out date <= this value */
+                check_out_before?: string;
                 /**
                  * @deprecated
                  * @description Deprecated alias for `check_in_after`.
@@ -4665,6 +4673,26 @@ export interface operations {
                  * @description Deprecated alias for `check_in_before`.
                  */
                 checkInTo?: string;
+                /**
+                 * @deprecated
+                 * @description Use `check_in_after` (snake_case) instead.
+                 */
+                checkInAfter?: string;
+                /**
+                 * @deprecated
+                 * @description Use `check_in_before` (snake_case) instead.
+                 */
+                checkInBefore?: string;
+                /**
+                 * @deprecated
+                 * @description Use `check_out_after` (snake_case) instead.
+                 */
+                checkOutAfter?: string;
+                /**
+                 * @deprecated
+                 * @description Use `check_out_before` (snake_case) instead.
+                 */
+                checkOutBefore?: string;
                 /** @description When `true` (default), the response's `pagination.total` carries the count of rows matching the current filter, across all pages. Pass `false` to skip the count for very large workspaces where the per-page COUNT(*) cost matters. */
                 include_total?: components["parameters"]["IncludeTotal"];
             };
@@ -5000,6 +5028,8 @@ export interface operations {
             query?: {
                 /** @description Opaque cursor returned in the previous response's `pagination.nextCursor`. */
                 cursor?: string;
+                /** @description First-class alias for cursor-based pagination. Mutually exclusive with `cursor` — passing both returns 422. Accepts integers in `[0, 10000]`; deeper walks must use `cursor` (constant per-page cost). The response always includes `pagination.next_cursor` so consumers can switch from offset → cursor mid-walk for deep pagination without re-keying. */
+                offset?: components["parameters"]["Offset"];
                 limit?: number;
                 /** @description `desc` (default) returns newest first. `asc` returns chronological replay. */
                 order?: "asc" | "desc";
@@ -7081,6 +7111,8 @@ export interface operations {
                 limit?: number;
                 /** @description Opaque cursor returned in the previous response's `pagination.nextCursor`. Omit to fetch the first page. */
                 cursor?: string;
+                /** @description First-class alias for cursor-based pagination. Mutually exclusive with `cursor` — passing both returns 422. Accepts integers in `[0, 10000]`; deeper walks must use `cursor` (constant per-page cost). The response always includes `pagination.next_cursor` so consumers can switch from offset → cursor mid-walk for deep pagination without re-keying. */
+                offset?: components["parameters"]["Offset"];
             };
             header?: never;
             path: {

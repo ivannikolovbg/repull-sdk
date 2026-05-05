@@ -3652,7 +3652,7 @@
               "type": "string",
               "format": "uri"
             },
-            "description": "Up to 8 reference photos. When present, Kimi K2 vision is used for grounded copy.",
+            "description": "Up to 8 reference photos. When present, Repull AI vision is used for grounded copy.",
             "maxItems": 8
           },
           "style": {
@@ -6444,7 +6444,8 @@
             "in": "query",
             "schema": {
               "type": "string",
-              "format": "date"
+              "format": "date",
+              "example": "2026-05-31"
             },
             "description": "Check-in date >= this value"
           },
@@ -6453,9 +6454,30 @@
             "in": "query",
             "schema": {
               "type": "string",
-              "format": "date"
+              "format": "date",
+              "example": "2026-05-31"
             },
             "description": "Check-in date <= this value"
+          },
+          {
+            "name": "check_out_after",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "example": "2026-05-31"
+            },
+            "description": "Check-out date >= this value"
+          },
+          {
+            "name": "check_out_before",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "example": "2026-05-31"
+            },
+            "description": "Check-out date <= this value"
           },
           {
             "name": "checkInFrom",
@@ -6476,6 +6498,46 @@
             },
             "deprecated": true,
             "description": "Deprecated alias for `check_in_before`."
+          },
+          {
+            "name": "checkInAfter",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "deprecated": true,
+            "description": "Use `check_in_after` (snake_case) instead."
+          },
+          {
+            "name": "checkInBefore",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "deprecated": true,
+            "description": "Use `check_in_before` (snake_case) instead."
+          },
+          {
+            "name": "checkOutAfter",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "deprecated": true,
+            "description": "Use `check_out_after` (snake_case) instead."
+          },
+          {
+            "name": "checkOutBefore",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "deprecated": true,
+            "description": "Use `check_out_before` (snake_case) instead."
           },
           {
             "$ref": "#/components/parameters/IncludeTotal"
@@ -7050,7 +7112,7 @@
       "get": {
         "operationId": "listConversationMessages",
         "summary": "List messages in a conversation",
-        "description": "Cursor-paginated messages within one thread. Defaults to newest-first (`?order=desc`); pass `?order=asc` for chronological replay. Use `pagination.nextCursor` from one response as the `cursor` query param of the next request.",
+        "description": "Cursor-paginated messages within one thread. Defaults to newest-first (`?order=desc`); pass `?order=asc` for chronological replay. Use `pagination.nextCursor` from one response as the `cursor` query param of the next request.\n\n`?offset=` is also accepted as a first-class alias for shallow paging (0..10000) — see the `offset` parameter below. Mutually exclusive with `cursor`.",
         "tags": [
           "Conversations"
         ],
@@ -7074,6 +7136,9 @@
               "type": "string"
             },
             "description": "Opaque cursor returned in the previous response's `pagination.nextCursor`."
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
           },
           {
             "name": "limit",
@@ -9116,7 +9181,7 @@
       "post": {
         "operationId": "generateListingContent",
         "summary": "AI-generate listing content",
-        "description": "Generate guest-facing copy (title, summary, description, amenities, etc.) for a listing using Kimi K2. When `photos` are provided the vision model is used for photo-grounded copy. Persists into the listing by default.",
+        "description": "Generate guest-facing copy (title, summary, description, amenities, etc.) for a listing using Repull AI. When `photos` are provided the vision model is used for photo-grounded copy. Persists into the listing by default.",
         "tags": [
           "Listings"
         ],
@@ -10106,7 +10171,7 @@
       "get": {
         "operationId": "getListingPricingHistory",
         "summary": "Pricing recommendation audit trail",
-        "description": "Cursor-paginated audit trail of pricing recommendations vs applied prices for a listing across a date window. Use `pagination.nextCursor` from one response as the `cursor` query param of the next request.\n\nDefaults to ±90 days from today. Cursor is a keyset on `date ASC` — stable even if rows are added during a partner's pagination walk. `limit` is capped at 500 — exceeding returns 422.",
+        "description": "Cursor-paginated audit trail of pricing recommendations vs applied prices for a listing across a date window. Use `pagination.nextCursor` from one response as the `cursor` query param of the next request.\n\nDefaults to ±90 days from today. Cursor is a keyset on `date ASC` — stable even if rows are added during a partner's pagination walk. `limit` is capped at 500 — exceeding returns 422.\n\n`?offset=` is also accepted as a first-class alias for shallow paging (0..10000) — see the `offset` parameter below. Mutually exclusive with `cursor`.",
         "tags": [
           "Pricing"
         ],
@@ -10158,6 +10223,9 @@
               "type": "string"
             },
             "description": "Opaque cursor returned in the previous response's `pagination.nextCursor`. Omit to fetch the first page."
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
           }
         ],
         "responses": {
