@@ -58,6 +58,8 @@ export interface paths {
         /**
          * Get property details
          * @description Fetch a single property by Repull id. Property ids are workspace-scoped — an id from one workspace is not valid in another. 404 means the id does not exist OR belongs to a different workspace.
+         *
+         *     **Optional expansions:** Pass `?include=amenities` to enrich the response with the property's amenities (sourced from the unified `listings_amenities` table). Returns `[]` when the property has no amenity rows. The default response stays lean; consumers must opt in.
          */
         get: operations["get_property"];
         put?: never;
@@ -682,6 +684,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/channels/airbnb/connection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Airbnb connection state
+         * @description Returns the workspace's Airbnb host connection state in one envelope. Use this instead of inferring connection health from per-listing 401s on `GET /v1/channels/airbnb/listings` — that's noisy (every per-listing call has to fail before you know) and ambiguous (a single 5xx looks identical to a deauth).
+         *
+         *     Pure DB read — does NOT touch Airbnb's API, so it's cheap to poll from a status-page surface.
+         *
+         *     The response includes one row per Airbnb host the workspace has linked. Each row carries `isConnected`, `lastSyncedAt`, `deactivatedAt`, and `lastDisconnectReason` (most recent non-backfill row in `airbnb_host_events`).
+         *
+         *     A self-serve `fixUrl` is included whenever `status` is anything other than `connected` — points at the dashboard where the host re-authorizes (or initiates the first OAuth flow for `never_connected` workspaces).
+         */
+        get: operations["get_airbnb_connection"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/channels/airbnb/listings": {
         parameters: {
             query?: never;
@@ -691,9 +719,9 @@ export interface paths {
         };
         /**
          * List Airbnb listings
-         * @description List every Airbnb listing this workspace has access to via the connected Airbnb account. Default response is a fast DB read pairing each Vanio listing with its `listings_airbnb` connection rows.
+         * @description List every Airbnb listing this workspace has access to via the connected Airbnb account. **Pure DB read — never calls Airbnb upstream.** The connect flow is what populates the local cache; the API serves what's already there. Customers with a disconnected host still see their last-synced data, with the top-level `data_freshness` envelope flagging the staleness and pointing at the reconnect URL.
          *
-         *     Pass `?include=amenities` to enrich each connection with its current Airbnb amenity set (one extra upstream call per unique Airbnb id, fanned out in parallel). Per-connection failures surface in `_errors.amenities` rather than failing the whole request.
+         *     Pass `?include=amenities` to enrich each connection with its locally-cached amenity set. Returns `null` per connection when the cache is empty.
          */
         get: operations["list_airbnb_listings"];
         put?: never;
@@ -1019,6 +1047,8 @@ export interface paths {
         /**
          * Get a listing
          * @description Fetch a single listing by id. Returns the same shape as one element of the `GET /v1/listings` response, so you can bind the result to the same model. Cross-tenant access (a listing that belongs to a different workspace) returns 404 — never 403, never reveals the listing's existence.
+         *
+         *     **Optional expansions:** Pass `?include=amenities` to enrich the response with the listing's amenities (sourced from the unified `listings_amenities` table). Returns `[]` when the listing has no amenity rows. The default response stays lean; consumers must opt in.
          */
         get: operations["getListing"];
         put?: never;
@@ -1098,7 +1128,7 @@ export interface paths {
         };
         /**
          * Per-channel publish status
-         * @description Returns one row per platform the listing has been pushed/pulled to, with last push timestamp and any dirty fields not yet synced.
+         * @description Returns connection state and sync activity per channel. `channels` is sync activity (empty until first push). `connections` is connection state (populated as soon as a channel is linked). Recommended polling cadence: at most once per 30s per listing — for bulk views, prefer `GET /v1/listings` and filter client-side.
          */
         get: operations["getListingPublishStatus"];
         put?: never;
@@ -1967,6 +1997,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/kv": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List KV entries
+         * @description Returns every non-expired key-value row in the given project, sorted ascending by key. Use `prefix` to scope to a key namespace (e.g. `prefix=user:42:` to fetch all entries for one user). Hard cap of 1,000 rows per response — for projects approaching that, paginate by walking prefix buckets.
+         */
+        get: operations["list_kv"];
+        put?: never;
+        post?: never;
+        /**
+         * Clear KV entries by prefix
+         * @description Bulk-deletes every key in the project whose name starts with `prefix`. The `prefix` parameter is required — there is no "delete every key in this project" shortcut; pass an empty `prefix` is rejected with 422 to prevent accidental wipes. Returns the number of rows removed.
+         */
+        delete: operations["clear_kv"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/kv/{key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get a KV entry
+         * @description Fetches a single key. Returns 404 when the key does not exist OR has expired (rows past `ttl_at` are filtered from reads). Cross-tenant lookups also return 404 — the API never reveals existence of another customer's keys.
+         */
+        get: operations["get_kv"];
+        /**
+         * Set a KV entry
+         * @description Upserts a key. The full row is replaced — there is no partial update. Pass `ttl_seconds` (positive integer) to auto-expire the row; omit for no expiry. **Caps:** 64 KiB per row (key bytes + value JSON bytes), 1 MiB per customer (sum across ALL projects/keys). Over either cap returns 413.
+         */
+        put: operations["set_kv"];
+        post?: never;
+        /**
+         * Delete a KV entry
+         * @description Removes a single key. Returns `{ deleted: true }` if the row was present, `{ deleted: false }` if it was already absent — both are 200 (idempotent).
+         */
+        delete: operations["delete_kv"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2010,6 +2092,8 @@ export interface components {
              * @example hostaway
              */
             provider?: string;
+            /** @description Amenity rows for the property. **Only present when the caller passes `?include=amenities`.** Empty array (`[]`) when the property has no amenity rows. */
+            amenities?: components["schemas"]["ListingAmenity"][];
         };
         /** @description Inline guest summary resolved by JOIN-ing the `guests` table. Populated for every reservation that has a linked guest row; OMITTED entirely (not null) for owner-blocks / pre-arrival rows / partial-sync gaps. Always optional-chain in SDK consumers. */
         ReservationPrimaryGuest: {
@@ -2077,6 +2161,7 @@ export interface components {
              */
             checkOut: string;
             /**
+             * @description Lifecycle status. The API normalises a multi-decade internal taxonomy down to these four buckets, so the value you receive is always one of the enum constants. `completed` is derived from `checkOut < today`.
              * @example confirmed
              * @enum {string}
              */
@@ -3219,23 +3304,21 @@ export interface components {
             markup?: string | null;
             /** Format: date-time */
             createdAt?: string;
-            /** @description Present only when `?include=amenities` is passed. Sourced from `GET /v2/listings/:id/amenities` on Airbnb. */
+            /** @description Present only when `?include=amenities` is passed. Sourced from the local `listings_airbnb_amenities` cache (populated by the Airbnb sync worker). Returns `null` when the cache is empty for this connection — see the top-level `data_freshness` envelope to disambiguate "never synced" vs "host disconnected" vs "fresh and genuinely empty". */
             amenities?: {
+                /** @description Airbnb amenity id (e.g. `wifi`, `kitchen`). */
                 id?: string;
                 is_present?: boolean;
-                name?: string | null;
-                category?: string | null;
-                icon?: string | null;
+                /** @description Host-supplied instruction for the amenity (e.g. "WiFi password is on the fridge"). */
+                instruction?: string | null;
             }[] | null;
-            /** @description Present only when `?include=amenities` is passed. */
-            accessibility_amenities?: Record<string, never>[] | null;
-            /** @description Per-expansion failures. Present only when an `?include=` upstream call failed for this connection (others may still succeed). */
-            _errors?: {
-                [key: string]: {
-                    message?: string;
-                    status?: number | null;
-                };
-            } | null;
+            /** @description Present only when `?include=amenities` is passed. Accessibility-tagged subset of the local amenity cache (step-free access, wide doorways, grab rails, disabled parking, wheelchair, accessible-height fixtures, hoists, etc). Returns an empty array when amenities synced but none qualify as accessibility; returns `null` when the cache is empty for this connection (use `data_freshness` to disambiguate "never synced" from "fresh and genuinely empty"). */
+            accessibility_amenities?: {
+                /** @description Airbnb amenity id (e.g. `wheelchair_accessible`, `home_step_free_access`). */
+                id?: string;
+                is_present?: boolean;
+                instruction?: string | null;
+            }[] | null;
         };
         /** @description A property registered in the Booking.com extranet for the connected hotel ID. */
         BookingProperty: {
@@ -3540,9 +3623,77 @@ export interface components {
         CalendarResponse: {
             data?: components["schemas"]["CalendarDay"][];
         };
+        /** @description Top-level freshness indicator for any DB-backed Airbnb read. Tells consumers WHY a column may be `null` or stale without sprinkling per-row error envelopes through the response. The endpoint always returns 200 + DB data; this field is the single signal for "should I prompt the user to reconnect / wait for sync?". */
+        AirbnbDataFreshness: {
+            /**
+             * Format: date-time
+             * @description Most recent sync timestamp across the rows in the response. `null` when nothing has ever synced for this customer.
+             */
+            last_synced_at: string | null;
+            /** @description `true` when any host is disconnected, when the local cache is empty, or when the cache hasn't been refreshed in 24h+. `false` when hosts are healthy and sync is fresh. */
+            stale: boolean;
+            /** @description Why the data is stale. One of `host_disconnected_since_<iso>`, `sync_lag_>_24h`, `never_synced`. Omitted when `stale` is `false`. */
+            reason?: string | null;
+            /**
+             * Format: uri
+             * @description Dashboard URL the consumer can open to resolve the staleness (typically the Airbnb reconnect screen). Omitted when `stale` is `false`.
+             */
+            fix_url?: string | null;
+        };
         AirbnbListingListResponse: {
-            data?: components["schemas"]["AirbnbListing"][];
-            pagination?: components["schemas"]["Pagination"];
+            data: components["schemas"]["AirbnbListing"][];
+            pagination: components["schemas"]["Pagination"];
+            data_freshness: components["schemas"]["AirbnbDataFreshness"];
+        };
+        /** @description One Airbnb host record under the workspace, decorated with its most recent disconnect reason from `airbnb_host_events` (backfill events excluded). */
+        AirbnbConnectionHost: {
+            /**
+             * @description Upstream Airbnb user id.
+             * @example 719854265
+             */
+            airbnbUserId: string;
+            /**
+             * @description Display name (preferred form, falling back to legal first name). Null when both fields are empty.
+             * @example STR Assistance
+             */
+            name: string | null;
+            /** @example false */
+            isConnected: boolean;
+            /**
+             * Format: date-time
+             * @description When the host record was last touched (token refresh / activation / restriction). Closest available proxy for "last successful sync".
+             */
+            lastSyncedAt: string | null;
+            /**
+             * Format: date-time
+             * @description When the host was last marked inactive. Null on currently-connected hosts.
+             */
+            deactivatedAt: string | null;
+            /**
+             * @description Reason of the most recent non-backfill disconnect event. Common values: `token_refresh_rejected`, `auth_expired`, `user_revoked`. Null when the host has no recorded disconnects.
+             * @example token_refresh_rejected
+             */
+            lastDisconnectReason: string | null;
+        };
+        /** @description Workspace-level Airbnb connection state. The dedicated answer to "is my Airbnb still connected?" — emit one summary instead of inferring from per-listing 401s. */
+        AirbnbConnectionSummary: {
+            /**
+             * @description `connected` — every host is currently connected. `reconnect_required` — at least one host is connected, at least one is not. `disconnected` — every host has been disconnected. `never_connected` — the workspace has never linked an Airbnb account.
+             * @enum {string}
+             */
+            status: "connected" | "disconnected" | "reconnect_required" | "never_connected";
+            /** @example 2 */
+            hostCount: number;
+            hosts: components["schemas"]["AirbnbConnectionHost"][];
+            /**
+             * Format: uri
+             * @description Self-serve recovery URL. Set whenever `status` is anything other than `connected`. Points at the dashboard surface where the host re-authorizes (or initiates the first OAuth flow for `never_connected` workspaces).
+             * @example https://repull.dev/dashboard/connections/airbnb
+             */
+            fixUrl?: string | null;
+        };
+        AirbnbConnectionResponse: {
+            data: components["schemas"]["AirbnbConnectionSummary"];
         };
         /** @description Cursor-paginated Airbnb reservation list. Pass `pagination.next_cursor` back as `?cursor=` to fetch the next page; stop when `pagination.has_more` is `false`. */
         AirbnbReservationListResponse: {
@@ -3687,9 +3838,29 @@ export interface components {
             dirtyFields?: string[];
             platformHasChanges?: boolean;
         };
+        /** @description Per-channel connection state. Distinct from `channels` (sync activity) — a listing can be connected here yet have empty `channels` if it has never been pushed. */
+        ListingPublishStatusConnection: {
+            /**
+             * @description Channel name: airbnb, booking, vrbo, etc.
+             * @example airbnb
+             */
+            channel?: string;
+            /** @description True when the link is active (not disconnected/suspended). */
+            connected?: boolean;
+            /** @description True when sync writes are enabled for this channel. */
+            sync_enabled?: boolean;
+            /**
+             * Format: date-time
+             * @description ISO timestamp the connection was first established.
+             */
+            since?: string | null;
+        };
         ListingPublishStatusResponse: {
             listingId?: string;
+            /** @description Sync activity per channel — empty if the listing has never been pushed/pulled. Empty does NOT mean "not connected"; check `connections` for that. */
             channels?: components["schemas"]["ListingPublishStatusChannel"][];
+            /** @description Connection state per channel. Populated even when `channels` is empty so callers can distinguish "owned, never pushed" from "owned, never connected". */
+            connections?: components["schemas"]["ListingPublishStatusConnection"][];
         };
         /** @description Per-platform connection for a listing — one row per channel the listing is published to. */
         ListingChannel: {
@@ -3699,6 +3870,20 @@ export interface components {
             externalId?: string;
             active?: boolean;
             syncEnabled?: boolean;
+        };
+        /** @description A single amenity row from the unified `listings_amenities` table. Surfaced on `GET /v1/listings/{id}` and `GET /v1/properties/{id}` only when the caller passes `?include=amenities`. */
+        ListingAmenity: {
+            /**
+             * @description Canonical amenity key (e.g. `wifi`, `pool`, `parking`).
+             * @example wifi
+             */
+            amenityKey: string;
+            /** @description Optional grouping (e.g. `essentials`, `safety`). */
+            category?: string | null;
+            /** @description `true` when the listing has this amenity, `false` when it has been explicitly opted out. */
+            isPresent: boolean;
+            /** @description Optional free-form instruction for the guest (e.g. WiFi password, parking notes). */
+            instruction?: string | null;
         };
         /** @description A vacation rental listing in your Repull workspace. */
         Listing: {
@@ -3716,6 +3901,8 @@ export interface components {
             status?: "active" | "inactive" | "archived";
             /** @description Channels (Airbnb, Booking, VRBO, etc.) the listing is connected to. */
             channels?: components["schemas"]["ListingChannel"][];
+            /** @description Amenity rows for the listing. **Only present when the caller passes `?include=amenities`.** Empty array (`[]`) when the listing has no amenity rows. */
+            amenities?: components["schemas"]["ListingAmenity"][];
             /** Format: date-time */
             createdAt?: string;
             /** Format: date-time */
@@ -4658,7 +4845,10 @@ export interface operations {
     };
     get_property: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Comma-separated optional expansions. Currently supported: `amenities`. Unknown values return 422. */
+                include?: "amenities";
+            };
             header?: never;
             path: {
                 id: number;
@@ -4677,6 +4867,7 @@ export interface operations {
                 };
             };
             404: components["responses"]["NotFound"];
+            422: components["responses"]["UnprocessableEntity"];
         };
     };
     list_reservations: {
@@ -4690,6 +4881,7 @@ export interface operations {
                 offset?: components["parameters"]["Offset"];
                 /** @description Filter by booking platform */
                 platform?: string;
+                /** @description Filter by lifecycle status. **Case-insensitive** — `confirmed`, `Confirmed`, and `CONFIRMED` all match. Each public value expands to the full set of internal sub-states server-side: `confirmed` matches `accept`/`confirmed`/`modified`, `cancelled` matches every cancellation sub-state (`cancelled_by_host`, `declined`, `expired`, etc.), `pending` includes `inquiry`/`awaiting_payment`. `completed` is a derived state — combine `status=confirmed` with `check_out_before=<today>` to filter for past stays. */
                 status?: "confirmed" | "pending" | "cancelled" | "completed";
                 /** @description Filter to a single listing */
                 listingId?: number;
@@ -5843,10 +6035,32 @@ export interface operations {
             };
         };
     };
+    get_airbnb_connection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Airbnb connection summary */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AirbnbConnectionResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            500: components["responses"]["InternalError"];
+        };
+    };
     list_airbnb_listings: {
         parameters: {
             query?: {
-                /** @description Comma-separated expansions. Currently supported: `amenities` (adds `amenities` and `accessibility_amenities` arrays to each connection). Each expansion adds one upstream Airbnb call per unique listing id. */
+                /** @description Comma-separated expansions. Currently supported: `amenities` (adds `amenities` and `accessibility_amenities` arrays to each connection, sourced from the local `listings_airbnb_amenities` cache). */
                 include?: string;
             };
             header?: never;
@@ -6385,7 +6599,10 @@ export interface operations {
     };
     getListing: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Comma-separated optional expansions. Currently supported: `amenities`. Unknown values return 422. */
+                include?: "amenities";
+            };
             header?: {
                 /** @description Apply a custom or built-in schema to transform the response. Built-in: `native` (default), `calry`, `calry-v1`. Custom: any schema name created via `POST /v1/schema/custom`. Unknown / inactive schema names fall back to `native`. */
                 "X-Schema"?: components["parameters"]["XSchemaHeader"];
@@ -6516,6 +6733,8 @@ export interface operations {
                     "application/json": components["schemas"]["ListingPublishStatusResponse"];
                 };
             };
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
         };
     };
     list_booking_properties: {
@@ -8475,6 +8694,186 @@ export interface operations {
                     "application/json": components["schemas"]["StudioError"];
                 };
             };
+        };
+    };
+    list_kv: {
+        parameters: {
+            query?: {
+                /** @description Project namespace. Defaults to `default`. Free-form string the customer chooses (typically the Studio project id). */
+                project_id?: string;
+                /** @description Restrict to keys starting with this string. `LIKE` wildcards (`%`, `_`) are escaped — pass them literally. */
+                prefix?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description KV entries */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data?: {
+                            key?: string;
+                            value?: unknown;
+                            /** Format: date-time */
+                            ttl_at?: string | null;
+                            /** Format: date-time */
+                            updated_at?: string;
+                        }[];
+                        pagination?: {
+                            total?: number;
+                            has_more?: boolean;
+                        };
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    clear_kv: {
+        parameters: {
+            query: {
+                project_id?: string;
+                /** @description Required. Keys starting with this string are deleted. */
+                prefix: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Bulk delete result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        deleted?: number;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            422: components["responses"]["UnprocessableEntity"];
+        };
+    };
+    get_kv: {
+        parameters: {
+            query?: {
+                project_id?: string;
+            };
+            header?: never;
+            path: {
+                /** @description KV key. URL-encode `/`, `:`, etc. so they survive routing. */
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description KV entry */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        key?: string;
+                        value?: unknown;
+                        /** Format: date-time */
+                        ttl_at?: string | null;
+                        /** Format: date-time */
+                        updated_at?: string;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    set_kv: {
+        parameters: {
+            query?: {
+                project_id?: string;
+            };
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Any JSON-serializable value. Stored verbatim. */
+                    value: unknown;
+                    /** @description Optional TTL in seconds. The row's `ttl_at` is set to `now() + ttl_seconds`. Past-`ttl_at` rows are filtered from reads. Pass a positive integer; `0` is rejected. */
+                    ttl_seconds?: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Upserted entry */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        key?: string;
+                        value?: unknown;
+                        /** Format: date-time */
+                        ttl_at?: string | null;
+                        /** Format: date-time */
+                        updated_at?: string;
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            /** @description Payload too large (per-key 64 KiB or per-customer 1 MiB cap exceeded) */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            422: components["responses"]["UnprocessableEntity"];
+        };
+    };
+    delete_kv: {
+        parameters: {
+            query?: {
+                project_id?: string;
+            };
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Delete result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        deleted?: boolean;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
         };
     };
 }
