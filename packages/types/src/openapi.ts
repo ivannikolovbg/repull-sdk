@@ -1023,6 +1023,8 @@ export interface paths {
         /**
          * List listings
          * @description Cursor-paginated list of listings owned by the authenticated workspace. Use `pagination.nextCursor` from one response as the `cursor` query param of the next request to walk the full set. `?offset=` is also accepted as a first-class alias for shallow paging (0..10000) — see the `offset` parameter below. Mutually exclusive with `cursor`. Filters: `q` (substring on name/street/city), `status`, `channel`.
+         *
+         *     **Optional expansions:** Pass `?include=content` to enrich each row with the rich content slab (summary, description, space, house rules, etc. — sourced from `listings_descriptions` for the `en` locale). Pass `?include=details` for the structural slab (bedrooms, bathrooms, person capacity, check-in window, wifi, house manual, etc.). Both default to `null` per row when the underlying `listings_descriptions` / `listings_details` row is missing — distinct from the field being absent (which signals the expansion was not requested). Combine comma-separated, e.g. `?include=content,details`. The default response stays lean; consumers must opt in.
          */
         get: operations["listListings"];
         put?: never;
@@ -1048,7 +1050,7 @@ export interface paths {
          * Get a listing
          * @description Fetch a single listing by id. Returns the same shape as one element of the `GET /v1/listings` response, so you can bind the result to the same model. Cross-tenant access (a listing that belongs to a different workspace) returns 404 — never 403, never reveals the listing's existence.
          *
-         *     **Optional expansions:** Pass `?include=amenities` to enrich the response with the listing's amenities (sourced from the unified `listings_amenities` table). Returns `[]` when the listing has no amenity rows. The default response stays lean; consumers must opt in.
+         *     **Optional expansions:** Pass `?include=amenities` to enrich the response with the listing's amenity rows (`[]` when the listing has none). Pass `?include=content` for the rich content slab (summary, description, space, house rules, etc. — sourced from `listings_descriptions` for the `en` locale; `null` when no row is stored). Pass `?include=details` for the structural slab (bedrooms, bathrooms, person capacity, check-in window, wifi, house manual, etc.; `null` when no row is stored). Combine comma-separated, e.g. `?include=amenities,content,details`. The default response stays lean; consumers must opt in.
          */
         get: operations["getListing"];
         put?: never;
@@ -3790,17 +3792,66 @@ export interface components {
              */
             persist: boolean;
         };
+        /** @description Rich multilingual content slab for a listing — guest-facing copy sourced from `listings_descriptions` (the `en` row when surfaced via `?include=content`). Also returned as the AI-generated payload from `POST /v1/listings/{id}/generate-content` (where `title` and `amenities` are populated). All fields are individually nullable. */
         ListingContent: {
-            title?: string;
-            summary?: string;
-            description?: string;
-            space?: string;
-            guestAccess?: string;
-            neighborhoodOverview?: string;
-            transit?: string;
-            notes?: string;
-            houseRules?: string;
+            /** @description Public listing title. Populated only by `generate-content`; not stored on `listings_descriptions`. */
+            title?: string | null;
+            summary?: string | null;
+            description?: string | null;
+            space?: string | null;
+            guestAccess?: string | null;
+            neighborhoodOverview?: string | null;
+            /** @description Free-text directions for getting to + around the property (e.g. "Take Highway 95 north for 12 miles"). */
+            gettingAround?: string | null;
+            transit?: string | null;
+            houseRules?: string | null;
+            /** @description Structured supplementary rules (JSON; shape evolves with the listings_descriptions schema). */
+            additionalRules?: unknown;
+            notes?: string | null;
+            /** @description Host’s description of how they engage with guests (e.g. "Self check-in, available via message"). */
+            interactionWithGuests?: string | null;
+            /** @description Free-text amenity strings. Populated only by `generate-content`; the `?include=amenities` expansion returns the structured `ListingAmenity[]` instead. */
             amenities?: string[];
+        };
+        /** @description Structural detail slab for a listing — bedrooms/bathrooms/beds, person capacity, check-in window, wifi credentials, house manual, directions. Sourced from `listings_details` (one row per listing). Surfaced on `GET /v1/listings/{id}` and `GET /v1/listings` only when the caller passes `?include=details`. All fields are individually nullable. */
+        ListingDetails: {
+            /** @description Specific property type (e.g. `apartment`, `townhouse`, `cabin`). */
+            propertyType?: string | null;
+            /** @description Coarser grouping above propertyType (e.g. `house`, `apartment`). */
+            propertyTypeCategory?: string | null;
+            /** @description Sleeping arrangement (e.g. `entire_home`, `private_room`, `shared_room`). */
+            roomTypeCategory?: string | null;
+            bedrooms?: number | null;
+            /** @description Numeric value carried as a string to preserve fractional bathrooms (e.g. `"1.5"`). */
+            bathrooms?: string | null;
+            beds?: number | null;
+            /** @description Maximum guest capacity. */
+            personCapacity?: number | null;
+            /** @description Earliest check-in time, free-form (e.g. `"15:00"`, `"3 PM"`, `"flexible"`). */
+            checkInTimeStart?: string | null;
+            /** @description Latest check-in time. */
+            checkInTimeEnd?: string | null;
+            /** @description Check-out time. */
+            checkOutTime?: string | null;
+            minNights?: number | null;
+            maxNights?: number | null;
+            /** @description How far in advance bookings are allowed. */
+            advanceBookingDays?: number | null;
+            /** @description Required gap (in days) between consecutive bookings. */
+            turnoverDays?: number | null;
+            wifiNetwork?: string | null;
+            wifiPassword?: string | null;
+            /** @description Long-form house manual / welcome guide. */
+            houseManual?: string | null;
+            /** @description Long-form arrival directions. */
+            directions?: string | null;
+            /** @description Structured size info (JSON; e.g. `{ "value": 65, "unit": "sqm" }`). Shape evolves with the listings_details schema. */
+            propertySize?: unknown;
+            yearBuilt?: number | null;
+            /** @description Total floors in the building. */
+            numberOfFloors?: number | null;
+            /** @description Which floor the listing is on. */
+            listingFloor?: number | null;
         };
         ListingGenerateContentResponse: {
             listingId?: string;
@@ -3848,7 +3899,7 @@ export interface components {
             /** @description True when the link is active (not disconnected/suspended). */
             connected?: boolean;
             /** @description True when sync writes are enabled for this channel. */
-            sync_enabled?: boolean;
+            syncEnabled?: boolean;
             /**
              * Format: date-time
              * @description ISO timestamp the connection was first established.
@@ -3903,6 +3954,10 @@ export interface components {
             channels?: components["schemas"]["ListingChannel"][];
             /** @description Amenity rows for the listing. **Only present when the caller passes `?include=amenities`.** Empty array (`[]`) when the listing has no amenity rows. */
             amenities?: components["schemas"]["ListingAmenity"][];
+            /** @description **Only present when the caller passes `?include=content`.** Sourced from `listings_descriptions` for the `en` locale. `null` when the listing has no description row stored (vs the field being absent — that signals the caller did not opt into the expansion). */
+            content?: components["schemas"]["ListingContent"] | null;
+            /** @description **Only present when the caller passes `?include=details`.** Sourced from `listings_details`. `null` when the listing has no details row stored (vs the field being absent — that signals the caller did not opt into the expansion). */
+            details?: components["schemas"]["ListingDetails"] | null;
             /** Format: date-time */
             createdAt?: string;
             /** Format: date-time */
@@ -6549,6 +6604,8 @@ export interface operations {
                 status?: "active" | "inactive" | "archived";
                 /** @description Restrict to listings published on the given channel (`airbnb`, `booking`, `vrbo`, etc.). Joins through `listing_platform_links` and matches active links only. */
                 channel?: string;
+                /** @description Comma-separated optional expansions. Currently supported: `content`, `details`. Unknown values return 422 with a `valid_values` envelope. (Note: `amenities` is not yet supported on the list endpoint — use the detail endpoint to fetch amenity rows for a single listing.) */
+                include?: string;
             };
             header?: {
                 /** @description Apply a custom or built-in schema to transform the response. Built-in: `native` (default), `calry`, `calry-v1`. Custom: any schema name created via `POST /v1/schema/custom`. Unknown / inactive schema names fall back to `native`. */
@@ -6600,8 +6657,8 @@ export interface operations {
     getListing: {
         parameters: {
             query?: {
-                /** @description Comma-separated optional expansions. Currently supported: `amenities`. Unknown values return 422. */
-                include?: "amenities";
+                /** @description Comma-separated optional expansions. Currently supported: `amenities`, `content`, `details`. Unknown values return 422 with a `valid_values` envelope. */
+                include?: string;
             };
             header?: {
                 /** @description Apply a custom or built-in schema to transform the response. Built-in: `native` (default), `calry`, `calry-v1`. Custom: any schema name created via `POST /v1/schema/custom`. Unknown / inactive schema names fall back to `native`. */
