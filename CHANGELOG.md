@@ -3,6 +3,12 @@
 All notable changes to `@repull/sdk` and `@repull/types` are recorded here.
 This project follows [Semantic Versioning](https://semver.org/).
 
+## v0.2.6 — 2026-05-15
+
+### Added
+
+- **`PaymentRequired` (402) response component in `@repull/types`.** New `components.responses.PaymentRequired` surfaced via `openapi-typescript` regen. The API now returns `402 Payment Required` with `error.code = "listings_limit_exceeded"` when a customer is over their tier's active-listing cap (free=5, starter=50, custom=unlimited). Unlike 429, 402 is NOT a "wait and retry" condition — `Retry-After` is not set. Recovery: `DELETE` listings to fall under the cap, or upgrade at `repull.dev/dashboard/billing`. `/v1/health`, `/v1/usage/*`, and any `DELETE` are exempt. The 402 envelope mirrors `rate_limit_exceeded` and adds `tier`, `limit`, `active_listings`, `upgrade_url`. Tracks vanio-repull-api PR #66.
+
 ## v0.2.1 — 2026-05-04
 
 ### Added — Studio routes (16 ops)

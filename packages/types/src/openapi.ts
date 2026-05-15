@@ -4789,6 +4789,23 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
+        /**
+         * @description Plan-listings cap exceeded. The customer's active listing count is above the cap of their resolved Repull tier (`free` = 5, `starter` = 50, `custom` = unlimited). Returned on every route except `/v1/health`, `/v1/usage/*`, and any `DELETE` — these stay served so the customer can read their state, render the over-cap UI, or trim listings to get back under the cap.
+         *
+         *     Distinct from 429 / `rate_limit_exceeded` — this is NOT a "wait and retry" condition. The only paths back to a 200 are:
+         *       1. `DELETE` enough listings via `DELETE /v1/listings/{id}` (or the channel-specific listings DELETE) until `active_listings <= limit`.
+         *       2. Upgrade to a tier with a higher cap at `https://repull.dev/dashboard/billing`. The very next request after the upgrade lands will see the new cap (server-side usage cache is 60s, so allow up to 1 minute for propagation).
+         *
+         *     No `Retry-After` header — backoff doesn't fix this.
+         */
+        PaymentRequired: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
         /** @description Quota exceeded. Wait `retry_after` seconds (or until `X-RateLimit-Reset`) before retrying. */
         TooManyRequests: {
             headers: {
