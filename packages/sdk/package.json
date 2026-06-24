@@ -1,7 +1,7 @@
 {
   "name": "@repull/sdk",
-  "version": "0.2.6",
-  "description": "Official TypeScript SDK for api.repull.dev — vacation-rental tech, unified.",
+  "version": "0.2.7",
+  "description": "Official TypeScript SDK for api.repull.dev \u2014 vacation-rental tech, unified.",
   "license": "SEE LICENSE.md",
   "type": "module",
   "publishConfig": {

@@ -3,6 +3,12 @@
 All notable changes to `@repull/sdk` and `@repull/types` are recorded here.
 This project follows [Semantic Versioning](https://semver.org/).
 
+## v0.2.7 — 2026-06-24
+
+### Added
+
+- **`messaging` Airbnb Connect access scope.** `AirbnbAccessType` is now `'read_only' | 'full_access' | 'messaging'`. Pass `accessType: 'messaging'` to `connect.airbnb(...)` to request read + send-guest-message scopes only, without Airbnb's exclusive `property_management` scope — so the connection coexists with an account already linked to another PMS. Regenerated `@repull/types` from the live OpenAPI spec.
+
 ## v0.2.6 — 2026-05-15
 
 ### Added
