@@ -157,7 +157,7 @@ export interface ConnectStatus {
   [key: string]: unknown;
 }
 
-export type AirbnbAccessType = 'read_only' | 'full_access';
+export type AirbnbAccessType = 'read_only' | 'full_access' | 'messaging';
 
 export type RepullProvider =
   | 'airbnb'

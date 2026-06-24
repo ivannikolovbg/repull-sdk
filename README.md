@@ -26,7 +26,13 @@ const health = await repull.health.check();
 // Mint an Airbnb OAuth Connect session
 const session = await repull.connect.airbnb.create({
   redirectUrl: 'https://yourapp.com/airbnb/return',
-  accessType: 'full_access', // or 'read_only'
+  // accessType is one of:
+  //   'full_access'  — full host scopes (default): calendar, listings, reservations, messaging, property management
+  //   'read_only'    — calendar-only OAuth scopes
+  //   'messaging'    — read + send guest messages, no property management. Use this when the
+  //                    customer already syncs the Airbnb account to another PMS — it coexists
+  //                    with the incumbent app's property_management connection.
+  accessType: 'full_access',
 });
 // -> { oauthUrl, sessionId, provider, expiresAt }
 // Send the user to session.oauthUrl
