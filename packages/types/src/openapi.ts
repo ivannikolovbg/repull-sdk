@@ -390,6 +390,10 @@ export interface paths {
          * @description Establish a connection to a PMS or OTA platform. Credentials vary by provider — see docs for each provider.
          *
          *     Airbnb-specific: pass `redirectUrl` (where to send the user after consent) and optionally `accessType`. Three tiers: `read_only` grants read-only scopes; `messaging` grants read scopes plus message read/send but NOT property management, so it can coexist with another app (e.g. an existing PMS) that already holds property management on the same Airbnb account; `full_access` — the default — grants full host scopes including the exclusive property management (only one app per Airbnb account can hold it). The response returns a hosted `url` to redirect the user to.
+         *
+         *     Booking.com: pass `redirectUrl` (no `accessType`). The response returns a hosted `url` — send the user there to designate FantasticStay in their Booking.com Extranet and paste their Hotel ID. Same response shape as Airbnb (`url`, `sessionId`, `expiresAt`).
+         *
+         *     PMS providers (api-key based) pass `apiKey` instead; Plumguide passes `clientId`/`clientSecret`.
          */
         post: operations["create_connection"];
         /**
@@ -2094,6 +2098,14 @@ export interface components {
              * @example hostaway
              */
             provider?: string;
+            /**
+             * @description OTAs/channels this property is actively published on (e.g. `airbnb`, `booking`, `vrbo`). Empty array when the property has no active channel links.
+             * @example [
+             *       "airbnb",
+             *       "booking"
+             *     ]
+             */
+            channels?: string[];
             /** @description Amenity rows for the property. **Only present when the caller passes `?include=amenities`.** Empty array (`[]`) when the property has no amenity rows. */
             amenities?: components["schemas"]["ListingAmenity"][];
         };
@@ -4893,6 +4905,8 @@ export interface operations {
                 status?: "active" | "inactive" | "all";
                 /** @description Filter by lifecycle status (e.g. `live`, `draft`, `archived`). Pass `all` to disable the filter. */
                 lifecycle_status?: string;
+                /** @description Filter to properties with an active link on the given OTA/channel (airbnb, booking, vrbo). Omit to include every channel. Each property also returns a `channels` array listing the OTAs it is published on. */
+                channel?: "airbnb" | "booking" | "vrbo";
                 /** @description When `true` (default), the response's `pagination.total` carries the count of rows matching the current filter, across all pages. Pass `false` to skip the count for very large workspaces where the per-page COUNT(*) cost matters. */
                 include_total?: components["parameters"]["IncludeTotal"];
             };
@@ -5581,7 +5595,7 @@ export interface operations {
                 "application/json": {
                     /**
                      * Format: uri
-                     * @description Airbnb only — where to redirect the user after the OAuth flow completes.
+                     * @description Airbnb + Booking.com — where to redirect the user after they finish the hosted connect flow.
                      */
                     redirectUrl?: string;
                     /**

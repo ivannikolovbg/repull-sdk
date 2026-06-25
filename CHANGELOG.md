@@ -3,6 +3,14 @@
 All notable changes to `@repull/sdk` and `@repull/types` are recorded here.
 This project follows [Semantic Versioning](https://semver.org/).
 
+## v0.2.8 — 2026-06-25
+
+### Added
+
+- **Dedicated Booking.com Connect namespace.** `connect.booking` is now a first-class namespace (`BookingConnectNamespace`) mirroring `connect.airbnb`. Call `connect.booking.create({ redirectUrl })` to mint a hosted Connect session (`POST /v1/connect/booking`) returning `{ url, sessionId, provider, expiresAt }` — send the user to `url` to designate Repull in their Booking.com Extranet and paste their Hotel ID. Unlike Airbnb, Booking.com takes no `accessType`. `connect.booking.status()` and `connect.booking.disconnect()` are also available.
+- **`channel` filter on `properties.list(...)`.** Pass `channel: 'airbnb' | 'booking' | 'vrbo'` to `properties.list(...)` to filter to properties published on a given OTA.
+- **`channels: string[]` on `Property`.** Each property now reports the OTAs/channels it is actively published on. Regenerated `@repull/types` from the live OpenAPI spec.
+
 ## v0.2.7 — 2026-06-24
 
 ### Added

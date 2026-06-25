@@ -40,8 +40,27 @@ const session = await repull.connect.airbnb.create({
 // Poll status
 const status = await repull.connect.airbnb.status();
 
+// Mint a Booking.com Connect session
+// Booking.com takes no accessType — just a redirectUrl. Same hosted-session
+// response shape as Airbnb ({ url, sessionId, provider, expiresAt }). Send the
+// user to session.url; they designate Repull in their Booking.com Extranet and
+// paste their Hotel ID, then bounce back to redirectUrl.
+const booking = await repull.connect.booking.create({
+  redirectUrl: 'https://yourapp.com/booking/return',
+});
+// -> { url, sessionId, provider, expiresAt }
+const bookingStatus = await repull.connect.booking.status();
+
 // Reservations
 const { data, pagination } = await repull.reservations.list({ limit: 50 });
+
+// Properties — filter by the OTA/channel a property is published on.
+// channel is one of 'airbnb' | 'booking' | 'vrbo'. Each Property also carries a
+// `channels: string[]` listing every OTA it is actively published on.
+const airbnbOnly = await repull.properties.list({ channel: 'airbnb' });
+for (const p of airbnbOnly.data) {
+  console.log(p.id, p.channels); // e.g. ['airbnb', 'booking']
+}
 ```
 
 ## Local development

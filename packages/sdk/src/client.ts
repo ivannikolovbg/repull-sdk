@@ -201,13 +201,13 @@ export class Repull {
 
 class ConnectNamespace {
   readonly airbnb: AirbnbConnectNamespace;
-  readonly booking: ProviderConnectNamespace;
+  readonly booking: BookingConnectNamespace;
   readonly plumguide: ProviderConnectNamespace;
   readonly vrbo: ProviderConnectNamespace;
 
   constructor(private readonly client: Repull) {
     this.airbnb = new AirbnbConnectNamespace(client);
-    this.booking = new ProviderConnectNamespace(client, 'booking');
+    this.booking = new BookingConnectNamespace(client);
     this.plumguide = new ProviderConnectNamespace(client, 'plumguide');
     this.vrbo = new ProviderConnectNamespace(client, 'vrbo');
   }
@@ -295,6 +295,39 @@ class AirbnbConnectNamespace {
   /** DELETE /v1/connect/airbnb — disconnect Airbnb. */
   disconnect(): Promise<unknown> {
     return this.client.request('DELETE', '/v1/connect/airbnb');
+  }
+}
+
+class BookingConnectNamespace {
+  constructor(private readonly client: Repull) {}
+
+  /**
+   * POST /v1/connect/booking — mint a hosted Booking.com Connect session.
+   *
+   * Returns `{ url, sessionId, provider, expiresAt }`. Send the user to
+   * `url` (hosted at `connect.repull.dev`) — they designate the Repull
+   * connectivity provider in their Booking.com Extranet and paste their
+   * Hotel ID, then bounce back to `redirectUrl`.
+   *
+   * Unlike Airbnb, Booking.com takes no `accessType` — the flow grants the
+   * full connectivity-provider scope.
+   */
+  create(opts: { redirectUrl: string }): Promise<ConnectSession> {
+    return this.client.request<ConnectSession>('POST', '/v1/connect/booking', {
+      body: {
+        redirectUrl: opts.redirectUrl,
+      },
+    });
+  }
+
+  /** GET /v1/connect/booking — current connection status. */
+  status(): Promise<ConnectStatus> {
+    return this.client.request<ConnectStatus>('GET', '/v1/connect/booking');
+  }
+
+  /** DELETE /v1/connect/booking — disconnect Booking.com. */
+  disconnect(): Promise<unknown> {
+    return this.client.request('DELETE', '/v1/connect/booking');
   }
 }
 
@@ -490,6 +523,7 @@ class PropertiesNamespace {
       limit?: number;
       cursor?: string;
       status?: 'active' | 'all';
+      channel?: 'airbnb' | 'booking' | 'vrbo';
       include_total?: boolean;
     } = {},
     opts: { xSchema?: string } = {},
