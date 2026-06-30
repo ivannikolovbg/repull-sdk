@@ -5489,6 +5489,11 @@ export interface operations {
                     state?: string | null;
                     /** @description Optional whitelist of provider IDs the picker should expose. Omit to show every channel in the registry. */
                     allowedProviders?: string[] | null;
+                    /**
+                     * @description Optional UI language for the hosted Connect pages. Accepts any supported locale code (currently `en`, `fr`). When set it pins the language for the whole flow, overriding the workspace `default_language`. Unknown codes are ignored and the page falls back to the workspace default, then `Accept-Language`, then `en`. The end user can still override per-visit with a `?locale=` query param on the hosted page.
+                     * @example fr
+                     */
+                    locale?: string | null;
                 };
             };
         };
@@ -5610,6 +5615,11 @@ export interface operations {
                     clientId?: string;
                     /** @description Plumguide — client secret. */
                     clientSecret?: string;
+                    /**
+                     * @description Airbnb only — optional UI language for the hosted Connect pages. Accepts any supported locale code (currently `en`, `fr`); unknown codes are ignored and resolution falls back to the workspace `default_language`, then `Accept-Language`, then `en`.
+                     * @example fr
+                     */
+                    locale?: string | null;
                 };
             };
         };
