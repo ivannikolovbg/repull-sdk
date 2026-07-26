@@ -3,6 +3,12 @@
 All notable changes to `@repull/sdk` and `@repull/types` are recorded here.
 This project follows [Semantic Versioning](https://semver.org/).
 
+## v0.2.10 — 2026-07-26
+
+### Added
+
+- **Listing activation controls.** `listings.delete(id)` deactivates (excludes) a listing via `DELETE /v1/listings/{id}` — a soft toggle that frees a slot against the plan's active-listing cap, not a hard delete. `listings.setActive(id, active)` (and its `listings.update(id, { active })` alias) toggle the state via `PATCH /v1/listings/{id}`; reactivating (`active: true`) may throw `402` when it would exceed the tier cap. Both return the resulting `{ id, active }` (`ListingActiveResponse`). New `ListingActiveRequest` / `ListingActiveResponse` types exported from `@repull/types`. `POST /v1/listings` now also declares a `402` response. Regenerated `@repull/types` from the live OpenAPI spec.
+
 ## v0.2.8 — 2026-06-25
 
 ### Added

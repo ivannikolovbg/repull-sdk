@@ -754,8 +754,12 @@ export interface paths {
         get: operations["get_airbnb_listing"];
         put?: never;
         /**
-         * Listing action (push/publish/unlist/delete)
-         * @description Apply a state action to an Airbnb listing — `push` (sync local changes upstream), `publish` (make publicly bookable), `unlist` (hide), or `delete` (permanent). Each action has different reversibility — see docs.
+         * Listing action (delete/push/publish/unlist)
+         * @description Apply a state action to a listing by id.
+         *
+         *     `delete` is implemented as a **deactivate of the Repull record only** — it sets the listing inactive and KEEPS the row; it does NOT touch the upstream Airbnb listing (Repull never deletes or deactivates on Airbnb's side). Use it to exclude a listing / trim back under the plan-listings cap; reactivate via `PATCH /v1/listings/{id}` with `{ "active": true }`. Idempotent.
+         *
+         *     `push` (sync local changes upstream), `publish` (make publicly bookable), and `unlist` (hide) depend on the host-side sync orchestrator and currently return 501.
          */
         post: operations["airbnb_listing_action"];
         delete?: never;
@@ -1059,10 +1063,28 @@ export interface paths {
         get: operations["getListing"];
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Deactivate (exclude) a listing
+         * @description Deactivate a listing — sets it inactive and excludes it from Repull. This is a **soft** operation: the listing row is KEPT (never hard-deleted) and the upstream channel (Airbnb / Hospitable / Booking.com) is NEVER touched. Repull only mutates its own copy.
+         *
+         *     Equivalent to `PATCH /v1/listings/{id}` with `{ "active": false }`. This is the primary self-serve way for a free-tier customer to trim back under the plan-listings cap — `DELETE` is served even when the account is over the cap (a 402-locked account can still call it). To bring a listing back, use `PATCH` with `{ "active": true }`.
+         *
+         *     Idempotent: deactivating an already-inactive listing returns 200.
+         */
+        delete: operations["deactivateListing"];
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * Deactivate or reactivate a listing
+         * @description Toggle a listing's active state. Send `{ "active": false }` to **deactivate** (exclude the listing from Repull) or `{ "active": true }` to **reactivate** it.
+         *
+         *     "Deactivate" keeps the listing row — it is NOT a hard delete, and it NEVER touches the upstream channel (Airbnb / Hospitable / Booking.com). Repull only mutates its own copy of the inventory. Deactivating is the self-serve way to get back under the plan-listings cap without paying.
+         *
+         *     Reactivation respects the plan-listings cap: if activating this listing would push you over the cap for your tier, the call returns `402 listings_limit_exceeded` and the listing stays inactive. Deactivate another listing or upgrade first.
+         *
+         *     Idempotent: setting a listing to the state it's already in returns 200.
+         */
+        patch: operations["updateListingActive"];
         trace?: never;
     };
     "/v1/listings/{id}/generate-content": {
@@ -3790,6 +3812,16 @@ export interface components {
             /** @description New listing ID — use for follow-up generate-content / publish calls */
             id?: string;
         };
+        ListingActiveRequest: {
+            /** @description Target active state. `false` deactivates (excludes) the listing; `true` reactivates it (subject to the plan-listings cap). */
+            active: boolean;
+        };
+        ListingActiveResponse: {
+            /** @description The listing id (id fields are serialized as strings to preserve precision). */
+            id?: string;
+            /** @description The resulting active state after the toggle. */
+            active?: boolean;
+        };
         ListingGenerateContentRequest: {
             /** @description Up to 8 reference photos. When present, Repull AI vision is used for grounded copy. */
             photos?: string[];
@@ -4802,7 +4834,7 @@ export interface components {
             };
         };
         /**
-         * @description Plan-listings cap exceeded. The customer's active listing count is above the cap of their resolved Repull tier (`free` = 5, `starter` = 50, `custom` = unlimited). Returned on every route except `/v1/health`, `/v1/usage/*`, and any `DELETE` — these stay served so the customer can read their state, render the over-cap UI, or trim listings to get back under the cap.
+         * @description Plan-listings cap exceeded. The customer's active listing count is above the cap of their resolved Repull tier (`free` = 3, `starter` = 50, `custom` = unlimited). Returned on every route except `/v1/health`, `/v1/usage/*`, and any `DELETE` — these stay served so the customer can read their state, render the over-cap UI, or trim listings to get back under the cap.
          *
          *     Distinct from 429 / `rate_limit_exceeded` — this is NOT a "wait and retry" condition. The only paths back to a 200 are:
          *       1. `DELETE` enough listings via `DELETE /v1/listings/{id}` (or the channel-specific listings DELETE) until `active_listings <= limit`.
@@ -6693,6 +6725,7 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
+            402: components["responses"]["PaymentRequired"];
         };
     };
     getListing: {
@@ -6723,6 +6756,63 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["UnprocessableEntity"];
+        };
+    };
+    deactivateListing: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Repull listing id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Listing deactivated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListingActiveResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["UnprocessableEntity"];
+        };
+    };
+    updateListingActive: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Repull listing id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ListingActiveRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated active state */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListingActiveResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            402: components["responses"]["PaymentRequired"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["UnprocessableEntity"];
         };

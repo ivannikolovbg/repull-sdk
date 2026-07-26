@@ -30,6 +30,7 @@ import type {
   Guest,
   HealthResponse,
   Listing,
+  ListingActiveResponse,
   ListResponse,
   MarketBrowseResponse,
   MarketsResponse,
@@ -40,9 +41,10 @@ import type {
   Review,
 } from '@repull/types';
 import { RepullError } from './errors.js';
+import { KvNamespace } from './kv.js';
 
 const DEFAULT_BASE_URL = 'https://api.repull.dev';
-const DEFAULT_USER_AGENT = '@repull/sdk/0.2.1';
+const DEFAULT_USER_AGENT = '@repull/sdk/0.2.10';
 
 export type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
@@ -79,6 +81,7 @@ export class Repull {
   readonly listings: ListingsNamespace;
   readonly schemas: SchemasNamespace;
   readonly studio: StudioNamespace;
+  readonly kv: KvNamespace;
 
   private readonly opts: {
     apiKey?: string;
@@ -130,6 +133,7 @@ export class Repull {
     this.listings = new ListingsNamespace(this);
     this.schemas = new SchemasNamespace(this);
     this.studio = new StudioNamespace(this);
+    this.kv = new KvNamespace(this);
   }
 
   /** @internal */
@@ -671,6 +675,43 @@ class ListingsNamespace {
       `/v1/listings/${encodeURIComponent(String(id))}`,
       { xSchema: opts.xSchema },
     );
+  }
+
+  /**
+   * DELETE /v1/listings/{id} — deactivate (exclude) a listing. New in v0.2.10.
+   *
+   * This is a soft toggle: the listing is marked inactive (freeing a slot
+   * against the plan's listing cap), not hard-deleted. Reactivate it later
+   * via `setActive(id, true)`. Returns the resulting `{ id, active }` state.
+   */
+  delete(id: string | number): Promise<ListingActiveResponse> {
+    return this.client.request<ListingActiveResponse>(
+      'DELETE',
+      `/v1/listings/${encodeURIComponent(String(id))}`,
+    );
+  }
+
+  /**
+   * PATCH /v1/listings/{id} — set a listing's active state. New in v0.2.10.
+   *
+   * `active: false` deactivates (excludes) the listing; `active: true`
+   * reactivates it (subject to the plan's listing cap — a 402 is thrown when
+   * reactivating would exceed it). Returns the resulting `{ id, active }`.
+   */
+  setActive(id: string | number, active: boolean): Promise<ListingActiveResponse> {
+    return this.client.request<ListingActiveResponse>(
+      'PATCH',
+      `/v1/listings/${encodeURIComponent(String(id))}`,
+      { body: { active } },
+    );
+  }
+
+  /**
+   * PATCH /v1/listings/{id} — alias of `setActive` matching the
+   * `repull.listings.update(id, { active })` shape. New in v0.2.10.
+   */
+  update(id: string | number, body: { active: boolean }): Promise<ListingActiveResponse> {
+    return this.setActive(id, body.active);
   }
 }
 

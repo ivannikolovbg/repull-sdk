@@ -34,6 +34,8 @@
 export { Repull } from './client.js';
 export type { RepullOptions, FetchLike } from './client.js';
 export { RepullError, RepullAuthError, RepullRateLimitError, RepullValidationError } from './errors.js';
+export { KvNamespace } from './kv.js';
+export type { KvOptions, KvSetOptions, KvListOptions, KvClearOptions, KvEntry } from './kv.js';
 export type {
   Property,
   Reservation,
