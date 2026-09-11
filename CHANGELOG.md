@@ -3,6 +3,33 @@
 All notable changes to `@repull/sdk` and `@repull/types` are recorded here.
 This project follows [Semantic Versioning](https://semver.org/).
 
+## v0.2.11 — 2026-09-11
+
+### Removed
+
+- **Repull Studio namespace deleted from `@repull/sdk`.** `repull.studio.*` (added in v0.2.1) is gone — all ten `/api/studio/*` operations 404 on `api.repull.dev`; Studio now lives on its own infrastructure, not the public API. Types (`StudioProject`, `StudioFile`, `StudioGeneration`, `StudioDeployment`, `StudioError`) were also dropped from `@repull/types` — they'd become orphaned schema components (unreferenced by any path) once the spec's `/api/studio/*` paths were removed upstream.
+- Four stub operations that previously advertised as reachable but only ever returned `501`/`404` (`POST /v1/ai`, `POST /v1/channels/airbnb/sync`, `POST /v1/channels/booking/sync`, `GET /v1/channels/vrbo/listings/{id}/pricing`) are gone from `@repull/types` — they were removed from the live spec, not just fixed.
+
+### Added
+
+Regenerated `@repull/types` from the live spec (89 → 124 tracked paths); 49 previously-undeclared operations are now typed, including:
+- Airbnb: alterations (`accept`/`decline`), listing map/amenities/checkin-checkout guides/descriptions/quality/rooms/settings, messaging thread + message detail, offers, transactions.
+- Booking.com: charges, property detail + rooms, reservations, setup, webhooks.
+- Plumguide: bookings, webhooks.
+- Direct-credential PMS connect for ten providers (`beds24`, `bookingsync`, `guesty`, `hospitable`, `hostaway`, `igms`, `lodgify`, `ownerrez`, `smoobu`, `vrbo`) and the Booking.com hosted-connect callback.
+- Health: `/v1/health/{atlas,auth,mcp,webhooks}`, `/v1/health/channels/{channel}`.
+- Listings: content, photos (list + upload-url).
+- `POST /v1/availability/batch`, `GET /v1/quotes`, `POST /v1/reviews/{id}/reply`, `/v1/usage/{logs,summary,tier}`.
+
+### Fixed
+
+- Removed a stray `POST /v1/channels/airbnb/sync` "Bulk sync" placeholder card from the `channel-manager` demo app — that endpoint no longer exists in the API.
+
+### Notes
+
+- Regenerated via `pnpm codegen` (`scripts/pull-openapi.ts` + `openapi-typescript`) against `https://api.repull.dev/openapi.json`.
+- Two spec defects were found and fixed upstream (prepared on `vanio-repull-api` branch `fix/reviews-reply-path-param`, not yet merged/deployed at the time of this release): (1) `POST /v1/reviews/{id}/reply` was missing its `{id}` path-parameter declaration, which fails `openapi-typescript`'s `$ref`/path validation outright; (2) 14 operations' `422` responses referenced a non-existent `#/components/responses/ValidationError` (should be `UnprocessableEntity`), a dangling `$ref` that also hard-fails codegen. This release's `openapi/v1.json` is untouched and matches the live spec byte-for-byte; `src/openapi.ts` was generated from a locally-patched copy carrying both corrections so the SDK types compile cleanly today, ahead of the upstream fix landing.
+
 ## v0.2.10 — 2026-07-26
 
 ### Added

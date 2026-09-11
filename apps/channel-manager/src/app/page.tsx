@@ -94,7 +94,6 @@ function Workspace() {
         <Stub title="Availability calendar" endpoint="GET/PUT /v1/channels/airbnb/listings/{id}/availability" />
         <Stub title="Pricing rules" endpoint="GET/PUT /v1/channels/airbnb/listings/{id}/pricing" />
         <Stub title="Messaging" endpoint="GET/POST /v1/channels/airbnb/messaging/{threadId}/messages" />
-        <Stub title="Bulk sync" endpoint="POST /v1/channels/airbnb/sync" />
       </div>
     </section>
   );
