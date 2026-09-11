@@ -15,6 +15,8 @@
 
 import type {
   AirbnbAccessType,
+  AirbnbListing,
+  AirbnbListingListResponse,
   ConnectPickerSession,
   ConnectProvider,
   ConnectSession,
@@ -28,6 +30,8 @@ import type {
   CustomSchemaListResponse,
   CustomSchemaUpdate,
   Guest,
+  GuestCreateRequest,
+  GuestCreateResponse,
   HealthResponse,
   Listing,
   ListingActiveResponse,
@@ -38,13 +42,19 @@ import type {
   PricingResponse,
   Property,
   Reservation,
+  ReservationCreateRequest,
+  ReservationCreateResponse,
+  ReservationUpdateRequest,
+  ReservationUpdateResponse,
   Review,
+  SendMessageRequest,
+  SendMessageResponse,
 } from '@repull/types';
 import { RepullError } from './errors.js';
 import { KvNamespace } from './kv.js';
 
 const DEFAULT_BASE_URL = 'https://api.repull.dev';
-const DEFAULT_USER_AGENT = '@repull/sdk/0.2.10';
+const DEFAULT_USER_AGENT = '@repull/sdk/0.2.13';
 
 export type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
@@ -80,7 +90,6 @@ export class Repull {
   readonly markets: MarketsNamespace;
   readonly listings: ListingsNamespace;
   readonly schemas: SchemasNamespace;
-  readonly studio: StudioNamespace;
   readonly kv: KvNamespace;
 
   private readonly opts: {
@@ -132,7 +141,6 @@ export class Repull {
     this.markets = new MarketsNamespace(this);
     this.listings = new ListingsNamespace(this);
     this.schemas = new SchemasNamespace(this);
-    this.studio = new StudioNamespace(this);
     this.kv = new KvNamespace(this);
   }
 
@@ -140,7 +148,12 @@ export class Repull {
   async request<T>(
     method: string,
     path: string,
-    init: { query?: Record<string, unknown>; body?: unknown; xSchema?: string } = {},
+    init: {
+      query?: Record<string, unknown>;
+      body?: unknown;
+      xSchema?: string;
+      idempotencyKey?: string;
+    } = {},
   ): Promise<T> {
     const url = buildUrl(this.opts.baseUrl, path, init.query);
     const headers: Record<string, string> = {
@@ -150,6 +163,7 @@ export class Repull {
     if (init.body !== undefined) headers['Content-Type'] = 'application/json';
     if (!isBrowser) headers['User-Agent'] = this.opts.userAgent;
     if (init.xSchema) headers['X-Schema'] = init.xSchema;
+    if (init.idempotencyKey) headers['Idempotency-Key'] = init.idempotencyKey;
 
     const reqInit: RequestInit = {
       method,
@@ -390,6 +404,55 @@ class ReservationsNamespace {
       xSchema: opts.xSchema,
     });
   }
+
+  /**
+   * POST /v1/reservations — create a direct reservation. New in v0.2.12.
+   *
+   * `platform` is limited to `direct` / `website` / `owner`: OTA reservations
+   * are owned by the channel and arrive through sync, so they cannot be
+   * created here. The stay is priced by the pricing engine, not from the
+   * request — read `totalPrice` back off the response.
+   *
+   * Pass `opts.idempotencyKey` (a UUID generated where you build the request)
+   * to make a retry safe. The same key replays the stored response for 24
+   * hours; the same key with a changed payload is rejected with
+   * `422 idempotency_key_reused`.
+   */
+  create(
+    body: ReservationCreateRequest,
+    opts: { idempotencyKey?: string; xSchema?: string } = {},
+  ): Promise<ReservationCreateResponse> {
+    return this.client.request<ReservationCreateResponse>('POST', '/v1/reservations', {
+      body,
+      idempotencyKey: opts.idempotencyKey,
+      xSchema: opts.xSchema,
+    });
+  }
+
+  /**
+   * PATCH /v1/reservations/{id} — change dates, times, guest count, or move
+   * the reservation to another property. New in v0.2.12.
+   *
+   * At least one field is required. Guest identity, pricing, `status`,
+   * `platform` and notes are rejected by name. A `listingId` change combined
+   * with new dates is applied as ONE move, so the access code is re-issued
+   * once. `changed` on the response lists the fields that were actually
+   * written — and a move forces a confirmed `status`, so read it back rather
+   * than assuming it is unchanged.
+   *
+   * Pass `opts.idempotencyKey` to make a retry safe (see `create`).
+   */
+  update(
+    id: string | number,
+    body: ReservationUpdateRequest,
+    opts: { idempotencyKey?: string; xSchema?: string } = {},
+  ): Promise<ReservationUpdateResponse> {
+    return this.client.request<ReservationUpdateResponse>(
+      'PATCH',
+      `/v1/reservations/${encodeURIComponent(String(id))}`,
+      { body, idempotencyKey: opts.idempotencyKey, xSchema: opts.xSchema },
+    );
+  }
 }
 
 /**
@@ -436,6 +499,33 @@ class ConversationsNamespace {
       { query, xSchema: opts.xSchema },
     );
   }
+
+  /**
+   * POST /v1/conversations/{id}/messages — send a message to the guest on an
+   * existing thread. New in v0.2.12.
+   *
+   * Omit `channel` to send on whichever channel the conversation already
+   * uses — that is the right default. Check `contentRewritten` on the
+   * response: when it is `true` the channel altered the text before delivery
+   * (today that means Airbnb stripped a link, email address or phone number),
+   * so the guest received `deliveredContent`, not `submittedContent`.
+   *
+   * Pass `opts.idempotencyKey` (a UUID generated where you build the request)
+   * to make a retry safe, so a network retry cannot send the guest the same
+   * message twice. The same key with a changed payload is rejected with
+   * `422 idempotency_key_reused`.
+   */
+  send(
+    conversationId: string | number,
+    body: SendMessageRequest,
+    opts: { idempotencyKey?: string; xSchema?: string } = {},
+  ): Promise<SendMessageResponse> {
+    return this.client.request<SendMessageResponse>(
+      'POST',
+      `/v1/conversations/${encodeURIComponent(String(conversationId))}/messages`,
+      { body, idempotencyKey: opts.idempotencyKey, xSchema: opts.xSchema },
+    );
+  }
 }
 
 /**
@@ -465,6 +555,30 @@ class GuestsNamespace {
   /** GET /v1/guests/{id} — full guest profile. */
   get(id: string | number, opts: { xSchema?: string } = {}): Promise<Guest> {
     return this.client.request<Guest>('GET', `/v1/guests/${encodeURIComponent(String(id))}`, {
+      xSchema: opts.xSchema,
+    });
+  }
+
+  /**
+   * POST /v1/guests — create a guest, or match an existing one. New in v0.2.12.
+   *
+   * Only `firstName` is required. The API matches on email/phone plus name
+   * before writing, so read `created` on the response rather than assuming a
+   * 2xx means a new record was made. Email and phone come back as separate
+   * entries in `contacts`.
+   *
+   * Pass `opts.idempotencyKey` (a UUID generated where you build the request)
+   * to make a retry safe. The same key replays the stored response for 24
+   * hours; the same key with a changed payload is rejected with
+   * `422 idempotency_key_reused`.
+   */
+  create(
+    body: GuestCreateRequest,
+    opts: { idempotencyKey?: string; xSchema?: string } = {},
+  ): Promise<GuestCreateResponse> {
+    return this.client.request<GuestCreateResponse>('POST', '/v1/guests', {
+      body,
+      idempotencyKey: opts.idempotencyKey,
       xSchema: opts.xSchema,
     });
   }
@@ -578,16 +692,26 @@ class AirbnbListingsNamespace {
 
   /**
    * GET /v1/channels/airbnb/listings — read-only Airbnb listing index with
-   * `connections` info. v0.2.0: now wraps in the canonical
-   * `{ data, pagination }` envelope.
+   * `connections` info. v0.2.0: wraps in the canonical `{ data, pagination }`
+   * envelope.
+   *
+   * This is a pure read of the local Airbnb mirror — it never calls Airbnb
+   * upstream — so the response also carries a required `dataFreshness`.
+   * Check `dataFreshness.stale` before trusting a null column: when it is
+   * `true`, `dataFreshness.reason` says why and `dataFreshness.fixUrl` is the
+   * dashboard screen that resolves it.
    */
-  list(query: { limit?: number; cursor?: string; include_total?: boolean } = {}): Promise<ListResponse<unknown>> {
-    return this.client.request<ListResponse<unknown>>('GET', '/v1/channels/airbnb/listings', { query });
+  list(
+    query: { limit?: number; cursor?: string; include_total?: boolean } = {},
+  ): Promise<AirbnbListingListResponse> {
+    return this.client.request<AirbnbListingListResponse>('GET', '/v1/channels/airbnb/listings', {
+      query,
+    });
   }
 
   /** GET /v1/channels/airbnb/listings/{id}. */
-  get(id: string | number): Promise<unknown> {
-    return this.client.request<unknown>(
+  get(id: string | number): Promise<AirbnbListing> {
+    return this.client.request<AirbnbListing>(
       'GET',
       `/v1/channels/airbnb/listings/${encodeURIComponent(String(id))}`,
     );
@@ -815,138 +939,6 @@ class SchemasNamespace {
       'DELETE',
       `/v1/schema/custom/${encodeURIComponent(String(id))}`,
     );
-  }
-}
-
-/**
- * Repull Studio — vibe-coded apps backed by per-project files, generations,
- * and live deployments. Maps 1:1 to the 16 `/api/studio/*` operations on
- * api.repull.dev. Path segment is `/api/studio/...` (note the literal `api`
- * prefix — Studio routes are not under `/v1/`).
- */
-class StudioNamespace {
-  readonly projects: StudioProjectsNamespace;
-  readonly deployments: StudioDeploymentsNamespace;
-
-  constructor(private readonly client: Repull) {
-    this.projects = new StudioProjectsNamespace(client);
-    this.deployments = new StudioDeploymentsNamespace(client);
-  }
-
-  /** POST /api/studio/generate — one-shot LLM completion endpoint. */
-  generate(body: Record<string, unknown>): Promise<unknown> {
-    return this.client.request('POST', '/api/studio/generate', { body });
-  }
-}
-
-class StudioProjectsNamespace {
-  readonly files: StudioProjectFilesNamespace;
-  readonly generations: StudioProjectGenerationsNamespace;
-
-  constructor(private readonly client: Repull) {
-    this.files = new StudioProjectFilesNamespace(client);
-    this.generations = new StudioProjectGenerationsNamespace(client);
-  }
-
-  /** GET /api/studio/projects — list projects on this workspace. */
-  list(query: Record<string, unknown> = {}): Promise<unknown> {
-    return this.client.request('GET', '/api/studio/projects', { query });
-  }
-
-  /** POST /api/studio/projects — create a new project from a prompt or template. */
-  create(body: Record<string, unknown>): Promise<unknown> {
-    return this.client.request('POST', '/api/studio/projects', { body });
-  }
-
-  /** GET /api/studio/projects/{id} — single project. */
-  get(id: string): Promise<unknown> {
-    return this.client.request('GET', `/api/studio/projects/${encodeURIComponent(id)}`);
-  }
-
-  /** PATCH /api/studio/projects/{id} — rename, change status, etc. */
-  update(id: string, body: Record<string, unknown>): Promise<unknown> {
-    return this.client.request('PATCH', `/api/studio/projects/${encodeURIComponent(id)}`, { body });
-  }
-
-  /** DELETE /api/studio/projects/{id} — soft-delete the project. */
-  delete(id: string): Promise<unknown> {
-    return this.client.request('DELETE', `/api/studio/projects/${encodeURIComponent(id)}`);
-  }
-}
-
-class StudioProjectFilesNamespace {
-  constructor(private readonly client: Repull) {}
-
-  /** GET /api/studio/projects/{id}/files — list files for a project. */
-  list(projectId: string): Promise<unknown> {
-    return this.client.request('GET', `/api/studio/projects/${encodeURIComponent(projectId)}/files`);
-  }
-
-  /** PUT /api/studio/projects/{id}/files/{path} — create or replace a file. */
-  upsert(projectId: string, path: string, body: Record<string, unknown>): Promise<unknown> {
-    return this.client.request(
-      'PUT',
-      `/api/studio/projects/${encodeURIComponent(projectId)}/files/${encodeURI(path)}`,
-      { body },
-    );
-  }
-
-  /** DELETE /api/studio/projects/{id}/files/{path} — delete a single file. */
-  delete(projectId: string, path: string): Promise<unknown> {
-    return this.client.request(
-      'DELETE',
-      `/api/studio/projects/${encodeURIComponent(projectId)}/files/${encodeURI(path)}`,
-    );
-  }
-}
-
-class StudioProjectGenerationsNamespace {
-  constructor(private readonly client: Repull) {}
-
-  /** POST /api/studio/projects/{id}/generations — kick off a new generation. */
-  create(projectId: string, body: Record<string, unknown>): Promise<unknown> {
-    return this.client.request(
-      'POST',
-      `/api/studio/projects/${encodeURIComponent(projectId)}/generations`,
-      { body },
-    );
-  }
-}
-
-class StudioDeploymentsNamespace {
-  constructor(private readonly client: Repull) {}
-
-  /** GET /api/studio/deployments — list deployments. */
-  list(query: Record<string, unknown> = {}): Promise<unknown> {
-    return this.client.request('GET', '/api/studio/deployments', { query });
-  }
-
-  /** POST /api/studio/deployments — start a new deployment. */
-  create(body: Record<string, unknown>): Promise<unknown> {
-    return this.client.request('POST', '/api/studio/deployments', { body });
-  }
-
-  /** GET /api/studio/deployments/{id} — single deployment. */
-  get(id: string): Promise<unknown> {
-    return this.client.request('GET', `/api/studio/deployments/${encodeURIComponent(id)}`);
-  }
-
-  /** DELETE /api/studio/deployments/{id} — destroy a deployment. */
-  delete(id: string): Promise<unknown> {
-    return this.client.request('DELETE', `/api/studio/deployments/${encodeURIComponent(id)}`);
-  }
-
-  /** POST /api/studio/deployments/{id}/suspend — pause a running deployment. */
-  suspend(id: string): Promise<unknown> {
-    return this.client.request(
-      'POST',
-      `/api/studio/deployments/${encodeURIComponent(id)}/suspend`,
-    );
-  }
-
-  /** POST /api/studio/deployments/{id}/wake — resume a suspended deployment. */
-  wake(id: string): Promise<unknown> {
-    return this.client.request('POST', `/api/studio/deployments/${encodeURIComponent(id)}/wake`);
   }
 }
 

@@ -32,6 +32,49 @@ export type RepullErrorPayload = components['schemas']['Error'];
 export type Review = components['schemas']['Review'];
 
 /**
+ * A Vanio listing paired with its Airbnb connection rows. Returned by
+ * `GET /v1/channels/airbnb/listings/{id}` and as the element type of
+ * {@link AirbnbListingListResponse}.
+ */
+export type AirbnbListing = components['schemas']['AirbnbListing'];
+/** One `listings_airbnb` row under {@link AirbnbListing.connections}. */
+export type AirbnbConnection = components['schemas']['AirbnbConnection'];
+/**
+ * Freshness indicator carried by every DB-backed Airbnb read. Tells you WHY a
+ * column may be null or stale without per-row error envelopes — the endpoint
+ * always returns 200 + whatever the local mirror holds. Read `stale` first;
+ * when it is `true`, `reason` says why and `fixUrl` is the dashboard screen
+ * that resolves it (typically Airbnb reconnect).
+ */
+export type AirbnbDataFreshness = components['schemas']['AirbnbDataFreshness'];
+/**
+ * Returned by `GET /v1/channels/airbnb/listings`. The canonical
+ * `{ data, pagination }` envelope plus a required `dataFreshness` — this
+ * endpoint reads the local Airbnb mirror, never Airbnb upstream, so the
+ * freshness signal is part of the response contract rather than an extra.
+ */
+export type AirbnbListingListResponse = components['schemas']['AirbnbListingListResponse'];
+
+/** Request body for `POST /v1/guests`. */
+export type GuestCreateRequest = components['schemas']['GuestCreateRequest'];
+/** Returned by `POST /v1/guests`. Read `created` — a 2xx does not mean a new record. */
+export type GuestCreateResponse = components['schemas']['GuestCreateResponse'];
+/** Request body for `POST /v1/reservations`. */
+export type ReservationCreateRequest = components['schemas']['ReservationCreateRequest'];
+/** Returned by `POST /v1/reservations` (201). */
+export type ReservationCreateResponse = components['schemas']['ReservationCreateResponse'];
+/** Request body for `PATCH /v1/reservations/{id}`. At least one field is required. */
+export type ReservationUpdateRequest = components['schemas']['ReservationUpdateRequest'];
+/** Returned by `PATCH /v1/reservations/{id}`. `changed` lists the fields actually written. */
+export type ReservationUpdateResponse = components['schemas']['ReservationUpdateResponse'];
+/** Guest identity accepted inline by `POST /v1/reservations`. */
+export type ReservationGuestInput = components['schemas']['ReservationGuestInput'];
+/** Request body for `POST /v1/conversations/{id}/messages`. */
+export type SendMessageRequest = components['schemas']['SendMessageRequest'];
+/** Returned by `POST /v1/conversations/{id}/messages`. */
+export type SendMessageResponse = components['schemas']['SendMessageResponse'];
+
+/**
  * Custom field-mapping schema. Reshapes the `native` response payload into
  * your app's preferred field names. Apply one per request via the
  * `X-Schema: <name>` header on any read endpoint.
