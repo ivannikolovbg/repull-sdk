@@ -31,6 +31,30 @@ export type AIOperation = components['schemas']['AIOperation'];
 export type RepullErrorPayload = components['schemas']['Error'];
 export type Review = components['schemas']['Review'];
 
+/**
+ * A Vanio listing paired with its Airbnb connection rows. Returned by
+ * `GET /v1/channels/airbnb/listings/{id}` and as the element type of
+ * {@link AirbnbListingListResponse}.
+ */
+export type AirbnbListing = components['schemas']['AirbnbListing'];
+/** One `listings_airbnb` row under {@link AirbnbListing.connections}. */
+export type AirbnbConnection = components['schemas']['AirbnbConnection'];
+/**
+ * Freshness indicator carried by every DB-backed Airbnb read. Tells you WHY a
+ * column may be null or stale without per-row error envelopes — the endpoint
+ * always returns 200 + whatever the local mirror holds. Read `stale` first;
+ * when it is `true`, `reason` says why and `fixUrl` is the dashboard screen
+ * that resolves it (typically Airbnb reconnect).
+ */
+export type AirbnbDataFreshness = components['schemas']['AirbnbDataFreshness'];
+/**
+ * Returned by `GET /v1/channels/airbnb/listings`. The canonical
+ * `{ data, pagination }` envelope plus a required `dataFreshness` — this
+ * endpoint reads the local Airbnb mirror, never Airbnb upstream, so the
+ * freshness signal is part of the response contract rather than an extra.
+ */
+export type AirbnbListingListResponse = components['schemas']['AirbnbListingListResponse'];
+
 /** Request body for `POST /v1/guests`. */
 export type GuestCreateRequest = components['schemas']['GuestCreateRequest'];
 /** Returned by `POST /v1/guests`. Read `created` — a 2xx does not mean a new record. */

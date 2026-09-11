@@ -1035,7 +1035,7 @@ export interface paths {
         head?: never;
         /**
          * Update webhook subscription
-         * @description Update url, description, events, or status (active|paused). Re-enabling clears `consecutive_failures` and `disabled_at`.
+         * @description Update url, description, events, or status (active|paused). Re-enabling clears `consecutiveFailures` and `disabledAt`.
          */
         patch: operations["update_webhook"];
         trace?: never;
@@ -1215,7 +1215,7 @@ export interface paths {
         };
         /**
          * List Airbnb listings
-         * @description List every Airbnb listing this workspace has access to via the connected Airbnb account. **Pure DB read — never calls Airbnb upstream.** The connect flow is what populates the local cache; the API serves what's already there. Customers with a disconnected host still see their last-synced data, with the top-level `data_freshness` envelope flagging the staleness and pointing at the reconnect URL.
+         * @description List every Airbnb listing this workspace has access to via the connected Airbnb account. **Pure DB read — never calls Airbnb upstream.** The connect flow is what populates the local cache; the API serves what's already there. Customers with a disconnected host still see their last-synced data, with the top-level `dataFreshness` envelope flagging the staleness and pointing at the reconnect URL.
          *
          *     Pass `?include=amenities` to enrich each connection with its locally-cached amenity set. Returns `null` per connection when the cache is empty.
          */
@@ -1532,7 +1532,7 @@ export interface paths {
          * List Airbnb alterations
          * @description List reservation alteration requests for Airbnb reservations in this workspace. **Pure DB read** from the local `reservation_alterations` mirror — never calls Airbnb upstream — scoped to your workspace via the reservations join.
          *
-         *     Default returns only pending alterations; pass `?type=all` for the full history. Filter to a single reservation with `?reservation_code=<confirmation code>`. Every response carries the `data_freshness` envelope.
+         *     Default returns only pending alterations; pass `?type=all` for the full history. Filter to a single reservation with `?reservation_code=<confirmation code>`. Every response carries the `dataFreshness` envelope.
          */
         get: operations["list_airbnb_alterations"];
         put?: never;
@@ -1687,7 +1687,7 @@ export interface paths {
         };
         /**
          * List Airbnb amenities
-         * @description List an Airbnb listing's amenities. **Pure DB read** from the local `listings_airbnb_amenities` cache — never calls Airbnb upstream. The response splits amenities into `amenities` (regular) and `accessibility_amenities` (step-free access, wide doorways, grab rails, disabled parking, wheelchair, accessible-height fixtures, hoists, etc). Both are arrays (`[]` when none). Consult `data_freshness` to disambiguate "never synced" from "fresh and genuinely empty". Returns `404` when the listing has no Airbnb connection in this workspace.
+         * @description List an Airbnb listing's amenities. **Pure DB read** from the local `listings_airbnb_amenities` cache — never calls Airbnb upstream. The response splits amenities into `amenities` (regular) and `accessibility_amenities` (step-free access, wide doorways, grab rails, disabled parking, wheelchair, accessible-height fixtures, hoists, etc). Both are arrays (`[]` when none). Consult `dataFreshness` to disambiguate "never synced" from "fresh and genuinely empty". Returns `404` when the listing has no Airbnb connection in this workspace.
          */
         get: operations["list_airbnb_listing_amenities"];
         put?: never;
@@ -2975,15 +2975,15 @@ export interface components {
             /** @example Miami Beach */
             city?: string | null;
             /**
-             * @description Detail endpoint only.
+             * @description Detail endpoint only. Decimal degrees, as a string.
              * @example 25.7617
              */
-            latitude?: number | null;
+            latitude?: string | null;
             /**
-             * @description Detail endpoint only.
+             * @description Detail endpoint only. Decimal degrees, as a string.
              * @example -80.1918
              */
-            longitude?: number | null;
+            longitude?: string | null;
             /**
              * @description ISO 4217 currency code for this property's pricing.
              * @example USD
@@ -4533,7 +4533,7 @@ export interface components {
              * @description Vanio (Repull) listing id
              * @example 6248
              */
-            listingId?: number;
+            listingId?: string;
             /**
              * @description Listing title
              * @example Oceanview Villa
@@ -4546,7 +4546,7 @@ export interface components {
         /** @description An Airbnb-side connection record for a Vanio listing. The same property may appear under multiple connections if it has been linked from multiple Airbnb host accounts. */
         AirbnbConnection: {
             /** @description Connection row id */
-            id?: number;
+            id?: string;
             /**
              * @description Airbnb-side listing id
              * @example 1116939745194659457
@@ -4561,7 +4561,7 @@ export interface components {
             markup?: string | null;
             /** Format: date-time */
             createdAt?: string;
-            /** @description Present only when `?include=amenities` is passed. Sourced from the local `listings_airbnb_amenities` cache (populated by the Airbnb sync worker). Returns `null` when the cache is empty for this connection — see the top-level `data_freshness` envelope to disambiguate "never synced" vs "host disconnected" vs "fresh and genuinely empty". */
+            /** @description Present only when `?include=amenities` is passed. Sourced from the local `listings_airbnb_amenities` cache (populated by the Airbnb sync worker). Returns `null` when the cache is empty for this connection — see the top-level `dataFreshness` envelope to disambiguate "never synced" vs "host disconnected" vs "fresh and genuinely empty". */
             amenities?: {
                 /** @description Airbnb amenity id (e.g. `wifi`, `kitchen`). */
                 id?: string;
@@ -4569,7 +4569,7 @@ export interface components {
                 /** @description Host-supplied instruction for the amenity (e.g. "WiFi password is on the fridge"). */
                 instruction?: string | null;
             }[] | null;
-            /** @description Present only when `?include=amenities` is passed. Accessibility-tagged subset of the local amenity cache (step-free access, wide doorways, grab rails, disabled parking, wheelchair, accessible-height fixtures, hoists, etc). Returns an empty array when amenities synced but none qualify as accessibility; returns `null` when the cache is empty for this connection (use `data_freshness` to disambiguate "never synced" from "fresh and genuinely empty"). */
+            /** @description Present only when `?include=amenities` is passed. Accessibility-tagged subset of the local amenity cache (step-free access, wide doorways, grab rails, disabled parking, wheelchair, accessible-height fixtures, hoists, etc). Returns an empty array when amenities synced but none qualify as accessibility; returns `null` when the cache is empty for this connection (use `dataFreshness` to disambiguate "never synced" from "fresh and genuinely empty"). */
             accessibility_amenities?: {
                 /** @description Airbnb amenity id (e.g. `wheelchair_accessible`, `home_step_free_access`). */
                 id?: string;
@@ -4639,11 +4639,11 @@ export interface components {
         /** @description An Airbnb reservation alteration request (date change, guest-count change, or price change), mirrored locally in `reservation_alterations`. Fields prefixed `original*` describe the reservation as it stands today; `new*` fields describe the proposed change. Compare them to render a diff and decide whether to accept (`POST .../{id}/accept`) or decline (`POST .../{id}/decline`). */
         AirbnbAlteration: {
             /** @description Internal Repull mirror-row id (not the Airbnb alteration id — use `alterationId` for the `{id}` path param on the get / accept / decline routes). */
-            id?: number;
+            id?: string;
             /** @description Airbnb alteration id. This is the `{id}` you pass to `GET/POST /v1/channels/airbnb/alterations/{id}` and the accept / decline sub-routes. */
             alterationId?: string | null;
             /** @description Repull reservation id the alteration belongs to. */
-            reservationId?: number | null;
+            reservationId?: string | null;
             /**
              * @description Always `airbnb` on this surface.
              * @example airbnb
@@ -5011,7 +5011,7 @@ export interface components {
              * Format: date-time
              * @description Most recent sync timestamp across the rows in the response. `null` when nothing has ever synced for this customer.
              */
-            last_synced_at: string | null;
+            lastSyncedAt: string | null;
             /** @description `true` when any host is disconnected, when the local cache is empty, or when the cache hasn't been refreshed in 24h+. `false` when hosts are healthy and sync is fresh. */
             stale: boolean;
             /** @description Why the data is stale. One of `host_disconnected_since_<iso>`, `sync_lag_>_24h`, `never_synced`. Omitted when `stale` is `false`. */
@@ -5020,12 +5020,12 @@ export interface components {
              * Format: uri
              * @description Dashboard URL the consumer can open to resolve the staleness (typically the Airbnb reconnect screen). Omitted when `stale` is `false`.
              */
-            fix_url?: string | null;
+            fixUrl?: string | null;
         };
         AirbnbListingListResponse: {
             data: components["schemas"]["AirbnbListing"][];
             pagination: components["schemas"]["Pagination"];
-            data_freshness: components["schemas"]["AirbnbDataFreshness"];
+            dataFreshness: components["schemas"]["AirbnbDataFreshness"];
         };
         /** @description One Airbnb host transaction — a reservation earning, a settled payout, or a resolution adjustment — with the genuine host- and guest-side financial breakdown Airbnb exposes. All money is in host currency; fees and withholding are negative (deductions). Two owner-statement concepts are NOT available from Airbnb and are listed in `unavailable_fields` rather than fabricated: property-management fee and itemised nightly discounts (the latter are already netted into `host_breakdown.accommodation_subtotal`). */
         AirbnbTransaction: {
@@ -5175,18 +5175,9 @@ export interface components {
             data?: components["schemas"]["AirbnbReview"][];
             pagination?: components["schemas"]["Pagination"];
         };
-        BookingPropertyListResponse: {
-            data?: components["schemas"]["BookingProperty"][];
-            pagination?: components["schemas"]["Pagination"];
-        };
-        BookingConversationListResponse: {
-            data?: components["schemas"]["BookingConversation"][];
-            pagination?: components["schemas"]["Pagination"];
-        };
-        VrboListingListResponse: {
-            data?: components["schemas"]["VrboListing"][];
-            pagination?: components["schemas"]["Pagination"];
-        };
+        BookingPropertyListResponse: components["schemas"]["BookingProperty"][];
+        BookingConversationListResponse: components["schemas"]["BookingConversation"][];
+        VrboListingListResponse: components["schemas"]["VrboListing"][];
         VrboReservationListResponse: {
             data?: components["schemas"]["VrboReservation"][];
             pagination?: components["schemas"]["Pagination"];
@@ -5773,7 +5764,7 @@ export interface components {
             date?: string;
             /** @description The Atlas model's recommended price for the date. */
             recommendedRate?: number;
-            /** @description Price actually written to the calendar. `null` when status is `pending` or `declined`. For now, when `status=applied` this equals `recommended_rate` because the apply path writes the recommendation verbatim. */
+            /** @description Price actually written to the calendar. `null` when status is `pending` or `declined`. For now, when `status=applied` this equals `recommendedRate` because the apply path writes the recommendation verbatim. */
             appliedRate?: number | null;
             /**
              * @description `overridden` is reserved for a future signal — it never appears today.
@@ -9492,7 +9483,7 @@ export interface operations {
                 content: {
                     "application/json": {
                         data: components["schemas"]["AirbnbAlteration"][];
-                        data_freshness: components["schemas"]["AirbnbDataFreshness"];
+                        dataFreshness: components["schemas"]["AirbnbDataFreshness"];
                     };
                 };
             };
@@ -9562,7 +9553,7 @@ export interface operations {
                 content: {
                     "application/json": {
                         data: components["schemas"]["AirbnbAlteration"];
-                        data_freshness: components["schemas"]["AirbnbDataFreshness"];
+                        dataFreshness: components["schemas"]["AirbnbDataFreshness"];
                     };
                 };
             };
@@ -9644,7 +9635,7 @@ export interface operations {
                 content: {
                     "application/json": {
                         data: components["schemas"]["AirbnbTransaction"][];
-                        data_freshness: components["schemas"]["AirbnbDataFreshness"];
+                        dataFreshness: components["schemas"]["AirbnbDataFreshness"];
                     };
                 };
             };
@@ -9724,7 +9715,7 @@ export interface operations {
                 content: {
                     "application/json": {
                         data: components["schemas"]["AirbnbThread"];
-                        data_freshness: components["schemas"]["AirbnbDataFreshness"];
+                        dataFreshness: components["schemas"]["AirbnbDataFreshness"];
                     };
                 };
             };
@@ -9797,7 +9788,7 @@ export interface operations {
                             amenities?: components["schemas"]["AirbnbAmenity"][];
                             accessibility_amenities?: components["schemas"]["AirbnbAmenity"][];
                         };
-                        data_freshness: components["schemas"]["AirbnbDataFreshness"];
+                        dataFreshness: components["schemas"]["AirbnbDataFreshness"];
                     };
                 };
             };
@@ -9832,7 +9823,7 @@ export interface operations {
                         data: {
                             [key: string]: unknown;
                         }[];
-                        data_freshness: components["schemas"]["AirbnbDataFreshness"];
+                        dataFreshness: components["schemas"]["AirbnbDataFreshness"];
                     };
                 };
             };
@@ -9891,7 +9882,7 @@ export interface operations {
                         data: {
                             [key: string]: unknown;
                         }[];
-                        data_freshness: components["schemas"]["AirbnbDataFreshness"];
+                        dataFreshness: components["schemas"]["AirbnbDataFreshness"];
                     };
                 };
             };
@@ -9928,7 +9919,7 @@ export interface operations {
                         data: {
                             [key: string]: unknown;
                         }[];
-                        data_freshness: components["schemas"]["AirbnbDataFreshness"];
+                        dataFreshness: components["schemas"]["AirbnbDataFreshness"];
                     };
                 };
             };
@@ -9962,7 +9953,7 @@ export interface operations {
                     "application/json": {
                         /** @description Shape depends on `type`: an object `{ standards, issues }` for `all`/`standards`, or an array for `issues`/`stats`. */
                         data: unknown;
-                        data_freshness: components["schemas"]["AirbnbDataFreshness"];
+                        dataFreshness: components["schemas"]["AirbnbDataFreshness"];
                     };
                 };
             };
@@ -9994,7 +9985,7 @@ export interface operations {
                         data: {
                             [key: string]: unknown;
                         }[];
-                        data_freshness: components["schemas"]["AirbnbDataFreshness"];
+                        dataFreshness: components["schemas"]["AirbnbDataFreshness"];
                     };
                 };
             };
@@ -10091,7 +10082,7 @@ export interface operations {
                     "application/json": {
                         /** @description Shape depends on `type`: `{ hosts, locales }` for `all`, or an array for `hosts`/`permits`/`locales`. */
                         data: unknown;
-                        data_freshness: components["schemas"]["AirbnbDataFreshness"];
+                        dataFreshness: components["schemas"]["AirbnbDataFreshness"];
                     };
                 };
             };
@@ -11875,8 +11866,8 @@ export interface operations {
                             createdAt?: string;
                         }[];
                         pagination?: {
-                            next_cursor?: string | null;
-                            has_more?: boolean;
+                            nextCursor?: string | null;
+                            hasMore?: boolean;
                             total?: number;
                         };
                         range?: string;
@@ -11909,19 +11900,19 @@ export interface operations {
                     "application/json": {
                         tier?: string;
                         limits?: {
-                            monthly_requests?: number | null;
-                            daily_ai_requests?: number | null;
+                            monthlyRequests?: number | null;
+                            dailyAiRequests?: number | null;
                         };
                         used?: {
                             monthly?: number;
-                            daily_ai?: number;
+                            dailyAi?: number;
                         };
                         remaining?: {
                             monthly?: number | null;
-                            daily_ai?: number | null;
+                            dailyAi?: number | null;
                         };
                         /** Format: date-time */
-                        resets_at?: string;
+                        resetsAt?: string;
                         breakdown?: {
                             operationId?: string;
                             requestCount?: number;
@@ -11971,22 +11962,22 @@ export interface operations {
                     "application/json": {
                         tier?: string;
                         limits?: {
-                            monthly_requests?: number | null;
-                            daily_ai_requests?: number | null;
-                            dynamic_pricing_listings?: number | null;
+                            monthlyRequests?: number | null;
+                            dailyAiRequests?: number | null;
+                            dynamicPricingListings?: number | null;
                         };
                         used?: {
                             monthly?: number;
-                            daily_ai?: number;
-                            dynamic_pricing_listings?: number;
+                            dailyAi?: number;
+                            dynamicPricingListings?: number;
                         };
                         remaining?: {
                             monthly?: number | null;
-                            daily_ai?: number | null;
-                            dynamic_pricing_listings?: number | null;
+                            dailyAi?: number | null;
+                            dynamicPricingListings?: number | null;
                         };
                         /** Format: date-time */
-                        resets_at?: string;
+                        resetsAt?: string;
                     };
                 };
             };
@@ -12157,7 +12148,7 @@ export interface operations {
                         }[];
                         pagination?: {
                             total?: number;
-                            has_more?: boolean;
+                            hasMore?: boolean;
                         };
                     };
                 };

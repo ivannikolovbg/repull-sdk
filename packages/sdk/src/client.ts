@@ -15,6 +15,8 @@
 
 import type {
   AirbnbAccessType,
+  AirbnbListing,
+  AirbnbListingListResponse,
   ConnectPickerSession,
   ConnectProvider,
   ConnectSession,
@@ -52,7 +54,7 @@ import { RepullError } from './errors.js';
 import { KvNamespace } from './kv.js';
 
 const DEFAULT_BASE_URL = 'https://api.repull.dev';
-const DEFAULT_USER_AGENT = '@repull/sdk/0.2.12';
+const DEFAULT_USER_AGENT = '@repull/sdk/0.2.13';
 
 export type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
@@ -690,16 +692,26 @@ class AirbnbListingsNamespace {
 
   /**
    * GET /v1/channels/airbnb/listings — read-only Airbnb listing index with
-   * `connections` info. v0.2.0: now wraps in the canonical
-   * `{ data, pagination }` envelope.
+   * `connections` info. v0.2.0: wraps in the canonical `{ data, pagination }`
+   * envelope.
+   *
+   * This is a pure read of the local Airbnb mirror — it never calls Airbnb
+   * upstream — so the response also carries a required `dataFreshness`.
+   * Check `dataFreshness.stale` before trusting a null column: when it is
+   * `true`, `dataFreshness.reason` says why and `dataFreshness.fixUrl` is the
+   * dashboard screen that resolves it.
    */
-  list(query: { limit?: number; cursor?: string; include_total?: boolean } = {}): Promise<ListResponse<unknown>> {
-    return this.client.request<ListResponse<unknown>>('GET', '/v1/channels/airbnb/listings', { query });
+  list(
+    query: { limit?: number; cursor?: string; include_total?: boolean } = {},
+  ): Promise<AirbnbListingListResponse> {
+    return this.client.request<AirbnbListingListResponse>('GET', '/v1/channels/airbnb/listings', {
+      query,
+    });
   }
 
   /** GET /v1/channels/airbnb/listings/{id}. */
-  get(id: string | number): Promise<unknown> {
-    return this.client.request<unknown>(
+  get(id: string | number): Promise<AirbnbListing> {
+    return this.client.request<AirbnbListing>(
       'GET',
       `/v1/channels/airbnb/listings/${encodeURIComponent(String(id))}`,
     );

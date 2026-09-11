@@ -3,6 +3,53 @@
 All notable changes to `@repull/sdk` and `@repull/types` are recorded here.
 This project follows [Semantic Versioning](https://semver.org/).
 
+## v0.2.13 — 2026-09-11
+
+### Fixed
+
+**Nineteen schema corrections landed on the live spec. `@repull/types` was
+regenerated and one hand-written facade signature was wrong.**
+
+Not one path or method moved — the API is still 124 paths / 174 operations —
+so the old spec-freshness check printed OK straight through it while the
+committed snapshot went stale. Only the shapes changed:
+
+- **Ten fields renamed to camelCase.** The API serializer camelCases every
+  key on the way out, so the spec had been declaring names the API can never
+  return: `data_freshness` → `dataFreshness`, `last_synced_at` →
+  `lastSyncedAt`, `fix_url` → `fixUrl`, `next_cursor` → `nextCursor`,
+  `has_more` → `hasMore`, `monthly_requests` → `monthlyRequests`,
+  `daily_ai_requests` → `dailyAiRequests`, `daily_ai` → `dailyAi`,
+  `dynamic_pricing_listings` → `dynamicPricingListings`, `resets_at` →
+  `resetsAt`.
+- **Three list responses are bare arrays**, not `{ data, pagination }`:
+  `BookingPropertyListResponse`, `BookingConversationListResponse`,
+  `VrboListingListResponse`.
+- **Four id fields are `string`, not `integer`** — the serializer stringifies
+  every id key: `AirbnbAlteration.id`, `AirbnbAlteration.reservationId`,
+  `AirbnbConnection.id`, `AirbnbListing.listingId`.
+- **`Property.latitude` / `Property.longitude` are `string`, not `number`.**
+
+### Changed
+
+- **`repull.channels.airbnb.listings.list()` now returns
+  `AirbnbListingListResponse` instead of `ListResponse<unknown>`.** The old
+  signature was wrong in two ways: it typed the rows as `unknown`, and it
+  dropped `dataFreshness` entirely — a field the API marks required on this
+  endpoint. That endpoint is a pure read of the local Airbnb mirror and never
+  calls Airbnb upstream, so `dataFreshness` is how you tell "this column is
+  genuinely null" from "this workspace hasn't synced". Check
+  `dataFreshness.stale`; when it is `true`, `dataFreshness.reason` says why
+  (`never_synced`, `host_disconnected_since_<iso>`, `sync_lag_>_24h`) and
+  `dataFreshness.fixUrl` is the dashboard screen that resolves it.
+- **`repull.channels.airbnb.listings.get(id)` now returns `AirbnbListing`
+  instead of `unknown`.**
+- New `@repull/types` aliases: `AirbnbListing`, `AirbnbConnection`,
+  `AirbnbDataFreshness`, `AirbnbListingListResponse`.
+
+Nothing was removed: 227 schemas and 174 operations before and after, with
+zero schema names added or dropped.
+
 ## v0.2.12 — 2026-09-11
 
 ### Added
