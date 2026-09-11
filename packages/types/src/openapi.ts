@@ -121,7 +121,21 @@ export interface paths {
          */
         get: operations["list_reservations"];
         put?: never;
-        post?: never;
+        /**
+         * Create a reservation
+         * @description Creates a reservation and everything that hangs off one: the guest, the conversation thread, the dashboard item, the calendar block, and the `reservation.created` fan-out that issues the door code and starts the messaging automations.
+         *
+         *     **Platform is restricted to `direct`, `website` and `owner`.** Reservations on Airbnb, Booking.com and Vrbo are owned by the channel and arrive through sync — creating one here would mint a local booking the channel has never heard of, which then fights the next sync. Create those on the channel.
+         *
+         *     **Dates are validated** (`YYYY-MM-DD`, and `checkOut` must be after `checkIn`), and an unrecognised field is rejected by name rather than silently ignored.
+         *
+         *     **This endpoint does not set the price.** There is no `totalPrice` field: the reservation pipeline derives the price breakdown from the property's own rates and overwrites anything supplied, so accepting a total would be taking a value and discarding it. A reservation created here is priced by that engine (`0` when the property has no rates for the range). `currency` IS honoured. Quote a stay with `GET /v1/quotes` before booking if you need the figure up front.
+         *
+         *     **Availability is NOT checked.** This creates the reservation you asked for even if the dates overlap an existing booking. Call `GET /v1/availability/{propertyId}` first if that matters.
+         *
+         *     Send `Idempotency-Key` — a network timeout here is exactly the case it exists for: without it, a retry books the guest twice.
+         */
+        post: operations["create_reservation"];
         delete?: never;
         options?: never;
         head?: never;
@@ -145,7 +159,29 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * Update a reservation
+         * @description Changes the dates, the occupancy, or the unit. Drives the same command path the dashboard does, so the side effects come with it: the change audit is appended, bound task due dates re-sync, the old calendar dates unblock and the new ones block, the conversation's cached listing is invalidated, and `reservation.updated` fires — which is what revokes and re-issues the door code.
+         *
+         *     Supply at least one field; an empty body returns 422 rather than a 200 that changed nothing.
+         *
+         *     **Moving and re-dating in one call is one operation.** Send `listingId` together with `checkIn`/`checkOut` and it is applied as a single move, so the access code is re-issued once rather than twice.
+         *
+         *     ### Fields this endpoint deliberately does NOT accept
+         *
+         *     Each is rejected by name with the reason, never accepted and ignored:
+         *
+         *     | Field | Why |
+         *     |---|---|
+         *     | `guest` / `guestDetails` | Guest name, email and phone live on the guest record. The underlying command has no branch for them, so accepting them would return a success that changed nothing. |
+         *     | `pricing` / `totalPrice` / `currency` | Repricing writes the price breakdown, the pricing row and a pricing-history entry. It belongs to its own endpoint. |
+         *     | `status` | Not a field. Cancelling, confirming and checking out are separate operations with materially different side effects — cancellation issues a credit refund and revokes access codes. |
+         *     | `platform` | Immutable: it records where the booking actually originated. |
+         *     | `notes` | `internal_notes` is an append-only audit trail the system writes on every change. |
+         *
+         *     **Availability is NOT checked.** A date change that overlaps another booking will be written. Call `GET /v1/availability/{propertyId}` first if that matters.
+         */
+        patch: operations["update_reservation"];
         trace?: never;
     };
     "/v1/guests": {
@@ -165,7 +201,17 @@ export interface paths {
          */
         get: operations["listGuests"];
         put?: never;
-        post?: never;
+        /**
+         * Create a guest
+         * @description Creates a guest in the workspace, with contact normalisation applied (phone digits, email lowercased) and each contact stored as its own record.
+         *
+         *     **This is find-or-create, and the response tells you which happened.** A guest already on file matching on email — then phone — AND name is returned instead of a duplicate being created. Read the `created` flag rather than inferring from the status: `201` with `created: true` means a new record was written, `200` with `created: false` means an existing guest matched. Quietly handing back an existing record as though it were new is exactly the ambiguity this flag removes.
+         *
+         *     Field names are camelCase, and an unrecognised field is rejected by name rather than silently dropped.
+         *
+         *     Send `Idempotency-Key` to make a retry safe.
+         */
+        post: operations["createGuest"];
         delete?: never;
         options?: never;
         head?: never;
@@ -251,7 +297,23 @@ export interface paths {
          */
         get: operations["listConversationMessages"];
         put?: never;
-        post?: never;
+        /**
+         * Send a message to the guest
+         * @description Sends a message to the guest on this conversation and records it in the thread.
+         *
+         *     Omit `channel` and the message goes out on whichever channel the conversation already uses (Airbnb, Booking.com, SMS, email or the direct-booking site) — that is the right default. Pass `channel` only to force a specific one.
+         *
+         *     The message is attributed to the API, not to Vanio AI: it is recorded with `aiGenerated` false so an API send is never counted as an automated reply.
+         *
+         *     ### Airbnb rewrites links — check `contentRewritten`
+         *
+         *     Airbnb rejects guest messages containing a link, an email address or a phone number, and names the offending text. When that happens the offending fragment is stripped and the remainder is re-sent once, which means **the guest receives a message that is not the one you wrote**. Reporting that as a plain success would be a lie, so every response carries `contentRewritten`; when it is `true`, `deliveredContent` is the text that actually reached the guest. Check it before assuming your message went out verbatim.
+         *
+         *     When the text cannot be salvaged (the link is most of the message) nothing is delivered and the call returns `422 message_not_sent` with the channel's verbatim refusal in `statusReason`.
+         *
+         *     Send `Idempotency-Key` — without it, retrying after a network timeout sends the guest the same message twice.
+         */
+        post: operations["send_conversation_message"];
         delete?: never;
         options?: never;
         head?: never;
@@ -6260,6 +6322,216 @@ export interface components {
             minNights?: number;
             maxNights?: number;
         };
+        /** @description The guest on a new reservation. Matched against existing guests on email (then phone) plus name, so repeat guests are not duplicated. */
+        ReservationGuestInput: {
+            /** @example Ada */
+            firstName: string;
+            /** @example Lovelace */
+            lastName?: string;
+            /**
+             * Format: email
+             * @example ada@example.com
+             */
+            email?: string;
+            /**
+             * @description E.164 preferred.
+             * @example +14035551234
+             */
+            phone?: string;
+        };
+        ReservationCreateRequest: {
+            /**
+             * @description Internal Repull property id — see `GET /v1/properties`.
+             * @example 4118
+             */
+            listingId: number;
+            /**
+             * Format: date
+             * @example 2026-10-01
+             */
+            checkIn: string;
+            /**
+             * Format: date
+             * @description Must be after `checkIn`.
+             * @example 2026-10-05
+             */
+            checkOut: string;
+            guest: components["schemas"]["ReservationGuestInput"];
+            /**
+             * @description OTA platforms are deliberately absent — those reservations are owned by the channel and arrive through sync.
+             * @default direct
+             * @enum {string}
+             */
+            platform: "direct" | "website" | "owner";
+            /**
+             * @description Lifecycle status to open the reservation in. Defaults to confirmed.
+             * @default accept
+             */
+            status: string;
+            /** @example 16:00 */
+            checkInTime?: string;
+            /** @example 10:00 */
+            checkOutTime?: string;
+            /**
+             * @description Attach an existing guest instead of matching/creating one. Must belong to this workspace.
+             * @example 91234
+             */
+            guestId?: number;
+            /** @example 2 */
+            guestCount?: number;
+            /** @example USD */
+            currency?: string;
+        };
+        ReservationCreateResponse: {
+            /**
+             * @description Pass to `GET /v1/reservations/{id}` for the full record.
+             * @example 215708
+             */
+            id?: number;
+            /** @example DIR-8H2K4N */
+            confirmationCode?: string;
+            /** @example 4118 */
+            listingId?: number;
+            /** @example direct */
+            platform?: string;
+            /** @example accept */
+            status?: string;
+            /** Format: date */
+            checkIn?: string;
+            /** Format: date */
+            checkOut?: string;
+            guestId?: number | null;
+            /** @description The price the pricing engine derived for the stay. Reservations created through this endpoint are NOT priced from the request — see the operation description. */
+            totalPrice?: number | null;
+            currency?: string | null;
+        };
+        /** @description At least one field is required. Guest identity, pricing, `status`, `platform` and notes are rejected by name — see the operation description for why each is excluded. */
+        ReservationUpdateRequest: {
+            /**
+             * Format: date
+             * @example 2026-10-02
+             */
+            checkIn?: string;
+            /**
+             * Format: date
+             * @example 2026-10-07
+             */
+            checkOut?: string;
+            /** @example 16:00 */
+            checkInTime?: string;
+            /** @example 10:00 */
+            checkOutTime?: string;
+            /** @example 3 */
+            guestCount?: number;
+            /**
+             * @description Move the reservation to another property in this workspace. Combined with dates, it is applied as ONE move so the access code is re-issued once.
+             * @example 4119
+             */
+            listingId?: number;
+        };
+        ReservationUpdateResponse: {
+            id?: number;
+            confirmationCode?: string | null;
+            listingId?: number | null;
+            /** Format: date */
+            checkIn?: string | null;
+            /** Format: date */
+            checkOut?: string | null;
+            checkInTime?: string | null;
+            checkOutTime?: string | null;
+            /** @description A move forces the reservation to a confirmed status — read it back rather than assuming it is unchanged. */
+            status?: string | null;
+            /** Format: date-time */
+            updatedAt?: string | null;
+            /**
+             * @description The fields this request actually changed.
+             * @example [
+             *       "checkOut"
+             *     ]
+             */
+            changed?: string[];
+        };
+        GuestCreateRequest: {
+            /** @example Ada */
+            firstName: string;
+            /** @example Lovelace */
+            lastName?: string;
+            /**
+             * Format: email
+             * @example ada@example.com
+             */
+            email?: string;
+            /**
+             * @description E.164 preferred. Stored normalised.
+             * @example +14035551234
+             */
+            phone?: string;
+            /**
+             * @description BCP-47 tag.
+             * @example en-GB
+             */
+            language?: string;
+            /** @example GBP */
+            currency?: string;
+            /** @default false */
+            isBusinessTraveler: boolean;
+        };
+        GuestCreateResponse: {
+            /**
+             * @description Pass to `GET /v1/guests/{id}` for the full profile.
+             * @example 91234
+             */
+            id?: number;
+            /** @description `true` when a new guest was written, `false` when an existing guest matched on email/phone plus name. Read this rather than assuming a 2xx means a new record. */
+            created?: boolean;
+            firstName?: string;
+            lastName?: string | null;
+            language?: string | null;
+            currency?: string | null;
+            isBusinessTraveler?: boolean;
+            /** @description One entry per stored contact. Email and phone are separate records. */
+            contacts?: {
+                /** @enum {string} */
+                type?: "email" | "phone";
+                value?: string;
+                isPrimary?: boolean;
+            }[];
+            /** Format: date-time */
+            createdAt?: string;
+        };
+        SendMessageRequest: {
+            /**
+             * @description The text to send the guest.
+             * @example Your check-in details are ready — the door code is active from 16:00.
+             */
+            message: string;
+            /**
+             * @description Force a channel. Omit to send on whichever channel the conversation already uses, which is the right default.
+             * @enum {string}
+             */
+            channel?: "airbnb" | "booking" | "sms" | "email" | "website";
+        };
+        SendMessageResponse: {
+            /** @description Repull message id for the row that was recorded. */
+            id?: string | null;
+            conversationId?: number;
+            /** @description The channel's own message id, when it returns one. */
+            externalMessageId?: string | null;
+            /** @description The channel the message actually went out on. */
+            channel?: string | null;
+            /** @example sent */
+            status?: string;
+            /** @enum {string} */
+            direction?: "outbound";
+            /** @description TRUE when the channel altered the text before delivery — today that means Airbnb stripped a link, an email address or a phone number and the remainder was re-sent. When true, the guest did NOT receive `submittedContent`; they received `deliveredContent`. */
+            contentRewritten?: boolean;
+            /** @description The text you sent. */
+            submittedContent?: string | null;
+            /** @description The text the guest actually received. Differs from `submittedContent` exactly when `contentRewritten` is true. */
+            deliveredContent?: string | null;
+            /** @description The channel's verbatim note, when it gave one — including the refusal that triggered a rewrite. */
+            statusReason?: string | null;
+        };
         AvailabilityWriteRequest: components["schemas"]["AvailabilityWriteSettings"] & {
             /** @description ISO dates. Capped at 731 — Airbnb refuses calendar writes spanning more. */
             dates: string[];
@@ -6541,6 +6813,14 @@ export interface components {
         cursor: string;
         /** @description PMS provider slug (e.g., hostaway, guesty, ownerrez) */
         provider: string;
+        /**
+         * @description Makes a retry of this request safe. Send a unique string (a UUID generated at the point you build the request) and the response is stored for 24 hours: a repeat with the SAME key replays that stored response — tagged `Idempotency-Status: cached` — without running the operation again, so no duplicate reservation, guest or guest message is created.
+         *
+         *     - Same key while the first request is still in flight → `409 idempotency_key_in_use`.
+         *     - Same key with a DIFFERENT payload → `422 idempotency_key_reused`. Generate a new key per distinct request; reuse one only when retrying that exact request.
+         *     - Responses with status >= 500 are deliberately not stored, so a server error stays retryable.
+         */
+        IdempotencyKey: string;
         /** @description Apply a custom or built-in schema to transform the response. Built-in: `native` (default), `calry`, `calry-v1`. Custom: any schema name created via `POST /v1/schema/custom`. Unknown / inactive schema names fall back to `native`. */
         XSchemaHeader: string;
         /** @description When `true` (default), the response's `pagination.total` carries the count of rows matching the current filter, across all pages. Pass `false` to skip the count for very large workspaces where the per-page COUNT(*) cost matters. */
@@ -6844,6 +7124,51 @@ export interface operations {
             422: components["responses"]["UnprocessableEntity"];
         };
     };
+    create_reservation: {
+        parameters: {
+            query?: never;
+            header?: {
+                /**
+                 * @description Makes a retry of this request safe. Send a unique string (a UUID generated at the point you build the request) and the response is stored for 24 hours: a repeat with the SAME key replays that stored response — tagged `Idempotency-Status: cached` — without running the operation again, so no duplicate reservation, guest or guest message is created.
+                 *
+                 *     - Same key while the first request is still in flight → `409 idempotency_key_in_use`.
+                 *     - Same key with a DIFFERENT payload → `422 idempotency_key_reused`. Generate a new key per distinct request; reuse one only when retrying that exact request.
+                 *     - Responses with status >= 500 are deliberately not stored, so a server error stays retryable.
+                 */
+                "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReservationCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Reservation created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReservationCreateResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description The property, or the supplied `guestId`, does not exist in this workspace. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            422: components["responses"]["UnprocessableEntity"];
+            500: components["responses"]["InternalError"];
+        };
+    };
     get_reservation: {
         parameters: {
             query?: never;
@@ -6870,6 +7195,54 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
+            422: components["responses"]["UnprocessableEntity"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    update_reservation: {
+        parameters: {
+            query?: never;
+            header?: {
+                /**
+                 * @description Makes a retry of this request safe. Send a unique string (a UUID generated at the point you build the request) and the response is stored for 24 hours: a repeat with the SAME key replays that stored response — tagged `Idempotency-Status: cached` — without running the operation again, so no duplicate reservation, guest or guest message is created.
+                 *
+                 *     - Same key while the first request is still in flight → `409 idempotency_key_in_use`.
+                 *     - Same key with a DIFFERENT payload → `422 idempotency_key_reused`. Generate a new key per distinct request; reuse one only when retrying that exact request.
+                 *     - Responses with status >= 500 are deliberately not stored, so a server error stays retryable.
+                 */
+                "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                /** @description Internal Repull reservation ID. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReservationUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Reservation updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReservationUpdateResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description The reservation, or the destination property when moving, does not exist in this workspace. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
             422: components["responses"]["UnprocessableEntity"];
             500: components["responses"]["InternalError"];
         };
@@ -6909,6 +7282,51 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            422: components["responses"]["UnprocessableEntity"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    createGuest: {
+        parameters: {
+            query?: never;
+            header?: {
+                /**
+                 * @description Makes a retry of this request safe. Send a unique string (a UUID generated at the point you build the request) and the response is stored for 24 hours: a repeat with the SAME key replays that stored response — tagged `Idempotency-Status: cached` — without running the operation again, so no duplicate reservation, guest or guest message is created.
+                 *
+                 *     - Same key while the first request is still in flight → `409 idempotency_key_in_use`.
+                 *     - Same key with a DIFFERENT payload → `422 idempotency_key_reused`. Generate a new key per distinct request; reuse one only when retrying that exact request.
+                 *     - Responses with status >= 500 are deliberately not stored, so a server error stays retryable.
+                 */
+                "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GuestCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description An existing guest matched — `created` is `false`. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GuestCreateResponse"];
+                };
+            };
+            /** @description Guest created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GuestCreateResponse"];
+                };
+            };
             401: components["responses"]["Unauthorized"];
             422: components["responses"]["UnprocessableEntity"];
             500: components["responses"]["InternalError"];
@@ -7047,6 +7465,62 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["UnprocessableEntity"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    send_conversation_message: {
+        parameters: {
+            query?: never;
+            header?: {
+                /**
+                 * @description Makes a retry of this request safe. Send a unique string (a UUID generated at the point you build the request) and the response is stored for 24 hours: a repeat with the SAME key replays that stored response — tagged `Idempotency-Status: cached` — without running the operation again, so no duplicate reservation, guest or guest message is created.
+                 *
+                 *     - Same key while the first request is still in flight → `409 idempotency_key_in_use`.
+                 *     - Same key with a DIFFERENT payload → `422 idempotency_key_reused`. Generate a new key per distinct request; reuse one only when retrying that exact request.
+                 *     - Responses with status >= 500 are deliberately not stored, so a server error stays retryable.
+                 */
+                "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                /** @description Internal Repull thread id. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SendMessageRequest"];
+            };
+        };
+        responses: {
+            /** @description Message sent. Inspect `contentRewritten` before assuming the guest received the exact text submitted. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SendMessageResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description The conversation does not exist in this workspace. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Invalid body, or the channel refused the message (`message_not_sent`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
             500: components["responses"]["InternalError"];
         };
     };

@@ -31,6 +31,25 @@ export type AIOperation = components['schemas']['AIOperation'];
 export type RepullErrorPayload = components['schemas']['Error'];
 export type Review = components['schemas']['Review'];
 
+/** Request body for `POST /v1/guests`. */
+export type GuestCreateRequest = components['schemas']['GuestCreateRequest'];
+/** Returned by `POST /v1/guests`. Read `created` — a 2xx does not mean a new record. */
+export type GuestCreateResponse = components['schemas']['GuestCreateResponse'];
+/** Request body for `POST /v1/reservations`. */
+export type ReservationCreateRequest = components['schemas']['ReservationCreateRequest'];
+/** Returned by `POST /v1/reservations` (201). */
+export type ReservationCreateResponse = components['schemas']['ReservationCreateResponse'];
+/** Request body for `PATCH /v1/reservations/{id}`. At least one field is required. */
+export type ReservationUpdateRequest = components['schemas']['ReservationUpdateRequest'];
+/** Returned by `PATCH /v1/reservations/{id}`. `changed` lists the fields actually written. */
+export type ReservationUpdateResponse = components['schemas']['ReservationUpdateResponse'];
+/** Guest identity accepted inline by `POST /v1/reservations`. */
+export type ReservationGuestInput = components['schemas']['ReservationGuestInput'];
+/** Request body for `POST /v1/conversations/{id}/messages`. */
+export type SendMessageRequest = components['schemas']['SendMessageRequest'];
+/** Returned by `POST /v1/conversations/{id}/messages`. */
+export type SendMessageResponse = components['schemas']['SendMessageResponse'];
+
 /**
  * Custom field-mapping schema. Reshapes the `native` response payload into
  * your app's preferred field names. Apply one per request via the

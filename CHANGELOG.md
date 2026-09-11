@@ -3,6 +3,31 @@
 All notable changes to `@repull/sdk` and `@repull/types` are recorded here.
 This project follows [Semantic Versioning](https://semver.org/).
 
+## v0.2.12 — 2026-09-11
+
+### Added
+
+The API gained four write operations as new methods on paths that already
+existed for `GET`, so the path count is unchanged at 124 and only the
+operation count moved (170 → 174). `@repull/types` was regenerated and the
+hand-written facade gained a method for each:
+
+- `repull.guests.create(body, { idempotencyKey })` — `POST /v1/guests`. Only `firstName` is required. The API matches on email/phone plus name before writing, so read `created` on the response rather than assuming a 2xx means a new record.
+- `repull.reservations.create(body, { idempotencyKey })` — `POST /v1/reservations`. `platform` is limited to `direct` / `website` / `owner`; OTA reservations are owned by the channel and arrive through sync. The stay is priced by the pricing engine, not from the request.
+- `repull.reservations.update(id, body, { idempotencyKey })` — `PATCH /v1/reservations/{id}`. Dates, times, guest count and a property move. A move combined with new dates is applied as ONE move so the access code is re-issued once, and it forces a confirmed `status` — read `changed` and `status` back.
+- `repull.conversations.send(id, body, { idempotencyKey })` — `POST /v1/conversations/{id}/messages`. Omit `channel` to send on whichever channel the thread already uses. Check `contentRewritten`: when `true`, the channel altered the text (Airbnb strips links, emails and phone numbers) and the guest received `deliveredContent`, not `submittedContent`.
+
+All three creating calls accept an `Idempotency-Key`, passed as
+`opts.idempotencyKey`. Send a unique string per distinct request: a repeat
+with the same key replays the stored response for 24 hours, a reuse with a
+changed payload returns `422 idempotency_key_reused`, and a reuse while the
+first request is still in flight returns `409 idempotency_key_in_use`.
+
+New `@repull/types` aliases: `GuestCreateRequest`, `GuestCreateResponse`,
+`ReservationCreateRequest`, `ReservationCreateResponse`,
+`ReservationUpdateRequest`, `ReservationUpdateResponse`,
+`ReservationGuestInput`, `SendMessageRequest`, `SendMessageResponse`.
+
 ## v0.2.11 — 2026-09-11
 
 ### Removed

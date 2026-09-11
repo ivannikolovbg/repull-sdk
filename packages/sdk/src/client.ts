@@ -28,6 +28,8 @@ import type {
   CustomSchemaListResponse,
   CustomSchemaUpdate,
   Guest,
+  GuestCreateRequest,
+  GuestCreateResponse,
   HealthResponse,
   Listing,
   ListingActiveResponse,
@@ -38,13 +40,19 @@ import type {
   PricingResponse,
   Property,
   Reservation,
+  ReservationCreateRequest,
+  ReservationCreateResponse,
+  ReservationUpdateRequest,
+  ReservationUpdateResponse,
   Review,
+  SendMessageRequest,
+  SendMessageResponse,
 } from '@repull/types';
 import { RepullError } from './errors.js';
 import { KvNamespace } from './kv.js';
 
 const DEFAULT_BASE_URL = 'https://api.repull.dev';
-const DEFAULT_USER_AGENT = '@repull/sdk/0.2.11';
+const DEFAULT_USER_AGENT = '@repull/sdk/0.2.12';
 
 export type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
@@ -138,7 +146,12 @@ export class Repull {
   async request<T>(
     method: string,
     path: string,
-    init: { query?: Record<string, unknown>; body?: unknown; xSchema?: string } = {},
+    init: {
+      query?: Record<string, unknown>;
+      body?: unknown;
+      xSchema?: string;
+      idempotencyKey?: string;
+    } = {},
   ): Promise<T> {
     const url = buildUrl(this.opts.baseUrl, path, init.query);
     const headers: Record<string, string> = {
@@ -148,6 +161,7 @@ export class Repull {
     if (init.body !== undefined) headers['Content-Type'] = 'application/json';
     if (!isBrowser) headers['User-Agent'] = this.opts.userAgent;
     if (init.xSchema) headers['X-Schema'] = init.xSchema;
+    if (init.idempotencyKey) headers['Idempotency-Key'] = init.idempotencyKey;
 
     const reqInit: RequestInit = {
       method,
@@ -388,6 +402,55 @@ class ReservationsNamespace {
       xSchema: opts.xSchema,
     });
   }
+
+  /**
+   * POST /v1/reservations — create a direct reservation. New in v0.2.12.
+   *
+   * `platform` is limited to `direct` / `website` / `owner`: OTA reservations
+   * are owned by the channel and arrive through sync, so they cannot be
+   * created here. The stay is priced by the pricing engine, not from the
+   * request — read `totalPrice` back off the response.
+   *
+   * Pass `opts.idempotencyKey` (a UUID generated where you build the request)
+   * to make a retry safe. The same key replays the stored response for 24
+   * hours; the same key with a changed payload is rejected with
+   * `422 idempotency_key_reused`.
+   */
+  create(
+    body: ReservationCreateRequest,
+    opts: { idempotencyKey?: string; xSchema?: string } = {},
+  ): Promise<ReservationCreateResponse> {
+    return this.client.request<ReservationCreateResponse>('POST', '/v1/reservations', {
+      body,
+      idempotencyKey: opts.idempotencyKey,
+      xSchema: opts.xSchema,
+    });
+  }
+
+  /**
+   * PATCH /v1/reservations/{id} — change dates, times, guest count, or move
+   * the reservation to another property. New in v0.2.12.
+   *
+   * At least one field is required. Guest identity, pricing, `status`,
+   * `platform` and notes are rejected by name. A `listingId` change combined
+   * with new dates is applied as ONE move, so the access code is re-issued
+   * once. `changed` on the response lists the fields that were actually
+   * written — and a move forces a confirmed `status`, so read it back rather
+   * than assuming it is unchanged.
+   *
+   * Pass `opts.idempotencyKey` to make a retry safe (see `create`).
+   */
+  update(
+    id: string | number,
+    body: ReservationUpdateRequest,
+    opts: { idempotencyKey?: string; xSchema?: string } = {},
+  ): Promise<ReservationUpdateResponse> {
+    return this.client.request<ReservationUpdateResponse>(
+      'PATCH',
+      `/v1/reservations/${encodeURIComponent(String(id))}`,
+      { body, idempotencyKey: opts.idempotencyKey, xSchema: opts.xSchema },
+    );
+  }
 }
 
 /**
@@ -434,6 +497,33 @@ class ConversationsNamespace {
       { query, xSchema: opts.xSchema },
     );
   }
+
+  /**
+   * POST /v1/conversations/{id}/messages — send a message to the guest on an
+   * existing thread. New in v0.2.12.
+   *
+   * Omit `channel` to send on whichever channel the conversation already
+   * uses — that is the right default. Check `contentRewritten` on the
+   * response: when it is `true` the channel altered the text before delivery
+   * (today that means Airbnb stripped a link, email address or phone number),
+   * so the guest received `deliveredContent`, not `submittedContent`.
+   *
+   * Pass `opts.idempotencyKey` (a UUID generated where you build the request)
+   * to make a retry safe, so a network retry cannot send the guest the same
+   * message twice. The same key with a changed payload is rejected with
+   * `422 idempotency_key_reused`.
+   */
+  send(
+    conversationId: string | number,
+    body: SendMessageRequest,
+    opts: { idempotencyKey?: string; xSchema?: string } = {},
+  ): Promise<SendMessageResponse> {
+    return this.client.request<SendMessageResponse>(
+      'POST',
+      `/v1/conversations/${encodeURIComponent(String(conversationId))}/messages`,
+      { body, idempotencyKey: opts.idempotencyKey, xSchema: opts.xSchema },
+    );
+  }
 }
 
 /**
@@ -463,6 +553,30 @@ class GuestsNamespace {
   /** GET /v1/guests/{id} — full guest profile. */
   get(id: string | number, opts: { xSchema?: string } = {}): Promise<Guest> {
     return this.client.request<Guest>('GET', `/v1/guests/${encodeURIComponent(String(id))}`, {
+      xSchema: opts.xSchema,
+    });
+  }
+
+  /**
+   * POST /v1/guests — create a guest, or match an existing one. New in v0.2.12.
+   *
+   * Only `firstName` is required. The API matches on email/phone plus name
+   * before writing, so read `created` on the response rather than assuming a
+   * 2xx means a new record was made. Email and phone come back as separate
+   * entries in `contacts`.
+   *
+   * Pass `opts.idempotencyKey` (a UUID generated where you build the request)
+   * to make a retry safe. The same key replays the stored response for 24
+   * hours; the same key with a changed payload is rejected with
+   * `422 idempotency_key_reused`.
+   */
+  create(
+    body: GuestCreateRequest,
+    opts: { idempotencyKey?: string; xSchema?: string } = {},
+  ): Promise<GuestCreateResponse> {
+    return this.client.request<GuestCreateResponse>('POST', '/v1/guests', {
+      body,
+      idempotencyKey: opts.idempotencyKey,
       xSchema: opts.xSchema,
     });
   }
