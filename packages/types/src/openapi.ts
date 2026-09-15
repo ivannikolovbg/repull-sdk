@@ -40,6 +40,8 @@ export interface paths {
          *     Filters: `q` (substring on name/street/city), `status` (active|inactive|all), `lifecycle_status` (exact match on the listing's lifecycle state). Other unknown params (e.g. `?search=` or `?propertyId=`) are rejected with 422 — no silent unfiltered results.
          *
          *     **Incremental sync (only changes since last poll):** pass `?updated_since=<ISO8601>` to receive only properties changed at or after that instant. Each property carries `updatedAt` — the last row of the final page is your next watermark. `updated_since` changes the page ordering to `updatedAt ASC, id ASC` (and the cursor with it); see the parameter description. `GET /v1/listings` does NOT yet accept `updated_since` — use this endpoint for property-side incremental sync.
+         *
+         *     **Inactive properties:** an inactive property keeps syncing, but cannot be read or changed through the API until it is activated. They are only listed when `status` asks for them, and then with `id`, `name`, `status`, `lifecycleStatus`, `channels` and `updatedAt` only — enough to choose what to activate with `PATCH /v1/listings/{id}`.
          */
         get: operations["list_properties"];
         put?: never;
@@ -62,6 +64,8 @@ export interface paths {
          * @description Fetch a single property by Repull id. Property ids are workspace-scoped — an id from one workspace is not valid in another. 404 means the id does not exist OR belongs to a different workspace.
          *
          *     **Optional expansions:** Pass `?include=amenities` to enrich the response with the property's amenities (sourced from the unified `listings_amenities` table). Returns `[]` when the property has no amenity rows. The default response stays lean; consumers must opt in.
+         *
+         *     Returns `403 listing_inactive` when the listing is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
         get: operations["get_property"];
         put?: never;
@@ -88,11 +92,15 @@ export interface paths {
          *     **`days` contains only the dates we actually hold calendar data for.** Requested dates with no calendar row are listed in `coverage.missingDates` — their availability is unknown. Never treat a missing date as bookable: this endpoint deliberately does not synthesise availability, because a fabricated open date can be double-booked. A property with no calendar still returns a real 200 (`days: []`, every date in `coverage.missingDates`), never a 404 — 404 means the property id does not exist or belongs to a different workspace.
          *
          *     This endpoint is read-only, and the projected per-date shape carries **availability, price, and min-nights only** — it does NOT expose max-stay, closed-to-arrival (CTA), closed-to-departure (CTD), or the dedicated stop-sell flag. To read or write that full restriction set on Booking.com use the channel routes: `GET`/`PUT /v1/channels/booking/availability` (with the room + rate ids from `GET /v1/channels/booking/properties/{id}/rooms`). Availability **writes** always stay per-channel: `PUT /v1/channels/airbnb/listings/{id}/availability` (Airbnb) or `PUT /v1/channels/booking/availability` (Booking.com).
+         *
+         *     Returns `403 listing_inactive` when the listing is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
         get: operations["get_availability"];
         /**
          * Set prices, block or unblock dates
          * @description Writes the calendar for one property AND pushes to every connected channel in the same step. A write that only changed our copy would leave the OTA calendars stale and eventually double-book a guest.
+         *
+         *     Returns `403 listing_inactive` when the listing is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
         put: operations["updateAvailability"];
         post?: never;
@@ -118,6 +126,8 @@ export interface paths {
          *     `?offset=` is also accepted as a first-class alias for shallow paging (0..10000) — see the `offset` parameter below. Mutually exclusive with `cursor`. For deep pagination cursor remains O(1) per page; offset > 10000 returns 422 with a docs link.
          *
          *     **Incremental sync (only changes since last poll):** pass `?updated_since=<ISO8601>` to receive only reservations amended, cancelled, or created at or after that instant — no full re-walk. Each row carries `updatedAt`; the last row of the final page is your next watermark. Note that `updated_since` changes the page ordering to `updatedAt ASC, id ASC` (and the cursor with it) so mid-walk amendments cannot be skipped — see the parameter description for the full contract.
+         *
+         *     Reservations on inactive listings are left out (counts and cursors included); they keep syncing and reappear once the listing is activated. Filtering by an inactive listing (`listing_id`) returns `403 listing_inactive`.
          */
         get: operations["list_reservations"];
         put?: never;
@@ -134,6 +144,8 @@ export interface paths {
          *     **Availability is NOT checked.** This creates the reservation you asked for even if the dates overlap an existing booking. Call `GET /v1/availability/{propertyId}` first if that matters.
          *
          *     Send `Idempotency-Key` — a network timeout here is exactly the case it exists for: without it, a retry books the guest twice.
+         *
+         *     Returns `403 listing_inactive` when the listing is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
         post: operations["create_reservation"];
         delete?: never;
@@ -152,6 +164,8 @@ export interface paths {
         /**
          * Get reservation details
          * @description Returns the full record for a single reservation, scoped to the authenticated workspace. Response shape is identical to a single row in `GET /v1/reservations` so SDK consumers can use the same type for both. Returns **404** if the id does not exist OR belongs to a different workspace — the API never differentiates the two so caller can't enumerate other workspaces' ids.
+         *
+         *     Returns `403 listing_inactive` when the listing this resolves to is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
         get: operations["get_reservation"];
         put?: never;
@@ -180,6 +194,8 @@ export interface paths {
          *     | `notes` | `internal_notes` is an append-only audit trail the system writes on every change. |
          *
          *     **Availability is NOT checked.** A date change that overlaps another booking will be written. Call `GET /v1/availability/{propertyId}` first if that matters.
+         *
+         *     Returns `403 listing_inactive` when the reservation is on an inactive listing, or when a `listingId` move targets one; nothing is changed.
          */
         patch: operations["update_reservation"];
         trace?: never;
@@ -198,6 +214,8 @@ export interface paths {
          *     `?offset=` is also accepted as a first-class alias for shallow paging (0..10000) — see the `offset` parameter below. Mutually exclusive with `cursor`.
          *
          *     Filters: `q` (substring on name/email/phone), `has_reservation` (`true`|`false`), `listing_id` (restrict to guests with at least one reservation on that listing).
+         *
+         *     **Inactive listings:** a guest whose every reservation is on an inactive listing is left out of the page and of `pagination.total`, and `totalReservations`, `totalRevenue`, `firstStayedAt` / `lastStayedAt`, `has_reservation` and `listing_id` only consider reservations that are not on an inactive listing. Guests with no reservations are tied to no listing and are always listed. Filtering by an inactive `listing_id` returns `403 listing_inactive`.
          */
         get: operations["listGuests"];
         put?: never;
@@ -228,6 +246,8 @@ export interface paths {
         /**
          * Get guest profile
          * @description Returns the full guest profile — base list-row fields plus contacts, flags, notes, risk metadata, and reservation aggregates. Aggregates main vanio's `GuestService.getGuestProfile()` into the public Repull shape so SDK consumers don't have to learn the internal schema.
+         *
+         *     **Inactive listings:** a guest whose every reservation is on an inactive listing returns `403 listing_inactive` naming those listings (the guest is kept, so this is not a 404). Otherwise the reservation aggregates exclude reservations on inactive listings. A guest with no reservations is always readable.
          */
         get: operations["getGuest"];
         put?: never;
@@ -252,6 +272,8 @@ export interface paths {
          *     `?offset=` is also accepted as a first-class alias for shallow paging (0..10000) — see the `offset` parameter below. Mutually exclusive with `cursor`.
          *
          *     Filters: `platform` (`airbnb`|`booking`|`vrbo`|`website`|`email`), `status` (`open`|`archived` — `archived` is a stable no-op until the bit lands on `message_threads`).
+         *
+         *     **Inactive listings:** conversations that belong to an inactive listing (by the thread's listing or its reservation's listing) are left out of the page and of `pagination.total`. Inactive listings keep syncing; activate the listing to use it here.
          */
         get: operations["listConversations"];
         put?: never;
@@ -272,6 +294,8 @@ export interface paths {
         /**
          * Get conversation detail
          * @description Returns one thread (the same shape as the list-row `Conversation`) plus expanded `host` (from `airbnb_hosts` for the thread's `host_id`) and `guest` (resolved via the thread's `reservation_id`, with up to 50 contacts) blocks.
+         *
+         *     A conversation that belongs to an inactive listing (by the thread's listing or its reservation's listing) returns `403 listing_inactive`. Inactive listings keep syncing; activate the listing to use it here.
          */
         get: operations["getConversation"];
         put?: never;
@@ -294,6 +318,8 @@ export interface paths {
          * @description Cursor-paginated messages within one thread. Defaults to newest-first (`?order=desc`); pass `?order=asc` for chronological replay. Use `pagination.nextCursor` from one response as the `cursor` query param of the next request.
          *
          *     `?offset=` is also accepted as a first-class alias for shallow paging (0..10000) — see the `offset` parameter below. Mutually exclusive with `cursor`.
+         *
+         *     A conversation that belongs to an inactive listing returns `403 listing_inactive`. Inactive listings keep syncing; activate the listing to use it here.
          */
         get: operations["listConversationMessages"];
         put?: never;
@@ -312,6 +338,8 @@ export interface paths {
          *     When the text cannot be salvaged (the link is most of the message) nothing is delivered and the call returns `422 message_not_sent` with the channel's verbatim refusal in `statusReason`.
          *
          *     Send `Idempotency-Key` — without it, retrying after a network timeout sends the guest the same message twice.
+         *
+         *     **Inactive listings:** a conversation that belongs to an inactive listing returns `403 listing_inactive` and no message is sent. Activate the listing first.
          */
         post: operations["send_conversation_message"];
         delete?: never;
@@ -334,6 +362,8 @@ export interface paths {
          *     `?offset=` is also accepted as a first-class alias for shallow paging (0..10000) — see the `offset` parameter below. Mutually exclusive with `cursor`.
          *
          *     Filters: `platform` (`airbnb`|`booking`|`vrbo`), `listing_id` (internal Repull listing id), `rating_min` / `rating_max` (inclusive bounds, 0..5), `status` (`responded`|`unanswered`|`all`), `reviewer_role` (`guest` (default) | `host` | `all`).
+         *
+         *     **Inactive listings:** reviews of inactive listings are left out of the page and of `pagination.total`. Filtering by an inactive `listing_id` returns `403 listing_inactive`. Inactive listings keep syncing; activate the listing to use it here.
          */
         get: operations["listReviews"];
         put?: never;
@@ -354,6 +384,8 @@ export interface paths {
         /**
          * Get review
          * @description Returns one review (the bare `Review` object — NOT wrapped in `{ data: ... }`). Scoped to the authenticated workspace via the listings join — reviews that don't belong to the workspace return 404 (we don't differentiate to avoid leaking other customers' ids).
+         *
+         *     A review of an inactive listing returns `403 listing_inactive`. Inactive listings keep syncing; activate the listing to use it here.
          */
         get: operations["getReview"];
         put?: never;
@@ -458,11 +490,15 @@ export interface paths {
         post: operations["create_connection"];
         /**
          * Disconnect provider
-         * @description Disconnect a PMS or OTA from this workspace.
+         * @description Disconnect ONE connected account of a provider from this workspace. Supported for `airbnb` and `booking`.
          *
-         *     Currently supported for `booking` only: drops the stored connection and stops syncing the mapped rooms. Resources already synced remain queryable but become read-only and stop receiving updates.
+         *     **Which account.** Pass `accountId` — for Airbnb the host id (`accounts[].externalAccountId` from `GET /v1/connect/airbnb`), for Booking.com the hotel id. It is optional only when the workspace has exactly one account for the provider. With several and no `accountId`, the call returns `422` with the account ids in `valid_values` instead of guessing. An `accountId` that is not connected to this workspace returns `404`. Disconnecting one account leaves the others connected.
          *
-         *     Every other provider returns `501 not_implemented` with instructions for disconnecting on the provider's side — Airbnb in particular has to be revoked by the host (Account → Privacy & sharing → Connected apps), because the OAuth grant lives outside this service. The endpoint used to report `200 { disconnected: true }` for every provider while doing nothing; it now tells you the truth.
+         *     **What happens.** The account's stored authorization is removed and it stops syncing. Its listings are **deactivated**, not deleted: they stop counting toward your plan's listing limit, their data is kept, and they are returned in `listingsDeactivated`. A listing that is still connected through another account or channel stays active. Reconnect the account, then activate the listings with `POST /v1/listings/status`.
+         *
+         *     The change is all or nothing. For Airbnb, the host can also revoke access on Airbnb's side (Account → Privacy & sharing → Connected apps); that alone does not update this workspace, so call this endpoint as well.
+         *
+         *     Other providers return `501 not_implemented` with instructions for disconnecting on the provider's side.
          */
         delete: operations["delete_connection"];
         options?: never;
@@ -850,6 +886,8 @@ export interface paths {
          *     Ownership is checked before anything is written: a batch containing a property from another workspace is refused as a whole and names the offending ids, rather than being partially applied.
          *
          *     Per-property *different* values are separate calls — presenting them as one request would be a false claim about atomicity.
+         *
+         *     Returns `403 listing_inactive` naming every inactive listing when any listing in the request is inactive; nothing is written.
          */
         patch: operations["batchUpdateAvailability"];
         trace?: never;
@@ -866,6 +904,8 @@ export interface paths {
          * @description Returns the full price breakdown for a stay — nightly total, length-of-stay discount, cleaning fee, pet and other fees, taxes, and the total.
          *
          *     A quote is priced against a booking website, because the markup, custom fees and tax overrides that decide what a guest is actually charged live there. A workspace with no booking site receives `422 quote_unavailable` rather than a number computed from different rules than the ones applied at checkout.
+         *
+         *     Returns `403 listing_inactive` when the listing is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
         get: operations["getQuote"];
         put?: never;
@@ -890,6 +930,8 @@ export interface paths {
          * @description Resolves the review, reads its channel and dispatches the reply. Channel-neutral: you do not need to know where the review came from.
          *
          *     Replies are available on Airbnb today; a review from a channel without a reply API returns `422 unsupported_channel` naming the channels that do work.
+         *
+         *     **Inactive listings:** a review of an inactive listing returns `403 listing_inactive` and no reply reaches the channel. Activate the listing first.
          */
         post: operations["replyToReview"];
         delete?: never;
@@ -983,7 +1025,7 @@ export interface paths {
         put?: never;
         /**
          * Create webhook subscription
-         * @description Register a new endpoint. Returns the plaintext signing secret ONCE — capture it from the response and store it securely. After this call the secret is masked everywhere; mint a new one with `POST /v1/webhooks/{id}/rotate-secret` if you lose it. See `GET /v1/webhooks/event-types` for the full list of subscribable events.
+         * @description Register a new endpoint. Returns the plaintext signing secret ONCE — capture it from the response and store it securely. After this call the secret is masked everywhere; mint a new one with `POST /v1/webhooks/{id}/rotate-secret` if you lose it. See `GET /v1/webhooks/event-types` for the full list of subscribable events. Events about an inactive listing (reservations, messages, alterations, reviews, payments, calendar and listing events) are not delivered. The data keeps syncing while the listing is inactive, but its events are never sent — including after you reactivate it; webhooks resume for events that happen from reactivation on. Account-level events are always delivered.
          */
         post: operations["create_webhook"];
         delete?: never;
@@ -1151,7 +1193,7 @@ export interface paths {
         put?: never;
         /**
          * Replay webhook delivery
-         * @description Re-sends the original payload (same eventId, fresh deliveryId, attempt + 1).
+         * @description Re-sends the original payload (same eventId, fresh deliveryId, attempt + 1). A delivery about a listing that is inactive now is not re-sent and answers `403 listing_inactive`; activate the listing first.
          */
         post: operations["replay_webhook_delivery"];
         delete?: never;
@@ -1218,6 +1260,8 @@ export interface paths {
          * @description List every Airbnb listing this workspace has access to via the connected Airbnb account. **Pure DB read — never calls Airbnb upstream.** The connect flow is what populates the local cache; the API serves what's already there. Customers with a disconnected host still see their last-synced data, with the top-level `dataFreshness` envelope flagging the staleness and pointing at the reconnect URL.
          *
          *     Pass `?include=amenities` to enrich each connection with its locally-cached amenity set. Returns `null` per connection when the cache is empty.
+         *
+         *     Inactive listings are left out; they keep syncing and reappear once activated. Use `GET /v1/listings?status=inactive` to find them.
          */
         get: operations["list_airbnb_listings"];
         put?: never;
@@ -1238,6 +1282,8 @@ export interface paths {
         /**
          * Get Airbnb listing
          * @description Fetch all Airbnb connection rows for a single Vanio listing id. A property may be linked from multiple Airbnb hosts — every match is returned. Pass `?include=amenities` to enrich each row with its current Airbnb amenities.
+         *
+         *     Returns `403 listing_inactive` when the listing is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
         get: operations["get_airbnb_listing"];
         put?: never;
@@ -1250,6 +1296,8 @@ export interface paths {
          *     `push` / `publish` push the listing's content to Airbnb via the same host-side sync orchestrator as `POST /v1/listings/{id}/publish/airbnb` — pass `airbnbConnectionId` to update an already-mapped Airbnb listing, or `hostId` to create + publish a new one under that host. `force` re-pushes every field, ignoring dirty-field tracking.
          *
          *     Any other action (e.g. `pull`, `unlist`) returns a structured 422 naming the supported actions.
+         *
+         *     Returns `403 listing_inactive` for `push`/`publish` when the listing is inactive. `delete` (deactivation) is always accepted.
          */
         post: operations["airbnb_listing_action"];
         delete?: never;
@@ -1274,6 +1322,8 @@ export interface paths {
          *     Discover the `airbnbId` (+ `hostId`) via `GET /v1/channels/airbnb/listings`, then re-point it at the `listingId` of your choice — the dedup / consolidation case where the Airbnb sync auto-created its own listing but you want the inventory under an existing property.
          *
          *     Repoints both the Airbnb record and its platform link to the target listing in one transaction. Idempotent — re-mapping to the same listing is a 200 no-op (`alreadyMapped: true`). Scope is enforced against your workspace on both the target listing and the existing Airbnb record; a listing that already links a different Airbnb listing returns 409.
+         *
+         *     Returns `403 listing_inactive` when the target listing, or the listing the Airbnb listing is mapped to now, is inactive; nothing is changed.
          */
         post: operations["map_airbnb_listing"];
         delete?: never;
@@ -1292,11 +1342,21 @@ export interface paths {
         /**
          * Get Airbnb pricing
          * @description Read the current pricing config (base price, weekend uplift, length-of-stay discounts, smart-pricing bounds) for an Airbnb listing.
+         *
+         *     Returns `403 listing_inactive` when the listing is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
         get: operations["get_airbnb_listing_pricing"];
         /**
          * Update Airbnb pricing
          * @description Push pricing changes to Airbnb. The `type` discriminator selects the sub-resource (model, standard settings, LOS, rate-plan, fees, currency, rule, or per-date `calendar`). `type: "calendar"` carries the full per-date restriction set — nightly price, min/max nights, closed-to-arrival, closed-to-departure, and stop-sell (`availability: "unavailable"`). For settings sub-resources the full object is replaced — GET first, mutate locally, then PUT the whole object.
+         *
+         *     `{id}` is the **Repull listing id** (from `GET /v1/properties` or `GET /v1/channels/airbnb/listings`), not the Airbnb listing id — Repull translates it before calling Airbnb.
+         *
+         *     The body is validated before anything reaches Airbnb: a malformed body is `422 invalid_params` naming the `field`. Calendar operations accept only the documented fields.
+         *
+         *     **Blocking dates:** Airbnb requires a `busy_subtype` whenever `availability` is `"unavailable"`. If an operation leaves it out, Repull sends `busy_subtype: "BLOCKED_BY_HOST"`; send `"OUTSIDE_RESERVATION"` for dates held by a booking made on another channel.
+         *
+         *     **Errors:** `403 connection_reauth_required` — Airbnb no longer accepts the connection for this listing (reconnect; retrying won't help). `403 listing_inactive` — the listing is inactive. `404 not_found` — no Airbnb-connected listing with this id in the workspace. `422 airbnb_rejected` — Airbnb refused the change; `message` carries its reason. `429 airbnb_rate_limited` — back off. `502 airbnb_error` — Airbnb outage or timeout; retry.
          */
         put: operations["update_airbnb_listing_pricing"];
         post?: never;
@@ -1316,11 +1376,21 @@ export interface paths {
         /**
          * Get Airbnb availability
          * @description Read the per-day availability calendar for an Airbnb listing. Returns one row per day including price overrides, min-stay, and blocked status.
+         *
+         *     Returns `403 listing_inactive` when the listing is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
         get: operations["get_airbnb_listing_availability"];
         /**
          * Update Airbnb availability
          * @description Push availability + restrictions to Airbnb. `type: "calendar"` writes per-date restrictions — min/max nights, closed-to-arrival, closed-to-departure, and stop-sell (`availability: "unavailable"`) — via a batch of operations that each target either a date range or an explicit date list. `type: "rules"` writes listing-level availability rules (default min/max nights, booking lead time, turnover days, seasonal/day-of-week min nights). Restrictions never leak across channels — this endpoint writes only to Airbnb.
+         *
+         *     `{id}` is the **Repull listing id** (from `GET /v1/properties` or `GET /v1/channels/airbnb/listings`), not the Airbnb listing id — Repull translates it before calling Airbnb.
+         *
+         *     The body is validated before anything reaches Airbnb: a malformed body is `422 invalid_params` naming the `field`. Calendar operations accept only the documented fields.
+         *
+         *     **Blocking dates:** Airbnb requires a `busy_subtype` whenever `availability` is `"unavailable"`. If an operation leaves it out, Repull sends `busy_subtype: "BLOCKED_BY_HOST"`; send `"OUTSIDE_RESERVATION"` for dates held by a booking made on another channel.
+         *
+         *     **Errors:** `403 connection_reauth_required` — Airbnb no longer accepts the connection for this listing (reconnect; retrying won't help). `403 listing_inactive` — the listing is inactive. `404 not_found` — no Airbnb-connected listing with this id in the workspace. `422 airbnb_rejected` — Airbnb refused the change; `message` carries its reason. `429 airbnb_rate_limited` — back off. `502 airbnb_error` — Airbnb outage or timeout; retry.
          */
         put: operations["update_airbnb_listing_availability"];
         post?: never;
@@ -1340,17 +1410,23 @@ export interface paths {
         /**
          * List Airbnb photos
          * @description List photos attached to an Airbnb listing in display order. Returns the public CDN URL plus Airbnb-side metadata (id, caption, room).
+         *
+         *     Returns `403 listing_inactive` when the listing is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
         get: operations["list_airbnb_listing_photos"];
         put?: never;
         /**
          * Upload photos to Airbnb
          * @description Upload one or more photos to an Airbnb listing. Accepts public image URLs (Airbnb fetches them) — direct binary upload is not supported on this endpoint.
+         *
+         *     Returns `403 listing_inactive` when the listing is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
         post: operations["upload_airbnb_listing_photos"];
         /**
          * Delete an Airbnb photo
          * @description Remove a single photo from an Airbnb listing. Pass the Airbnb-side photo id as `?photoId=`. Write-side — calls Airbnb upstream; the local photo cache is reconciled by the sync worker afterwards.
+         *
+         *     Returns `403 listing_inactive` when the listing is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
         delete: operations["delete_airbnb_listing_photo"];
         options?: never;
@@ -1368,6 +1444,8 @@ export interface paths {
         /**
          * List Airbnb message threads
          * @description List Airbnb message threads (one per guest conversation). Cursor-paginated. Each thread includes a preview of the latest message.
+         *
+         *     Threads on inactive listings are left out; they keep syncing and reappear once the listing is activated. Filtering by an inactive listing (`listing_id`) returns `403 listing_inactive`.
          */
         get: operations["list_airbnb_threads"];
         put?: never;
@@ -1388,6 +1466,8 @@ export interface paths {
         /**
          * Get Airbnb messages
          * @description Fetch the full message log for an Airbnb thread, ordered oldest-to-newest. Walk pages with `?cursor=` until `pagination.hasMore` is `false`.
+         *
+         *     Returns `403 listing_inactive` when the listing this resolves to is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
         get: operations["list_airbnb_thread_messages"];
         put?: never;
@@ -1396,6 +1476,8 @@ export interface paths {
          * @description Send a message in an Airbnb thread as the host. Airbnb enforces content rules (no off-platform contact info, no external URLs) — violating messages are rejected upstream and surface as `airbnb_error`.
          *
          *     The `{threadId}` is the Airbnb thread id — the `externalThreadId` field on a unified `Conversation` (`GET /v1/conversations`).
+         *
+         *     Returns `403 listing_inactive` when the listing this resolves to is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
         post: operations["send_airbnb_message"];
         delete?: never;
@@ -1415,11 +1497,13 @@ export interface paths {
          * List Airbnb reservations
          * @description Cursor-paginated list of reservations sourced directly from Airbnb. Use this when you need Airbnb-specific fields (guest payout split, cancellation policy snapshot) that the unified `/v1/reservations` endpoint flattens away.
          *
-         *     Walk pages with `?cursor=<pagination.next_cursor>` until `pagination.has_more` is `false`. The cursor is opaque — never construct or parse it client-side.
+         *     Walk pages with `?cursor=<pagination.nextCursor>` until `pagination.hasMore` is `false`. The cursor is opaque — never construct or parse it client-side.
          *
          *     `?offset=` is also accepted as a first-class alias for shallow paging (0..10000) — see the `offset` parameter below. Mutually exclusive with `cursor`. Internally this walks upstream Airbnb cursor pages to skip rows, so deep offsets cost N/limit upstream round-trips; cursor remains the better choice for deep pagination.
          *
          *     When `status` is omitted, all statuses are returned (Airbnb defaults to `accepted` only on its own surface, but this endpoint normalises to "all"). Pass `?status=accepted` to scope.
+         *
+         *     Reservations on inactive listings are left out (counts and cursors included); they keep syncing and reappear once the listing is activated. Filtering by an inactive listing (`listing_id`) returns `403 listing_inactive`.
          */
         get: operations["list_airbnb_reservations"];
         put?: never;
@@ -1440,12 +1524,16 @@ export interface paths {
         /**
          * Get Airbnb reservation
          * @description Fetch a single Airbnb reservation by Airbnb confirmation code (e.g. `HMABCDEF12`).
+         *
+         *     Returns `403 listing_inactive` when the listing this resolves to is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
         get: operations["get_airbnb_reservation"];
         put?: never;
         /**
          * Accept/decline/cancel Airbnb reservation
          * @description Apply a state action to an Airbnb reservation — `accept` / `decline` (for inquiries and reservation requests), `cancel` (host cancellation, carries penalties), `pre-approve` (for inquiries).
+         *
+         *     Returns `403 listing_inactive` when the listing this resolves to is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
         post: operations["airbnb_reservation_action"];
         delete?: never;
@@ -1464,6 +1552,8 @@ export interface paths {
         /**
          * List Airbnb reviews
          * @description List reviews left by guests on Airbnb listings in this workspace. Includes both reviews of the host and reviews of the guest (where the host has not yet submitted theirs).
+         *
+         *     Reviews of inactive listings are left out; they keep syncing and reappear once the listing is activated. Filtering by an inactive listing (`listing_id`) returns `403 listing_inactive`.
          */
         get: operations["list_airbnb_reviews"];
         put?: never;
@@ -1471,6 +1561,8 @@ export interface paths {
          * Respond to / submit Airbnb review (legacy)
          * @deprecated
          * @description Legacy action-based shape. Body `{ action: "respond"|"submit", reviewId, response?, review? }`. Kept for backwards compatibility — prefer `PUT /v1/channels/airbnb/reviews/{id}` (edit) and `POST /v1/channels/airbnb/reviews/{id}/respond` (reply) for new integrations.
+         *
+         *     Returns `403 listing_inactive` when the listing this resolves to is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
         post: operations["respond_airbnb_review_legacy"];
         delete?: never;
@@ -1492,6 +1584,8 @@ export interface paths {
          * @description Edit a host-side review for an Airbnb stay. Airbnb collapses POST + PUT into the same upstream call (`PUT /v2/listing_reviews/{id}`), so this endpoint covers both initial submit and subsequent edits while the review window is open.
          *
          *     Body is a partial `AirbnbReview` — pass the fields you want to change (rating, public review, private feedback, category ratings).
+         *
+         *     Returns `403 listing_inactive` when the listing this resolves to is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
         put: operations["edit_airbnb_review"];
         post?: never;
@@ -1513,6 +1607,8 @@ export interface paths {
         /**
          * Respond to Airbnb review
          * @description Post a public host response to a guest review. Airbnb allows one response per review — repeated POSTs return 409. Response text is capped at 1000 characters.
+         *
+         *     Returns `403 listing_inactive` when the listing this resolves to is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
         post: operations["respond_airbnb_review"];
         delete?: never;
@@ -1533,12 +1629,16 @@ export interface paths {
          * @description List reservation alteration requests for Airbnb reservations in this workspace. **Pure DB read** from the local `reservation_alterations` mirror — never calls Airbnb upstream — scoped to your workspace via the reservations join.
          *
          *     Default returns only pending alterations; pass `?type=all` for the full history. Filter to a single reservation with `?reservation_code=<confirmation code>`. Every response carries the `dataFreshness` envelope.
+         *
+         *     Alterations of reservations on inactive listings are left out. Filtering by a reservation on an inactive listing (`reservation_code`) returns `403 listing_inactive`.
          */
         get: operations["list_airbnb_alterations"];
         put?: never;
         /**
          * Create Airbnb alteration
          * @description Create a reservation alteration request (change dates, guest count, or price) on Airbnb. **Write-side** — calls Airbnb upstream. Requires a connected Airbnb host for the workspace, else `404 no_connection`.
+         *
+         *     Returns `403 listing_inactive` when the listing this resolves to is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
         post: operations["create_airbnb_alteration"];
         delete?: never;
@@ -1557,6 +1657,8 @@ export interface paths {
         /**
          * Get Airbnb alteration
          * @description Fetch a single Airbnb reservation alteration by its Airbnb alteration id. **Pure DB read**, workspace-scoped via the reservations join. Returns `404 not_found` when no alteration matches the id in your workspace.
+         *
+         *     Returns `403 listing_inactive` when the listing this resolves to is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
         get: operations["get_airbnb_alteration"];
         put?: never;
@@ -1579,6 +1681,8 @@ export interface paths {
         /**
          * Accept Airbnb alteration
          * @description Accept a pending Airbnb reservation alteration. **Write-side** — calls Airbnb upstream (`respondToAlteration`) to approve the proposed date / guest-count / price change. Requires a connected Airbnb host for the workspace (else `404 no_connection`) and that the alteration id belongs to a reservation in your workspace (else `404 not_found`). No request body is required.
+         *
+         *     Returns `403 listing_inactive` when the listing this resolves to is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
         post: operations["accept_airbnb_alteration"];
         delete?: never;
@@ -1599,6 +1703,8 @@ export interface paths {
         /**
          * Decline Airbnb alteration
          * @description Decline a pending Airbnb reservation alteration. **Write-side** — calls Airbnb upstream (`respondToAlteration`) to reject the proposed change. Requires a connected Airbnb host for the workspace (else `404 no_connection`) and that the alteration id belongs to a reservation in your workspace (else `404 not_found`). No request body is required.
+         *
+         *     Returns `403 listing_inactive` when the listing this resolves to is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
         post: operations["decline_airbnb_alteration"];
         delete?: never;
@@ -1616,7 +1722,9 @@ export interface paths {
         };
         /**
          * List Airbnb transactions
-         * @description List Airbnb host transactions (reservation earnings, payouts, resolution adjustments) for this workspace, newest first. **Pure DB read** — customer-facing reads never call Airbnb upstream; they serve the `airbnb_transactions` mirror. Each row carries the genuine host- and guest-side financial breakdown (accommodation subtotal, cleaning fee, host + guest service fees split base/VAT, tax buckets, expected/actual host payout with settlement status). Trigger a refresh with `POST` on this path. When the mirror is empty or the host disconnected, `data_freshness.stale = true` with a `reason` (`never_synced`, `host_disconnected_<iso>`, `sync_lag_>_24h`).
+         * @description List Airbnb host transactions (reservation earnings, payouts, resolution adjustments) for this workspace, newest first. **Pure DB read** — customer-facing reads never call Airbnb upstream; they serve the `airbnb_transactions` mirror. Each row carries the genuine host- and guest-side financial breakdown (accommodation subtotal, cleaning fee, host + guest service fees split base/VAT, tax buckets, expected/actual host payout with settlement status). Trigger a refresh with `POST` on this path. When the mirror is empty or the host disconnected, `dataFreshness.stale = true` with a `reason` (`never_synced`, `host_disconnected_<iso>`, `sync_lag_>_24h`).
+         *
+         *     Transactions of reservations on inactive listings are left out; payout rows, which belong to no listing, are always included.
          */
         get: operations["list_airbnb_transactions"];
         put?: never;
@@ -1641,6 +1749,8 @@ export interface paths {
         /**
          * Get Airbnb thread
          * @description Fetch a single Airbnb message thread by its Airbnb thread id. **Pure DB read** from the local `message_threads` mirror, workspace-scoped. Returns `404 not_found` when no thread matches. For the messages within a thread use `GET /v1/channels/airbnb/messaging/{threadId}/messages`.
+         *
+         *     Returns `403 listing_inactive` when the listing this resolves to is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
         get: operations["get_airbnb_thread"];
         put?: never;
@@ -1674,6 +1784,8 @@ export interface paths {
          *     - `react` — add a reaction (requires `reaction`).
          *
          *     Requires a connected Airbnb host, else `404 no_connection`.
+         *
+         *     Returns `403 listing_inactive` when the listing this resolves to is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
         patch: operations["update_airbnb_message"];
         trace?: never;
@@ -1688,6 +1800,8 @@ export interface paths {
         /**
          * List Airbnb amenities
          * @description List an Airbnb listing's amenities. **Pure DB read** from the local `listings_airbnb_amenities` cache — never calls Airbnb upstream. The response splits amenities into `amenities` (regular) and `accessibility_amenities` (step-free access, wide doorways, grab rails, disabled parking, wheelchair, accessible-height fixtures, hoists, etc). Both are arrays (`[]` when none). Consult `dataFreshness` to disambiguate "never synced" from "fresh and genuinely empty". Returns `404` when the listing has no Airbnb connection in this workspace.
+         *
+         *     Returns `403 listing_inactive` when the listing is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
         get: operations["list_airbnb_listing_amenities"];
         put?: never;
@@ -1708,11 +1822,15 @@ export interface paths {
         /**
          * Get Airbnb check-in guide
          * @description Return every published locale variant of an Airbnb listing's check-in guide. **Pure DB read** from `listings_airbnb_check_in_guides`. Pass `?locale=en` to filter to one locale (prefix match). Returns `404` when the listing has no Airbnb connection in this workspace.
+         *
+         *     Returns `403 listing_inactive` when the listing is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
         get: operations["get_airbnb_checkin_guide"];
         /**
          * Upsert Airbnb check-in guide
          * @description Upsert the check-in guide for one locale on an Airbnb listing. **Write-side** — calls Airbnb upstream; the DB mirror is reconciled by the sync worker once the upstream call returns. Target the locale with `?locale=en` (defaults to `en`). Requires a connected Airbnb host, else `404 no_connection`.
+         *
+         *     Returns `403 listing_inactive` when the listing is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
         put: operations["update_airbnb_checkin_guide"];
         post?: never;
@@ -1732,6 +1850,8 @@ export interface paths {
         /**
          * Get Airbnb checkout guide
          * @description Return the checkout tasks an Airbnb listing shows guests at departure. **Pure DB read** from `listings_airbnb_checkout_tasks`. Returns `404` when the listing has no Airbnb connection in this workspace.
+         *
+         *     Returns `403 listing_inactive` when the listing is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
         get: operations["get_airbnb_checkout_guide"];
         put?: never;
@@ -1752,6 +1872,8 @@ export interface paths {
         /**
          * List Airbnb descriptions
          * @description List an Airbnb listing's per-locale content (name, summary, house rules, etc). **Pure DB read** from `listings_airbnb_descriptions`. Filter to one locale with `?locale=en` (the legacy `?country=` param is accepted as a soft alias). Returns `404` when the listing has no Airbnb connection in this workspace.
+         *
+         *     Returns `403 listing_inactive` when the listing is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
         get: operations["list_airbnb_listing_descriptions"];
         put?: never;
@@ -1772,6 +1894,8 @@ export interface paths {
         /**
          * Get Airbnb listing quality
          * @description Return an Airbnb listing's quality signals — standards, reservation issues, and monthly quality stats. **Pure DB read** from the local quality mirrors. Scope the response with `?type=all|standards|issues|stats` (default `all`, which returns `{ standards, issues }`). Returns `404` when the listing has no Airbnb connection in this workspace.
+         *
+         *     Returns `403 listing_inactive` when the listing is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
         get: operations["get_airbnb_listing_quality"];
         put?: never;
@@ -1792,17 +1916,23 @@ export interface paths {
         /**
          * List Airbnb rooms
          * @description List the rooms configured on an Airbnb listing, ordered by room number. **Pure DB read** from `listings_airbnb_rooms`. Returns `404` when the listing has no Airbnb connection in this workspace.
+         *
+         *     Returns `403 listing_inactive` when the listing is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
         get: operations["list_airbnb_listing_rooms"];
         put?: never;
         /**
          * Create an Airbnb room
          * @description Create a new room on an Airbnb listing. **Write-side** — calls Airbnb upstream. Body is the full room object minus `room_id`. Requires a connected Airbnb host, else `404 no_connection`.
+         *
+         *     Returns `403 listing_inactive` when the listing is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
         post: operations["create_airbnb_listing_room"];
         /**
          * Delete an Airbnb room
          * @description Delete a room from an Airbnb listing. **Write-side** — calls Airbnb upstream. Pass the Airbnb-side room id as `?roomId=`. Requires a connected Airbnb host, else `404 no_connection`.
+         *
+         *     Returns `403 listing_inactive` when the listing is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
         delete: operations["delete_airbnb_listing_room"];
         options?: never;
@@ -1820,6 +1950,8 @@ export interface paths {
         /**
          * Get Airbnb listing settings
          * @description Return an Airbnb listing's host roles, published locales, and regulatory permits. **Pure DB read** — host roles from `listings_airbnb_details.host_roles`, locales from distinct `listings_airbnb_descriptions.locale`, permits from `listings_airbnb_permits`. Scope with `?type=all|hosts|permits|locales` (default `all`, which returns `{ hosts, locales }`). Returns `404` when the listing has no Airbnb connection in this workspace.
+         *
+         *     Returns `403 listing_inactive` when the listing is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
         get: operations["get_airbnb_listing_settings"];
         put?: never;
@@ -1847,6 +1979,8 @@ export interface paths {
          *     - `preapproval` — pre-approve an inquiry thread (requires `threadId`; optional `blockInstantBooking`).
          *
          *     Requires a connected Airbnb host, else `404 no_connection`.
+         *
+         *     Returns `403 listing_inactive` when the listing this resolves to is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
         post: operations["create_airbnb_offer"];
         /**
@@ -1871,6 +2005,8 @@ export interface paths {
          * @description Cursor-paginated list of listings owned by the authenticated workspace. Use `pagination.nextCursor` from one response as the `cursor` query param of the next request to walk the full set. `?offset=` is also accepted as a first-class alias for shallow paging (0..10000) — see the `offset` parameter below. Mutually exclusive with `cursor`. Filters: `q` (substring on name/street/city), `status`, `channel`.
          *
          *     **Optional expansions:** Pass `?include=content` to enrich each row with the rich content slab (summary, description, space, house rules, etc. — sourced from `listings_descriptions` for the `en` locale). Pass `?include=details` for the structural slab (bedrooms, bathrooms, person capacity, check-in window, wifi, house manual, etc.). Both default to `null` per row when the underlying `listings_descriptions` / `listings_details` row is missing — distinct from the field being absent (which signals the expansion was not requested). Combine comma-separated, e.g. `?include=content,details`. The default response stays lean; consumers must opt in.
+         *
+         *     **Inactive listings:** by default only active listings are returned. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated, so when `status` asks for inactive ones they carry only `id`, `name`, `status` and `channels` — enough to choose what to activate with `PATCH /v1/listings/{id}`. `?include=` expansions are not applied to them.
          */
         get: operations["listListings"];
         put?: never;
@@ -1897,6 +2033,8 @@ export interface paths {
          * @description Fetch a single listing by id. Returns the same shape as one element of the `GET /v1/listings` response, so you can bind the result to the same model. Cross-tenant access (a listing that belongs to a different workspace) returns 404 — never 403, never reveals the listing's existence.
          *
          *     **Optional expansions:** Pass `?include=amenities` to enrich the response with the listing's amenity rows (`[]` when the listing has none). Pass `?include=content` for the rich content slab (summary, description, space, house rules, etc. — sourced from `listings_descriptions` for the `en` locale; `null` when no row is stored). Pass `?include=details` for the structural slab (bedrooms, bathrooms, person capacity, check-in window, wifi, house manual, etc.; `null` when no row is stored). Combine comma-separated, e.g. `?include=amenities,content,details`. The default response stays lean; consumers must opt in.
+         *
+         *     Returns `403 listing_inactive` when the listing is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
         get: operations["getListing"];
         put?: never;
@@ -1908,6 +2046,8 @@ export interface paths {
          *     Equivalent to `PATCH /v1/listings/{id}` with `{ "active": false }`. This is the primary self-serve way for a free-tier customer to trim back under the plan-listings cap — `DELETE` is served even when the account is over the cap (a 402-locked account can still call it). To bring a listing back, use `PATCH` with `{ "active": true }`.
          *
          *     Idempotent: deactivating an already-inactive listing returns 200.
+         *
+         *     To deactivate many listings at once, use `POST /v1/listings/status` with `{ "active": false }`.
          */
         delete: operations["deactivateListing"];
         options?: never;
@@ -1921,6 +2061,8 @@ export interface paths {
          *     Reactivation respects the plan-listings cap: if activating this listing would push you over the cap for your tier, the call returns `402 listings_limit_exceeded` and the listing stays inactive. Deactivate another listing or upgrade first.
          *
          *     Idempotent: setting a listing to the state it's already in returns 200.
+         *
+         *     To change many listings at once, all or nothing, use `POST /v1/listings/status`.
          */
         patch: operations["updateListingActive"];
         trace?: never;
@@ -1944,6 +2086,8 @@ export interface paths {
          *     **Photos are deferred:** a provided `photos` array is echoed back in the `deferred` field and NOT persisted (media ingestion is a follow-up).
          *
          *     Cross-tenant access (a listing that belongs to a different workspace) returns 404 — never 403. This endpoint is served even when the account is over the plan-listings cap, since editing content on a listing you already own never grows the portfolio.
+         *
+         *     Returns `403 listing_inactive` when the listing is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
         put: operations["updateListingContent"];
         post?: never;
@@ -1965,6 +2109,8 @@ export interface paths {
         /**
          * AI-generate listing content
          * @description Generate guest-facing copy (title, summary, description, amenities, etc.) for a listing using Repull AI. When `photos` are provided the vision model is used for photo-grounded copy. Persists into the listing by default.
+         *
+         *     Returns `403 listing_inactive` when the listing is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
         post: operations["generateListingContent"];
         delete?: never;
@@ -1985,6 +2131,8 @@ export interface paths {
         /**
          * Publish a listing to Airbnb
          * @description Push a Repull listing to Airbnb. Pass `airbnbConnectionId` to update an already-mapped Airbnb listing, or `hostId` to create a brand-new Airbnb listing under that host.
+         *
+         *     Returns `403 listing_inactive` when the listing is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
         post: operations["publishListingToAirbnb"];
         delete?: never;
@@ -2005,6 +2153,8 @@ export interface paths {
         /**
          * Publish a listing to Booking.com
          * @description Push a Repull listing to Booking.com. The listing must already be mapped to a Booking property + room (created via the Booking-claim Connect flow).
+         *
+         *     Returns `403 listing_inactive` when the listing is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
         post: operations["publishListingToBooking"];
         delete?: never;
@@ -2023,6 +2173,8 @@ export interface paths {
         /**
          * Per-channel publish status
          * @description Returns connection state and sync activity per channel. `channels` is sync activity (empty until first push). `connections` is connection state (populated as soon as a channel is linked). Recommended polling cadence: at most once per 30s per listing — for bulk views, prefer `GET /v1/listings` and filter client-side.
+         *
+         *     Returns `403 listing_inactive` when the listing is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
         get: operations["getListingPublishStatus"];
         put?: never;
@@ -2047,6 +2199,8 @@ export interface paths {
          * @description Mints a short-lived signed upload URL + token for a listing photo. **The client PUTs the raw file bytes directly to the returned `uploadUrl` — the file bytes never pass through the Repull API or main vanio.** This endpoint only mints the URL; do not POST the file itself here, it will not be accepted.
          *
          *     Flow: (1) POST here with `fileName`/`fileType`/optional `fileSize` to get `{ uploadUrl, token, path, publicUrl, expiresIn }`; (2) PUT the raw file bytes to `uploadUrl` from the client; (3) `publicUrl` is the durable URL for the uploaded photo — attach it to the listing via `PUT /v1/listings/{id}/content` (`photos` field) or list it back via `GET /v1/listings/{id}/photos`.
+         *
+         *     Returns `403 listing_inactive` when the listing is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
         post: operations["createListingPhotoUploadUrl"];
         delete?: never;
@@ -2065,6 +2219,8 @@ export interface paths {
         /**
          * List a listing's stored photos
          * @description Returns the photo set currently stored for this listing.
+         *
+         *     Returns `403 listing_inactive` when the listing is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
         get: operations["listListingPhotos"];
         put?: never;
@@ -2072,6 +2228,8 @@ export interface paths {
         /**
          * Delete a stored listing photo
          * @description Deletes a single stored photo by its storage `path` (as returned by `GET /v1/listings/{id}/photos` or `POST /v1/listings/{id}/photos/upload-url`).
+         *
+         *     Returns `403 listing_inactive` when the listing is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
         delete: operations["deleteListingPhoto"];
         options?: never;
@@ -2089,6 +2247,8 @@ export interface paths {
         /**
          * List Booking.com properties
          * @description List Booking.com hotels claimed by this workspace. Each row includes the Booking-side hotel id and the connected room types.
+         *
+         *     Inactive listings are left out; they keep syncing and reappear once activated. Use `GET /v1/listings?status=inactive` to find them.
          */
         get: operations["list_booking_properties"];
         put?: never;
@@ -2111,6 +2271,10 @@ export interface paths {
          * @description Read the current rate, availability, and restriction state for a Booking.com property so you can reconcile before writing with the PUT on this path. Keyed by `property_id` (the Booking hotel id), symmetric with the PUT.
          *
          *     Proxies Booking's `getRoomRateAvailability` — the returned fields (price, rooms-to-sell, min/max stay, closed-to-arrival/departure, stop-sell) are whatever Booking.com emits for the window. A listing-id-keyed equivalent is available at `GET /v1/channels/booking/listings/{id}/pricing`.
+         *
+         *     `property_id` must be a Booking.com property connected to this workspace (`GET /v1/channels/booking/properties` lists them). Any other id — including one connected to a different workspace — returns `404 not_found`, the same answer as an id that does not exist.
+         *
+         *     Returns `403 listing_inactive` when any listing mapped to the Booking.com property is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
         get: operations["get_booking_availability"];
         /**
@@ -2122,6 +2286,10 @@ export interface paths {
          *     - `derived-pricing` — occupancy-derived pricing rules.
          *
          *     Restrictions never leak across channels — this endpoint writes only to Booking.com. Errors from upstream surface as `booking_error`.
+         *
+         *     `property_id` must be a Booking.com property connected to this workspace (`GET /v1/channels/booking/properties` lists them). Any other id — including one connected to a different workspace — returns `404 not_found`, the same answer as an id that does not exist.
+         *
+         *     Returns `403 listing_inactive` when any listing mapped to the Booking.com property is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
         put: operations["update_booking_availability"];
         post?: never;
@@ -2141,12 +2309,20 @@ export interface paths {
         /**
          * Get Booking.com content
          * @description Fetch the current content (descriptions, amenities, photos) for a Booking.com property. Used to round-trip edits through Repull.
+         *
+         *     `property_id` must be a Booking.com property connected to this workspace (`GET /v1/channels/booking/properties` lists them). Any other id — including one connected to a different workspace — returns `404 not_found`, the same answer as an id that does not exist.
+         *
+         *     Returns `403 listing_inactive` when any listing mapped to the Booking.com property is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
         get: operations["get_booking_content"];
         put?: never;
         /**
          * Update Booking.com content
          * @description Push content changes (descriptions, amenities, photos) to Booking.com. Booking enforces editorial review on text fields — changes appear after their content moderation queue clears.
+         *
+         *     `property_id` must be a Booking.com property connected to this workspace (`GET /v1/channels/booking/properties` lists them). Any other id — including one connected to a different workspace — returns `404 not_found`, the same answer as an id that does not exist.
+         *
+         *     Returns `403 listing_inactive` when any listing mapped to the Booking.com property is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
         post: operations["update_booking_content"];
         delete?: never;
@@ -2165,12 +2341,20 @@ export interface paths {
         /**
          * List Booking.com conversations
          * @description List Booking.com guest conversations. Cursor-paginated. Use the messaging POST to send a reply.
+         *
+         *     Scoped to this workspace. With `property_id`, the property must be connected to this workspace — any other id returns `404 not_found`. Without it, only messages for this workspace's own Booking.com properties are returned.
+         *
+         *     Returns `403 listing_inactive` when any listing mapped to the Booking.com property is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
         get: operations["list_booking_conversations"];
         put?: never;
         /**
          * Send Booking.com message
          * @description Send a message in a Booking.com conversation as the host. Booking enforces content rules similar to Airbnb.
+         *
+         *     `property_id` must be a Booking.com property connected to this workspace (`GET /v1/channels/booking/properties` lists them). Any other id — including one connected to a different workspace — returns `404 not_found`, the same answer as an id that does not exist.
+         *
+         *     Returns `403 listing_inactive` when any listing mapped to the Booking.com property is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
         post: operations["send_booking_message"];
         delete?: never;
@@ -2189,6 +2373,10 @@ export interface paths {
         /**
          * List Booking.com reviews
          * @description List guest reviews for a Booking.com property. Pass `property_id` (the Booking.com hotel id) as a query param — required.
+         *
+         *     `property_id` must be a Booking.com property connected to this workspace (`GET /v1/channels/booking/properties` lists them). Any other id — including one connected to a different workspace — returns `404 not_found`, the same answer as an id that does not exist.
+         *
+         *     Returns `403 listing_inactive` when any listing mapped to the Booking.com property is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
         get: operations["list_booking_reviews"];
         put?: never;
@@ -2197,6 +2385,10 @@ export interface paths {
          * @description Post a public host reply to a guest review on Booking.com. Booking allows one host reply per review — repeated POSTs are rejected by upstream.
          *
          *     Booking.com does NOT support host-authored reviews of guests via the API (platform-level limitation), so this endpoint is reply-only.
+         *
+         *     `property_id` must be a Booking.com property connected to this workspace (`GET /v1/channels/booking/properties` lists them). Any other id — including one connected to a different workspace — returns `404 not_found`, the same answer as an id that does not exist.
+         *
+         *     Returns `403 listing_inactive` when any listing mapped to the Booking.com property is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
         post: operations["reply_booking_review"];
         delete?: never;
@@ -2217,11 +2409,15 @@ export interface paths {
          * @description Resolves the Vanio listing ID to its Booking.com `hotel_id` (via the `listings_booking` mapping owned by the authenticated workspace), then proxies Booking's `getRoomRateAvailability` for the requested window. Pricing on Booking is per-room/per-rate-plan, so `room_id` and `room_level` flow through query params unchanged.
          *
          *     Mirrors the per-channel `/listings/{id}/pricing` shape used by Airbnb so SDK consumers can carry a Vanio listing ID across channels.
+         *
+         *     Returns `403 listing_inactive` when the listing is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
         get: operations["getBookingListingPricing"];
         /**
          * Update Booking.com pricing for a listing
          * @description Pushes one or more rate updates to Booking.com via `updateRates`. Each update needs `roomId` + `rateId` + `dateRange` + `price` + `currency`. Field-level validation runs up front so callers don't have to parse Booking's XML error envelope to discover a missing `roomId`.
+         *
+         *     Returns `403 listing_inactive` when the listing is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
         put: operations["updateBookingListingPricing"];
         post?: never;
@@ -2241,11 +2437,19 @@ export interface paths {
         /**
          * Get Booking.com charges
          * @description Fetch the extra-charge set (cleaning fee, resort fee, city tax, etc.) configured for a Booking.com property. Pass the Booking.com `property_id` as a query param — required.
+         *
+         *     `property_id` must be a Booking.com property connected to this workspace (`GET /v1/channels/booking/properties` lists them). Any other id — including one connected to a different workspace — returns `404 not_found`, the same answer as an id that does not exist.
+         *
+         *     Returns `403 listing_inactive` when any listing mapped to the Booking.com property is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
         get: operations["get_booking_charges"];
         /**
          * Set Booking.com charges
          * @description Replace the extra-charge set for a Booking.com property. The body carries the target `property_id` and the full `charges` array — Booking treats the write as a full replacement, so include every charge you want to keep.
+         *
+         *     `property_id` must be a Booking.com property connected to this workspace (`GET /v1/channels/booking/properties` lists them). Any other id — including one connected to a different workspace — returns `404 not_found`, the same answer as an id that does not exist.
+         *
+         *     Returns `403 listing_inactive` when any listing mapped to the Booking.com property is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
         put: operations["update_booking_charges"];
         post?: never;
@@ -2267,6 +2471,8 @@ export interface paths {
          * @description Return every Booking.com room and its rate plans for a listing, each with the `roomId` / `rateId` needed to assemble a restriction write via `PUT /v1/channels/booking/availability`.
          *
          *     `id` is a Vanio listing id — resolved to the Booking `hotel_id` via the workspace mapping (a listing with no active Booking.com mapping returns 404). Sourced from Booking's B.XML roomrates feed, which returns rooms and rate plans together (the rooms-unit feed alone omits rate-plan ids). This is the API-key surface for the room/rate ids that were previously only reachable inside the hosted Connect room-mapping flow.
+         *
+         *     Returns `403 listing_inactive` when the listing is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
         get: operations["list_booking_property_rooms"];
         put?: never;
@@ -2287,6 +2493,8 @@ export interface paths {
         /**
          * Get Booking.com connection for a listing
          * @description Return the Booking.com connection record(s) for a Vanio listing — the linked Booking hotel id, sync flags, markup, sync category, and suspension state. Scoped to the authenticated workspace; a listing with no Booking.com connection returns 404.
+         *
+         *     Returns `403 listing_inactive` when the listing is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
         get: operations["get_booking_property"];
         put?: never;
@@ -2307,12 +2515,18 @@ export interface paths {
         /**
          * List Booking.com reservations
          * @description Pull reservations from Booking.com. `type=new` (default) returns un-acknowledged bookings; `type=modified` returns changed bookings. Pass both `reservation_id` and `hotel_id` to fetch a single reservation's full details. Acknowledge processed reservations with the POST so Booking stops re-serving them in the `new` queue.
+         *
+         *     Scoped to this workspace. `hotel_id` (or its alias `property_id`) must be a property connected to this workspace; any other id returns `404 not_found`, the same as an id that does not exist. Without a hotel, `new`/`modified` cover every Booking.com property this workspace holds (and return `404 not_found` if it holds none). A `reservation_id` that belongs to another workspace returns `404 not_found`.
+         *
+         *     Returns `403 listing_inactive` when any listing mapped to the Booking.com property is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
         get: operations["list_booking_reservations"];
         put?: never;
         /**
          * Acknowledge Booking.com reservations
          * @description Acknowledge one or more reservations so Booking.com removes them from the `new` queue. The body carries `reservation_ids` (non-empty array). Acknowledge only after you have durably persisted each reservation.
+         *
+         *     Only reservations that belong to this workspace can be acknowledged. If any id in `reservation_ids` is not one of this workspace's Booking.com reservations (`confirmationCode` on `GET /v1/reservations?platform=booking`), nothing is acknowledged and the response is `404 not_found` naming those ids in `reservation_ids`.
          */
         post: operations["acknowledge_booking_reservations"];
         delete?: never;
@@ -2342,6 +2556,10 @@ export interface paths {
          *     - `set-policies` — set property policies (`property_id`, plus policy fields).
          *
          *     Missing required fields per action return a validation error; upstream failures surface as `booking_error`.
+         *
+         *     Every action that takes a `property_id` requires a property connected to this workspace; any other id returns `404 not_found`.
+         *
+         *     Returns `403 listing_inactive` when any listing mapped to the Booking.com property is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
         post: operations["booking_setup"];
         delete?: never;
@@ -2359,18 +2577,21 @@ export interface paths {
         };
         /**
          * List Booking.com webhook subscriptions
-         * @description List the workspace's Booking.com Content Notification Service (CNS) subscriptions — the notification types Booking pushes to your callback URLs.
+         * @deprecated
+         * @description **Not available through the API — always returns `403 forbidden`.** Booking.com notification subscriptions belong to the Repull platform account that every workspace shares: they are per notification type, not per property, so reading or changing them would affect every workspace. Booking.com events for your own properties are delivered through Repull webhooks — subscribe with `POST /v1/webhooks`.
          */
         get: operations["list_booking_webhooks"];
         put?: never;
         /**
          * Subscribe to a Booking.com notification
-         * @description Subscribe to a Booking.com CNS notification type, delivered to `callback_url`. Returns 201 on success.
+         * @deprecated
+         * @description **Not available through the API — always returns `403 forbidden`.** Booking.com notification subscriptions belong to the Repull platform account that every workspace shares: they are per notification type, not per property, so reading or changing them would affect every workspace. Booking.com events for your own properties are delivered through Repull webhooks — subscribe with `POST /v1/webhooks`.
          */
         post: operations["create_booking_webhook"];
         /**
          * Unsubscribe from a Booking.com notification
-         * @description Remove a Booking.com CNS subscription. Pass the `notification_type` to unsubscribe as a query param — required.
+         * @deprecated
+         * @description **Not available through the API — always returns `403 forbidden`.** Booking.com notification subscriptions belong to the Repull platform account that every workspace shares: they are per notification type, not per property, so reading or changing them would affect every workspace. Booking.com events for your own properties are delivered through Repull webhooks — subscribe with `POST /v1/webhooks`.
          */
         delete: operations["delete_booking_webhook"];
         options?: never;
@@ -2388,6 +2609,8 @@ export interface paths {
         /**
          * List VRBO listings
          * @description List VRBO listings this workspace owns. VRBO is agency-model — Repull reads listings via the public iCal/HTTP feeds.
+         *
+         *     Inactive listings are left out; they keep syncing and reappear once activated. Use `GET /v1/listings?status=inactive` to find them.
          */
         get: operations["list_vrbo_listings"];
         put?: never;
@@ -2408,6 +2631,8 @@ export interface paths {
         /**
          * List VRBO reservations
          * @description Cursor-paginated list of VRBO reservations sourced from the public booking feed. Lag is typically 5-10 minutes vs. Airbnb / Booking.com. `?offset=` is accepted as a first-class alias for `?cursor=` (mutually exclusive; offset capped at 10000).
+         *
+         *     Reservations on inactive listings are left out (counts and cursors included); they keep syncing and reappear once the listing is activated.
          */
         get: operations["list_vrbo_reservations"];
         put?: never;
@@ -2448,11 +2673,15 @@ export interface paths {
         /**
          * Get Plumguide availability
          * @description Read the per-day availability calendar for a Plumguide listing. Returns the same row shape as Airbnb availability for SDK convenience.
+         *
+         *     Returns `403 listing_inactive` when the listing this resolves to is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
         get: operations["get_plumguide_availability"];
         /**
          * Push availability to Plumguide
          * @description Push per-day availability changes to Plumguide. Plumguide accepts only the next 24 months — dates beyond that are silently ignored.
+         *
+         *     Returns `403 listing_inactive` when the listing this resolves to is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
         put: operations["update_plumguide_availability"];
         post?: never;
@@ -2472,11 +2701,15 @@ export interface paths {
         /**
          * Get Plumguide pricing
          * @description Read the current pricing for a Plumguide listing (base price, currency, weekend uplift).
+         *
+         *     Returns `403 listing_inactive` when the listing this resolves to is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
         get: operations["get_plumguide_pricing"];
         /**
          * Push pricing to Plumguide
          * @description Push pricing changes to Plumguide. Plumguide rounds all prices to whole units of the listing currency — sub-unit precision is silently truncated.
+         *
+         *     Returns `403 listing_inactive` when the listing this resolves to is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
         put: operations["update_plumguide_pricing"];
         post?: never;
@@ -2496,6 +2729,8 @@ export interface paths {
         /**
          * List Plumguide bookings
          * @description List Plumguide bookings. Default returns all bookings; pass `listing_id` to filter to one listing, or `booking_code` to fetch a single booking.
+         *
+         *     Returns `403 listing_inactive` when `listing_id` or `booking_code` resolves to an inactive listing. The unfiltered list is read straight from Plum Guide and is not filtered by listing status.
          */
         get: operations["list_plumguide_bookings"];
         put?: never;
@@ -2544,12 +2779,16 @@ export interface paths {
         /**
          * Get pricing recommendations
          * @description Returns date-by-date pricing recommendations for a listing's upcoming calendar window, plus the listing's base-price context and a 5km comp summary. Recommendations come from the Atlas pricing model — pre-computed nightly and stored in `pricing_recommendations`. Use POST to apply or decline pending recommendations.
+         *
+         *     Returns `403 listing_inactive` when the listing is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
         get: operations["get_listing_pricing"];
         put?: never;
         /**
          * Apply or decline pricing recommendations
          * @description Apply: writes the recommended price to the listing's calendar for the given dates and triggers the platform fan-out (Airbnb / Booking.com / VRBO). Decline: marks the recommendation as `declined` so it stops surfacing — the model can re-recommend on the next training cycle.
+         *
+         *     Returns `403 listing_inactive` when the listing is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
         post: operations["apply_listing_pricing"];
         delete?: never;
@@ -2568,11 +2807,15 @@ export interface paths {
         /**
          * Get pricing strategy
          * @description Returns the strategy that constrains how the Atlas pricing model behaves for this listing. If no strategy row exists yet, returns sane defaults flagged with `isDefault: true`.
+         *
+         *     Returns `403 listing_inactive` when the listing is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
         get: operations["get_listing_pricing_strategy"];
         /**
          * Update pricing strategy
          * @description Upserts the strategy on `(listing_id, customer_id)` — repeated PUTs are idempotent. Send only the fields you want to change; omitted fields take server-side defaults.
+         *
+         *     Returns `403 listing_inactive` when the listing is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
         put: operations["update_listing_pricing_strategy"];
         post?: never;
@@ -2600,6 +2843,8 @@ export interface paths {
          *     - Tier-limit accounting: this endpoint counts as **1 API call** regardless of how many items the body contains.
          *
          *     Apply path writes the recommended price to each listing's calendar via the calendar service (which fans out to Airbnb/Booking/VRBO) then marks the Atlas recommendation `applied`. Decline path is Atlas-only — fast.
+         *
+         *     Returns `403 listing_inactive` naming every inactive listing when any listing in the request is inactive; nothing is written.
          */
         post: operations["bulkApplyPricing"];
         delete?: never;
@@ -2622,6 +2867,8 @@ export interface paths {
          *     Defaults to ±90 days from today. Cursor is a keyset on `date ASC` — stable even if rows are added during a partner's pagination walk. `limit` is capped at 500 — exceeding returns 422.
          *
          *     `?offset=` is also accepted as a first-class alias for shallow paging (0..10000) — see the `offset` parameter below. Mutually exclusive with `cursor`.
+         *
+         *     Returns `403 listing_inactive` when the listing is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
         get: operations["getListingPricingHistory"];
         put?: never;
@@ -2644,6 +2891,8 @@ export interface paths {
          * @description Returns the actual comp set for a listing — the underlying competitor listings (with daily nightly pricing), not just the aggregated `compSummary` from `/pricing`. Each comp comes back with distance, bedrooms, ratings, lat/lng, platform link, and a per-day rate/availability series for the requested window.
          *
          *     Powered by Atlas. Comps with no coordinates are excluded — there's no way to rank them by distance. Listings without coordinates return `data: []` and a `warning` field.
+         *
+         *     Returns `403 listing_inactive` when the listing is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
         get: operations["listListingComps"];
         put?: never;
@@ -2669,6 +2918,8 @@ export interface paths {
          *     - What's the ADR uplift for moving up a tier?
          *
          *     DNA coverage is still ramping — segments are scored asynchronously. Cities and radii without scored comps return `totalCompsAnalyzed: 0` plus a `low_dna_coverage` recommendation rather than fabricated data.
+         *
+         *     Returns `403 listing_inactive` when the listing is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
         get: operations["getListingSegments"];
         put?: never;
@@ -2792,7 +3043,7 @@ export interface paths {
         };
         /**
          * List API request logs
-         * @description Cursor-paginated raw API request log for the authenticated workspace, newest first. Filter by time `range`, `operation` id(s), status class, or free-text `q`. Walk pages with `cursor` from `pagination.next_cursor` until `pagination.has_more` is `false`; `offset` is accepted as a shallow alias (deep walks must use `cursor`).
+         * @description Cursor-paginated raw API request log for the authenticated workspace, newest first. Filter by time `range`, `operation` id(s), status class, or free-text `q`. Walk pages with `cursor` from `pagination.nextCursor` until `pagination.hasMore` is `false`; `offset` is accepted as a shallow alias (deep walks must use `cursor`).
          */
         get: operations["get_usage_logs"];
         put?: never;
@@ -2951,6 +3202,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/listings/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Activate or deactivate listings in bulk
+         * @description Sets up to 500 listings active or inactive in one call. Send `{ "listingIds": ["4118", "4119"], "active": false }` to deactivate them, or `"active": true` to activate them.
+         *
+         *     An inactive listing is not counted toward your plan's listing limit or billed. It is NOT deleted and the upstream channel (Airbnb / Booking.com / your PMS) is never touched — its data keeps syncing, so it is complete the moment you activate it again. Until then it cannot be read, changed, or receive webhooks.
+         *
+         *     **All or nothing.** Nothing changes unless the whole request can be applied:
+         *     - If any id is not one of your listings, the call returns `404` naming those ids.
+         *     - If activating would take you over your plan's listing limit, the call returns `402 listings_limit_exceeded`. Only listings that are currently inactive count toward the new total, so re-sending ids that are already active never trips the limit.
+         *
+         *     Deactivating is always allowed, including when your account is already over its limit — it is how you get back under it.
+         *
+         *     **Idempotent.** Ids already in the requested state are returned in `unchanged`; ids this call changed are returned in `updated`.
+         *
+         *     For a single listing, `PATCH /v1/listings/{id}` does the same.
+         */
+        post: operations["setListingsStatus"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2961,6 +3244,8 @@ export interface components {
          *     Field availability differs by endpoint:
          *     - `channels` is returned by the list endpoint (`GET /v1/properties`) only.
          *     - `latitude`, `longitude`, `createdAt`, and `amenities` are returned by the detail endpoint (`GET /v1/properties/{id}`) only. `amenities` requires `?include=amenities`.
+         *
+         *     An **inactive** property (`status: inactive`) appears only in the list endpoint, and only when `?status=inactive|all` asks for it. Such a row carries identity fields only — `id`, `name`, `status`, `lifecycleStatus`, `channels`, `updatedAt` — so every other field is absent until the property is activated. Every other endpoint answers `403 listing_inactive` for it.
          */
         Property: {
             /** @description Internal Repull property ID. Equal to the listing id (`listings.id`); the same integer is used as `listingId` on reservations and `propertyId` on availability. */
@@ -3709,6 +3994,24 @@ export interface components {
             createdAt?: string;
             /** @description Host metadata, populated for Airbnb when the host row exists. Null for other providers (per-provider enrichment is incremental). */
             host?: components["schemas"]["ConnectHost"] | null;
+            /** @description Airbnb only: every Airbnb account this workspace has connected, including ones since disconnected. Pass `externalAccountId` as `accountId` to `DELETE /v1/connect/airbnb` to disconnect one account. */
+            accounts?: {
+                /**
+                 * @description Airbnb host ID, as a string (it can exceed 2^53).
+                 * @example 79730216
+                 */
+                externalAccountId?: string;
+                /** @example Raiden */
+                name?: string | null;
+                pictureUrl?: string | null;
+                /** @example active */
+                status?: string | null;
+                /**
+                 * @description True while the account is active and its authorization is usable.
+                 * @example true
+                 */
+                connected?: boolean;
+            }[];
         };
         /** @description A registered webhook endpoint. The `secret` field is only present in the response of `POST /v1/webhooks` and `POST /v1/webhooks/{id}/rotate-secret` (Stripe pattern — capture it then; it is masked everywhere else). */
         WebhookSubscription: {
@@ -4525,7 +4828,7 @@ export interface components {
             apiVersion?: string;
             data: components["schemas"]["RepullPingPayload"];
         };
-        /** @description The full event envelope POSTed to your webhook URL. Discriminated on `type` — narrow `event.data` by switching on `event.type`. Use the matching `*Event` variant directly if your SDK lacks discriminator support. */
+        /** @description The full event envelope POSTed to your webhook URL. Discriminated on `type` — narrow `event.data` by switching on `event.type`. Use the matching `*Event` variant directly if your SDK lacks discriminator support. Events about an inactive listing (reservations, messages, alterations, reviews, payments, calendar and listing events) are not delivered. The data keeps syncing while the listing is inactive, but its events are never sent — including after you reactivate it; webhooks resume for events that happen from reactivation on. Account-level events are always delivered. */
         WebhookEvent: components["schemas"]["ReservationCreatedEvent"] | components["schemas"]["ReservationUpdatedEvent"] | components["schemas"]["ReservationCancelledEvent"] | components["schemas"]["ReservationMessageReceivedEvent"] | components["schemas"]["ReservationAlterationCreatedEvent"] | components["schemas"]["ReservationAlterationRespondedEvent"] | components["schemas"]["ListingCreatedEvent"] | components["schemas"]["ListingUpdatedEvent"] | components["schemas"]["ListingDeletedEvent"] | components["schemas"]["CalendarUpdatedEvent"] | components["schemas"]["AccountCreatedEvent"] | components["schemas"]["AccountDisconnectedEvent"] | components["schemas"]["ReviewCreatedEvent"] | components["schemas"]["ReviewRespondedEvent"] | components["schemas"]["AiOperationCompletedEvent"] | components["schemas"]["AiOperationFailedEvent"] | components["schemas"]["PaymentCompletedEvent"] | components["schemas"]["PaymentRefundedEvent"] | components["schemas"]["RepullPingEvent"];
         /** @description A Vanio listing paired with its Airbnb connection rows. The list endpoint groups every `listings_airbnb` row that points at the same Vanio `listingId` under a single `connections[]` array. */
         AirbnbListing: {
@@ -4942,6 +5245,13 @@ export interface components {
                  */
                 did_you_mean?: string;
                 /**
+                 * @description Every inactive listing the request involved. Present on `code: "listing_inactive"` (HTTP 403) — activate these ids and retry.
+                 * @example [
+                 *       "4118"
+                 *     ]
+                 */
+                listing_ids?: string[];
+                /**
                  * @description Seconds the client should wait before retrying. Mirrors the `Retry-After` HTTP header. Present on rate-limit responses and on transient upstream failures that are safe to retry.
                  * @example 60
                  */
@@ -5162,7 +5472,7 @@ export interface components {
         AirbnbConnectionResponse: {
             data: components["schemas"]["AirbnbConnectionSummary"];
         };
-        /** @description Cursor-paginated Airbnb reservation list. Pass `pagination.next_cursor` back as `?cursor=` to fetch the next page; stop when `pagination.has_more` is `false`. */
+        /** @description Cursor-paginated Airbnb reservation list. Pass `pagination.nextCursor` back as `?cursor=` to fetch the next page; stop when `pagination.hasMore` is `false`. */
         AirbnbReservationListResponse: {
             data?: components["schemas"]["AirbnbReservation"][];
             pagination?: components["schemas"]["CursorPagination"];
@@ -5243,6 +5553,20 @@ export interface components {
             id?: string;
             /** @description The resulting active state after the toggle. */
             active?: boolean;
+        };
+        ListingStatusBatchRequest: {
+            /** @description Listing ids to change, 1 to 500, each at most once. Send them as returned by `GET /v1/listings` (strings); plain integers are accepted too. */
+            listingIds: string[];
+            /** @description `false` deactivates every listing in `listingIds`; `true` activates them. Active listings count toward your plan's listing limit. */
+            active: boolean;
+        };
+        ListingStatusBatchResponse: {
+            /** @description The state every listing in the request is now in. */
+            active: boolean;
+            /** @description Listing ids whose state this call changed, in request order. */
+            updated: string[];
+            /** @description Listing ids that were already in the requested state, in request order. */
+            unchanged: string[];
         };
         /** @description Canonical PMS-owned listing content. Every field is optional — this is a partial update, only the fields you send are written; absent fields are left untouched. This is a LOCAL write only: it does NOT push to Airbnb/Booking.com. Distribution is a separate explicit publish step. `photos` are ingested by URL and attached to the listing in order (full-replace by default, or append via `photosMode`). */
         ListingContentUpdateRequest: {
@@ -5550,7 +5874,11 @@ export interface components {
             /** @description Optional free-form instruction for the guest (e.g. WiFi password, parking notes). */
             instruction?: string | null;
         };
-        /** @description A vacation rental listing in your Repull workspace. */
+        /**
+         * @description A vacation rental listing in your Repull workspace.
+         *
+         *     An **inactive** listing appears only in `GET /v1/listings`, and only when `?status=` asks for it. Such a row carries identity fields only — `id`, `name`, `status`, `channels` — so `address`, `thumbnailUrl`, `content`, `details`, `createdAt` and `updatedAt` are absent until the listing is activated. `GET /v1/listings/{id}` and every other listing endpoint answer `403 listing_inactive` for it.
+         */
         Listing: {
             /** @description Repull listing id */
             id?: string;
@@ -6022,30 +6350,35 @@ export interface components {
             /** @description For `type: "rates"` each item is a `BookingPricingRateUpdate`; for `type: "availability"` a `BookingAvailabilityUpdate`; for `type: "derived-pricing"` a derived-price rule set. */
             updates: (components["schemas"]["BookingPricingRateUpdate"] | components["schemas"]["BookingAvailabilityUpdate"])[];
         };
-        /** @description One calendar operation. Supply either `start_date` + `end_date` OR a `dates` array. Every restriction here is forwarded verbatim to Airbnb's batch calendar API. */
+        /** @description One calendar operation, applied to every date it names. Supply either `dates` OR a `start_date` + `end_date` pair (not both). Unknown fields are refused with `422 invalid_params` rather than dropped, so a misspelling such as `price` (the field is `daily_price`) can never look like a successful write. */
         AirbnbCalendarOperation: {
             /**
              * Format: date
-             * @description Inclusive range start (pair with `end_date`).
+             * @description Inclusive range start, YYYY-MM-DD. Send together with `end_date`.
              */
             start_date?: string | null;
             /**
              * Format: date
-             * @description Inclusive range end (pair with `start_date`).
+             * @description Inclusive range end, YYYY-MM-DD, on or after `start_date`.
              */
             end_date?: string | null;
-            /** @description Explicit date or `start:end` range strings, as an alternative to `start_date`/`end_date`. */
+            /** @description Dates as `YYYY-MM-DD`, or inclusive ranges as `YYYY-MM-DD:YYYY-MM-DD` — an alternative to `start_date`/`end_date`. */
             dates?: string[] | null;
-            /** @description Nightly price override. */
+            /** @description Nightly price override, in the listing currency. */
             daily_price?: number | null;
             /**
              * @description Stop-sell is expressed here: `unavailable` blocks the date(s); `available` re-opens; `default` reverts to rule-based availability.
              * @enum {string|null}
              */
             availability?: "available" | "unavailable" | "default" | null;
+            /**
+             * @description Why a blocked date is blocked. Airbnb requires it whenever `availability` is `unavailable`; when you leave it out, Repull sends **`BLOCKED_BY_HOST`**. Use `OUTSIDE_RESERVATION` for a date held by a booking made on another channel.
+             * @enum {string|null}
+             */
+            busy_subtype?: "BLOCKED_BY_HOST" | "OUTSIDE_RESERVATION" | null;
             /** @description Minimum length of stay for the date(s). */
             min_nights?: number | null;
-            /** @description Maximum length of stay for the date(s). */
+            /** @description Maximum length of stay for the date(s); no lower than `min_nights`. */
             max_nights?: number | null;
             /** @description Closed-to-arrival — no check-ins on the affected date(s). */
             closed_to_arrival?: boolean | null;
@@ -6070,17 +6403,25 @@ export interface components {
             type: "model" | "standard" | "los" | "rate-plan" | "fees" | "currency" | "rule" | "calendar";
             /** @description Required when `type: "calendar"`. Batch of per-date price + restriction operations. */
             operations?: components["schemas"]["AirbnbCalendarOperation"][];
-            /** @description Required when `type: "model"` — the pricing-availability model to switch the listing to. */
-            modelType?: string | null;
+            /**
+             * @description Required when `type: "model"` — the pricing-availability model to switch the listing to.
+             * @enum {string|null}
+             */
+            modelType?: "STANDARD" | "LOS_RECORD" | "RATE_PLAN" | null;
             /** @description Required for `type: "standard" | "rate-plan" | "fees"` — the pricing-settings object to PUT. */
             settings?: {
                 [key: string]: unknown;
             } | null;
             /** @description Required for `type: "los"` — length-of-stay records. */
-            records?: {
+            records?: ({
+                /** Format: date */
+                check_in_date: string;
+                guest_count: number;
+                los_data: number[][];
+            } & {
                 [key: string]: unknown;
-            }[] | null;
-            /** @description Required for `type: "currency"` — ISO 4217 code. */
+            })[] | null;
+            /** @description Required for `type: "currency"` — ISO 4217 code in capitals, e.g. `USD`. */
             currency?: string | null;
             /** @description Required for `type: "rule"` — a single pricing rule appended to the listing. */
             rule?: {
@@ -6597,6 +6938,8 @@ export interface components {
             hotelType?: string | null;
             country?: string | null;
             city?: string | null;
+            /** @description Capabilities Booking.com explicitly refused for this property (HTTP 401/403), usually empty. `content` means the connection is live and syncs reservations, rates and messages normally, but the Content API was never granted, so the property name, rooms and photos cannot be read from Booking.com and are substituted. A capability whose probe failed for any other reason is omitted rather than listed here. */
+            missingCapabilities?: ("content" | "reservations" | "rates" | "messaging")[];
         };
         /** @description A Booking.com room imported from the claimed hotel. The customer maps each room to one of their Repull listings via `mapConnectBookingRooms`. */
         BookingConnectRoom: {
@@ -6629,13 +6972,17 @@ export interface components {
             hotelId: string;
             rooms: components["schemas"]["BookingConnectRoom"][];
             listingOptions: components["schemas"]["BookingConnectListingOption"][];
+            /** @description Capabilities Booking.com explicitly refused for this property, usually empty. `content` means reservations, availability and messaging sync normally, but the Content API was never granted — so room names and photos are placeholders, and nightly prices cannot be published until the grant is added (the currency is unknown and is never guessed). */
+            missingCapabilities?: ("content" | "reservations" | "rates" | "messaging")[];
         };
-        /** @description A single room→listing assignment. Pass `listingId: null` to explicitly UNMAP a room (e.g. "skip this room for now") — this also removes the corresponding `listing_platform_links` row. */
+        /** @description A single room→listing assignment. Pass `listingId: null` to explicitly UNMAP a room (e.g. "skip this room for now") — this also removes the corresponding `listing_platform_links` row. Pass `create: true` instead of a `listingId` to have a listing created for the room, which is what a customer onboarding from Booking.com first needs, since they have no listings to map to yet. */
         BookingRoomMapping: {
             /** @description Repull-side `listings_booking_rooms.id` from `listConnectBookingRooms`. */
             roomId: string;
-            /** @description Repull listing to bind to this room. `null` to unmap. */
+            /** @description Repull listing to bind to this room. `null` to unmap. Omit when `create` is true. */
             listingId?: string | null;
+            /** @description Create a new listing for this room and map it, instead of binding an existing one. Mutually exclusive with `listingId` — sending both is rejected with 400 rather than silently resolved. Idempotent: a room that is already mapped keeps its existing listing and no duplicate is created. */
+            create?: boolean;
         };
         /** @description Body for `POST /v1/connect/booking/map-rooms`. Submits all room→listing assignments in one transaction; on success the Connect session is marked `completed`. */
         MapConnectBookingRoomsRequest: {
@@ -6649,6 +6996,8 @@ export interface components {
             mapped: number;
             sessionId: string;
             connectionId: string;
+            /** @description Reservations pulled from Booking.com once the rooms were mapped. Mapping triggers the same full property sync the dashboard's Sync button runs, because a reservation can only be resolved to a listing through a mapped room. `null` means the sync could not be run — the connection and mapping are still good, and the property can be synced from the dashboard. */
+            reservationsImported?: number | null;
         };
         /** @description Body for `POST /v1/channels/airbnb/listings/map`. */
         MapAirbnbListingRequest: {
@@ -6726,6 +7075,19 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
+        /**
+         * @description The listing this request addresses — directly, by a channel id, or through data that belongs to it (a reservation, a thread, a review) — is inactive (`error.code = "listing_inactive"`). An inactive listing keeps syncing, so nothing is lost, but it cannot be read, changed, or receive webhooks through the API until it is activated. `listing_ids` names every inactive listing involved; when a request names several listings and any is inactive, nothing is written.
+         *
+         *     Activate with `PATCH /v1/listings/{id}` and body `{"active": true}`, or several at once with `POST /v1/listings/status`. Active listings count toward the plan's listing limit. Checked after the not-found check, so an id outside this workspace is still a 404.
+         */
+        ListingInactive: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
         /** @description The resource id is well-formed but no matching row exists in this workspace. */
         NotFound: {
             headers: {
@@ -6746,6 +7108,52 @@ export interface components {
         };
         /** @description Request is well-formed but a parameter value is out of range or fails validation. */
         UnprocessableEntity: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /**
+         * @description The write cannot be made through the API, and retrying will not change that. Two cases:
+         *
+         *     - `connection_reauth_required` — Airbnb no longer accepts this connection for this listing: the host's authorization expired or was revoked, a token refresh was refused, or the listing was not selected when the host connected (Airbnb authorizes writes per listing). Reconnect Airbnb at https://repull.dev/dashboard/connections (or `POST /v1/connect/airbnb`), select the listing, then retry.
+         *     - `listing_inactive` — the listing is inactive. It keeps syncing, but cannot be read or changed through the API until it is activated with `PATCH /v1/listings/{id}` `{"active": true}`.
+         */
+        AirbnbWriteForbidden: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /**
+         * @description The request was refused as sent; resending the same body will be refused again. Two cases:
+         *
+         *     - `invalid_params` — the body failed validation before anything was sent to Airbnb. `field` names the offending field (e.g. `operations.0.max_nights`), `value_received` echoes it, and `fix` says what to send.
+         *     - `airbnb_rejected` — Airbnb refused the change; `message` carries Airbnb's own reason.
+         */
+        AirbnbWriteRejected: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /** @description Airbnb is rate-limiting writes for this host (`airbnb_rate_limited`). Wait `retry_after` seconds when present, otherwise back off exponentially, and batch dates into one `operations` array. */
+        AirbnbRateLimited: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /** @description Airbnb did not complete the request — an outage, timeout or server error on their side (`airbnb_error`). The request itself is fine: retry with exponential backoff. */
+        AirbnbUpstreamError: {
             headers: {
                 [name: string]: unknown;
             };
@@ -6837,7 +7245,7 @@ export interface components {
          *     **Watermark.** The bound is inclusive (`updatedAt >= value`), so the last row of the final page is the watermark for the next poll — re-polling with it re-emits that row. Delivery is at-least-once; upsert by `id`.
          */
         UpdatedSince: string;
-        /** @description First-class alias for cursor-based pagination. Mutually exclusive with `cursor` — passing both returns 422. Accepts integers in `[0, 10000]`; deeper walks must use `cursor` (constant per-page cost). The response always includes `pagination.next_cursor` so consumers can switch from offset → cursor mid-walk for deep pagination without re-keying. */
+        /** @description First-class alias for cursor-based pagination. Mutually exclusive with `cursor` — passing both returns 422. Accepts integers in `[0, 10000]`; deeper walks must use `cursor` (constant per-page cost). The response always includes `pagination.nextCursor` so consumers can switch from offset → cursor mid-walk for deep pagination without re-keying. */
         Offset: number;
     };
     requestBodies: never;
@@ -6878,11 +7286,11 @@ export interface operations {
                 limit?: number;
                 /** @description Opaque cursor returned in the previous response's `pagination.nextCursor`. Omit to fetch the first page. */
                 cursor?: string;
-                /** @description First-class alias for cursor-based pagination. Mutually exclusive with `cursor` — passing both returns 422. Accepts integers in `[0, 10000]`; deeper walks must use `cursor` (constant per-page cost). The response always includes `pagination.next_cursor` so consumers can switch from offset → cursor mid-walk for deep pagination without re-keying. */
+                /** @description First-class alias for cursor-based pagination. Mutually exclusive with `cursor` — passing both returns 422. Accepts integers in `[0, 10000]`; deeper walks must use `cursor` (constant per-page cost). The response always includes `pagination.nextCursor` so consumers can switch from offset → cursor mid-walk for deep pagination without re-keying. */
                 offset?: components["parameters"]["Offset"];
                 /** @description Case-insensitive substring search on name, street, or city. */
                 q?: string;
-                /** @description Filter by status. Default returns active only; pass `inactive` to invert or `all` to include both. */
+                /** @description Filter by status. Default returns active only; pass `inactive` to invert or `all` to include both. Inactive properties carry identity fields only — `id`, `name`, `status`, `lifecycleStatus`, `channels` and `updatedAt` — never `address`, `city` or `currency`. */
                 status?: "active" | "inactive" | "all";
                 /** @description Filter by lifecycle status (e.g. `live`, `draft`, `archived`). Pass `all` to disable the filter. */
                 lifecycle_status?: string;
@@ -6954,6 +7362,7 @@ export interface operations {
                     "application/json": components["schemas"]["Property"];
                 };
             };
+            403: components["responses"]["ListingInactive"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["UnprocessableEntity"];
         };
@@ -6984,6 +7393,7 @@ export interface operations {
                     "application/json": components["schemas"]["PropertyAvailability"];
                 };
             };
+            403: components["responses"]["ListingInactive"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["UnprocessableEntity"];
         };
@@ -7013,6 +7423,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["UnprocessableEntity"];
         };
@@ -7024,7 +7435,7 @@ export interface operations {
                 limit?: number;
                 /** @description Opaque cursor returned in the previous response's `pagination.nextCursor`. Omit to fetch the first page. */
                 cursor?: string;
-                /** @description First-class alias for cursor-based pagination. Mutually exclusive with `cursor` — passing both returns 422. Accepts integers in `[0, 10000]`; deeper walks must use `cursor` (constant per-page cost). The response always includes `pagination.next_cursor` so consumers can switch from offset → cursor mid-walk for deep pagination without re-keying. */
+                /** @description First-class alias for cursor-based pagination. Mutually exclusive with `cursor` — passing both returns 422. Accepts integers in `[0, 10000]`; deeper walks must use `cursor` (constant per-page cost). The response always includes `pagination.nextCursor` so consumers can switch from offset → cursor mid-walk for deep pagination without re-keying. */
                 offset?: components["parameters"]["Offset"];
                 /** @description Filter by booking platform */
                 platform?: string;
@@ -7112,6 +7523,7 @@ export interface operations {
                     "application/json": components["schemas"]["ReservationListResponse"];
                 };
             };
+            403: components["responses"]["ListingInactive"];
             422: components["responses"]["UnprocessableEntity"];
         };
     };
@@ -7147,6 +7559,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
             /** @description The property, or the supplied `guestId`, does not exist in this workspace. */
             404: {
                 headers: {
@@ -7185,6 +7598,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["UnprocessableEntity"];
             500: components["responses"]["InternalError"];
@@ -7225,6 +7639,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
             /** @description The reservation, or the destination property when moving, does not exist in this workspace. */
             404: {
                 headers: {
@@ -7243,7 +7658,7 @@ export interface operations {
             query?: {
                 /** @description Opaque cursor returned in the previous response's `pagination.nextCursor`. Omit to fetch the first page. */
                 cursor?: string;
-                /** @description First-class alias for cursor-based pagination. Mutually exclusive with `cursor` — passing both returns 422. Accepts integers in `[0, 10000]`; deeper walks must use `cursor` (constant per-page cost). The response always includes `pagination.next_cursor` so consumers can switch from offset → cursor mid-walk for deep pagination without re-keying. */
+                /** @description First-class alias for cursor-based pagination. Mutually exclusive with `cursor` — passing both returns 422. Accepts integers in `[0, 10000]`; deeper walks must use `cursor` (constant per-page cost). The response always includes `pagination.nextCursor` so consumers can switch from offset → cursor mid-walk for deep pagination without re-keying. */
                 offset?: components["parameters"]["Offset"];
                 /** @description Max items per page. Hard cap is 100. */
                 limit?: number;
@@ -7274,6 +7689,15 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            /** @description `listing_inactive` — `listing_id` names an inactive listing. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
             422: components["responses"]["UnprocessableEntity"];
             500: components["responses"]["InternalError"];
         };
@@ -7348,6 +7772,15 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            /** @description `listing_inactive` — every reservation this guest has is on an inactive listing. The error names those listings. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
             404: components["responses"]["NotFound"];
             500: components["responses"]["InternalError"];
         };
@@ -7357,7 +7790,7 @@ export interface operations {
             query?: {
                 /** @description Opaque cursor returned in the previous response's `pagination.nextCursor`. Omit to fetch the first page. */
                 cursor?: string;
-                /** @description First-class alias for cursor-based pagination. Mutually exclusive with `cursor` — passing both returns 422. Accepts integers in `[0, 10000]`; deeper walks must use `cursor` (constant per-page cost). The response always includes `pagination.next_cursor` so consumers can switch from offset → cursor mid-walk for deep pagination without re-keying. */
+                /** @description First-class alias for cursor-based pagination. Mutually exclusive with `cursor` — passing both returns 422. Accepts integers in `[0, 10000]`; deeper walks must use `cursor` (constant per-page cost). The response always includes `pagination.nextCursor` so consumers can switch from offset → cursor mid-walk for deep pagination without re-keying. */
                 offset?: components["parameters"]["Offset"];
                 /** @description Max items per page. Hard cap is 100. */
                 limit?: number;
@@ -7416,6 +7849,15 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            /** @description `listing_inactive` — the conversation belongs to an inactive listing. The error names the listing. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
             404: components["responses"]["NotFound"];
             500: components["responses"]["InternalError"];
         };
@@ -7425,7 +7867,7 @@ export interface operations {
             query?: {
                 /** @description Opaque cursor returned in the previous response's `pagination.nextCursor`. */
                 cursor?: string;
-                /** @description First-class alias for cursor-based pagination. Mutually exclusive with `cursor` — passing both returns 422. Accepts integers in `[0, 10000]`; deeper walks must use `cursor` (constant per-page cost). The response always includes `pagination.next_cursor` so consumers can switch from offset → cursor mid-walk for deep pagination without re-keying. */
+                /** @description First-class alias for cursor-based pagination. Mutually exclusive with `cursor` — passing both returns 422. Accepts integers in `[0, 10000]`; deeper walks must use `cursor` (constant per-page cost). The response always includes `pagination.nextCursor` so consumers can switch from offset → cursor mid-walk for deep pagination without re-keying. */
                 offset?: components["parameters"]["Offset"];
                 limit?: number;
                 /** @description `desc` (default) returns newest first. `asc` returns chronological replay. */
@@ -7454,6 +7896,15 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            /** @description `listing_inactive` — the conversation belongs to an inactive listing. The error names the listing. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
             404: components["responses"]["NotFound"];
             422: components["responses"]["UnprocessableEntity"];
             500: components["responses"]["InternalError"];
@@ -7494,6 +7945,15 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            /** @description `listing_inactive` — the conversation belongs to an inactive listing, so nothing was sent. The error names the listing. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
             /** @description The conversation does not exist in this workspace. */
             404: {
                 headers: {
@@ -7520,7 +7980,7 @@ export interface operations {
             query?: {
                 /** @description Opaque cursor returned in the previous response's `pagination.nextCursor`. */
                 cursor?: string;
-                /** @description First-class alias for cursor-based pagination. Mutually exclusive with `cursor` — passing both returns 422. Accepts integers in `[0, 10000]`; deeper walks must use `cursor` (constant per-page cost). The response always includes `pagination.next_cursor` so consumers can switch from offset → cursor mid-walk for deep pagination without re-keying. */
+                /** @description First-class alias for cursor-based pagination. Mutually exclusive with `cursor` — passing both returns 422. Accepts integers in `[0, 10000]`; deeper walks must use `cursor` (constant per-page cost). The response always includes `pagination.nextCursor` so consumers can switch from offset → cursor mid-walk for deep pagination without re-keying. */
                 offset?: components["parameters"]["Offset"];
                 limit?: number;
                 platform?: "airbnb" | "booking" | "vrbo";
@@ -7553,6 +8013,15 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            /** @description `listing_inactive` — `listing_id` names an inactive listing. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
             422: components["responses"]["UnprocessableEntity"];
             500: components["responses"]["InternalError"];
         };
@@ -7583,6 +8052,15 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            /** @description `listing_inactive` — the review belongs to an inactive listing. The error names the listing. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
             404: components["responses"]["NotFound"];
             500: components["responses"]["InternalError"];
         };
@@ -7741,7 +8219,7 @@ export interface operations {
                      */
                     redirectUrl?: string;
                     /**
-                     * @description Airbnb only — selects the OAuth scope set. 'read_only' grants read-only scopes; 'messaging' grants read scopes plus message read/send but NOT property management, so it can coexist with another app (e.g. an existing PMS) that already holds property management on the same Airbnb account; 'full_access' (default) grants full host scopes including the exclusive property management (only one app per Airbnb account can hold it).
+                     * @description Airbnb only — selects the OAuth scope set. 'read_only' grants read-only scopes; 'messaging' grants read scopes plus message read/send but NOT property management, so it can coexist with another app (e.g. an existing PMS) that already holds property management on the same Airbnb account; 'full_access' (default) grants full host scopes including the exclusive property management (only one app per Airbnb account can hold it). The hosted consent screen normally lets the host pick a tier; passing `accessType` explicitly fixes the tier and hides that choice, so the host can only continue with the tier you requested. Omit it to let the host choose.
                      * @default full_access
                      * @enum {string}
                      */
@@ -7774,7 +8252,10 @@ export interface operations {
     };
     delete_connection: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description The account to disconnect: the Airbnb host id (`accounts[].externalAccountId` on `GET /v1/connect/airbnb`) or the Booking.com hotel id. Required when the workspace has more than one connected account for the provider. Not the same as the `X-Account-Id` header. */
+                accountId?: string;
+            };
             header?: never;
             path: {
                 /** @description PMS provider slug (e.g., hostaway, guesty, ownerrez) */
@@ -7784,14 +8265,27 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Disconnected */
+            /** @description The account was disconnected */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @description Always `true` on success. */
+                        disconnected: boolean;
+                        /** @description The provider the account belonged to. */
+                        provider: string;
+                        /** @description The account that was disconnected. `null` only when the workspace had a stale connection record with no account to name, which was cleared. */
+                        accountId: string | null;
+                        /** @description Ids of the listings this call deactivated. Listings still connected through another account or channel are not included and stay active. */
+                        listingsDeactivated: string[];
+                    };
+                };
             };
+            401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
+            422: components["responses"]["UnprocessableEntity"];
             /** @description Disconnecting this provider over the API is not supported — the `fix` field explains how to disconnect it at the source */
             501: {
                 headers: {
@@ -8363,6 +8857,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["UnprocessableEntity"];
         };
@@ -8395,6 +8890,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["UnprocessableEntity"];
         };
@@ -8432,6 +8928,15 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            /** @description `listing_inactive` — the review belongs to an inactive listing, so no reply was sent. The error names the listing. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
             404: components["responses"]["NotFound"];
             422: components["responses"]["UnprocessableEntity"];
         };
@@ -8817,7 +9322,7 @@ export interface operations {
             query?: {
                 limit?: number;
                 cursor?: string;
-                /** @description First-class alias for cursor-based pagination. Mutually exclusive with `cursor` — passing both returns 422. Accepts integers in `[0, 10000]`; deeper walks must use `cursor` (constant per-page cost). The response always includes `pagination.next_cursor` so consumers can switch from offset → cursor mid-walk for deep pagination without re-keying. */
+                /** @description First-class alias for cursor-based pagination. Mutually exclusive with `cursor` — passing both returns 422. Accepts integers in `[0, 10000]`; deeper walks must use `cursor` (constant per-page cost). The response always includes `pagination.nextCursor` so consumers can switch from offset → cursor mid-walk for deep pagination without re-keying. */
                 offset?: components["parameters"]["Offset"];
                 status?: "success" | "failure" | "all";
             };
@@ -8881,6 +9386,15 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description `listing_inactive` — the event belongs to a listing that is inactive, so it is not delivered. The error message names it; activate it with `PATCH /v1/listings/{id}` and body `{"active": true}`. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
             };
         };
     };
@@ -8979,6 +9493,7 @@ export interface operations {
                     "application/json": components["schemas"]["AirbnbListing"];
                 };
             };
+            403: components["responses"]["ListingInactive"];
         };
     };
     airbnb_listing_action: {
@@ -9003,6 +9518,7 @@ export interface operations {
                 };
                 content?: never;
             };
+            403: components["responses"]["ListingInactive"];
             422: components["responses"]["UnprocessableEntity"];
         };
     };
@@ -9028,6 +9544,7 @@ export interface operations {
                     "application/json": components["schemas"]["MapAirbnbListingResponse"];
                 };
             };
+            403: components["responses"]["ListingInactive"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
             422: components["responses"]["UnprocessableEntity"];
@@ -9051,6 +9568,7 @@ export interface operations {
                 };
                 content?: never;
             };
+            403: components["responses"]["ListingInactive"];
         };
     };
     update_airbnb_listing_pricing: {
@@ -9075,6 +9593,11 @@ export interface operations {
                 };
                 content?: never;
             };
+            403: components["responses"]["AirbnbWriteForbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["AirbnbWriteRejected"];
+            429: components["responses"]["AirbnbRateLimited"];
+            502: components["responses"]["AirbnbUpstreamError"];
         };
     };
     get_airbnb_listing_availability: {
@@ -9095,6 +9618,7 @@ export interface operations {
                 };
                 content?: never;
             };
+            403: components["responses"]["ListingInactive"];
         };
     };
     update_airbnb_listing_availability: {
@@ -9119,6 +9643,11 @@ export interface operations {
                 };
                 content?: never;
             };
+            403: components["responses"]["AirbnbWriteForbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["AirbnbWriteRejected"];
+            429: components["responses"]["AirbnbRateLimited"];
+            502: components["responses"]["AirbnbUpstreamError"];
         };
     };
     list_airbnb_listing_photos: {
@@ -9139,6 +9668,7 @@ export interface operations {
                 };
                 content?: never;
             };
+            403: components["responses"]["ListingInactive"];
         };
     };
     upload_airbnb_listing_photos: {
@@ -9159,6 +9689,7 @@ export interface operations {
                 };
                 content?: never;
             };
+            403: components["responses"]["ListingInactive"];
         };
     };
     delete_airbnb_listing_photo: {
@@ -9187,6 +9718,7 @@ export interface operations {
                     };
                 };
             };
+            403: components["responses"]["ListingInactive"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["UnprocessableEntity"];
             500: components["responses"]["InternalError"];
@@ -9210,6 +9742,7 @@ export interface operations {
                     "application/json": components["schemas"]["AirbnbThreadListResponse"];
                 };
             };
+            403: components["responses"]["ListingInactive"];
         };
     };
     list_airbnb_thread_messages: {
@@ -9232,6 +9765,7 @@ export interface operations {
                     "application/json": components["schemas"]["MessageListResponse"];
                 };
             };
+            403: components["responses"]["ListingInactive"];
         };
     };
     send_airbnb_message: {
@@ -9268,6 +9802,7 @@ export interface operations {
                 content?: never;
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
             404: components["responses"]["NotFound"];
             500: components["responses"]["InternalError"];
         };
@@ -9275,9 +9810,9 @@ export interface operations {
     list_airbnb_reservations: {
         parameters: {
             query?: {
-                /** @description Opaque cursor returned by the previous response's `pagination.next_cursor`. Omit to fetch the first page. */
+                /** @description Opaque cursor returned by the previous response's `pagination.nextCursor`. Omit to fetch the first page. */
                 cursor?: string;
-                /** @description First-class alias for cursor-based pagination. Mutually exclusive with `cursor` — passing both returns 422. Accepts integers in `[0, 10000]`; deeper walks must use `cursor` (constant per-page cost). The response always includes `pagination.next_cursor` so consumers can switch from offset → cursor mid-walk for deep pagination without re-keying. */
+                /** @description First-class alias for cursor-based pagination. Mutually exclusive with `cursor` — passing both returns 422. Accepts integers in `[0, 10000]`; deeper walks must use `cursor` (constant per-page cost). The response always includes `pagination.nextCursor` so consumers can switch from offset → cursor mid-walk for deep pagination without re-keying. */
                 offset?: components["parameters"]["Offset"];
                 /** @description Max items per page. Hard cap is 100. */
                 limit?: number;
@@ -9307,6 +9842,7 @@ export interface operations {
                     "application/json": components["schemas"]["AirbnbReservationListResponse"];
                 };
             };
+            403: components["responses"]["ListingInactive"];
         };
     };
     get_airbnb_reservation: {
@@ -9329,6 +9865,7 @@ export interface operations {
                     "application/json": components["schemas"]["AirbnbReservation"];
                 };
             };
+            403: components["responses"]["ListingInactive"];
         };
     };
     airbnb_reservation_action: {
@@ -9349,6 +9886,7 @@ export interface operations {
                 };
                 content?: never;
             };
+            403: components["responses"]["ListingInactive"];
         };
     };
     list_airbnb_reviews: {
@@ -9369,6 +9907,7 @@ export interface operations {
                     "application/json": components["schemas"]["AirbnbReviewListResponse"];
                 };
             };
+            403: components["responses"]["ListingInactive"];
         };
     };
     respond_airbnb_review_legacy: {
@@ -9394,6 +9933,7 @@ export interface operations {
                 };
                 content?: never;
             };
+            403: components["responses"]["ListingInactive"];
         };
     };
     edit_airbnb_review: {
@@ -9422,6 +9962,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["UnprocessableEntity"];
             500: components["responses"]["InternalError"];
@@ -9456,6 +9997,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["UnprocessableEntity"];
             500: components["responses"]["InternalError"];
@@ -9488,6 +10030,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
             500: components["responses"]["InternalError"];
         };
     };
@@ -9529,6 +10072,7 @@ export interface operations {
                 content?: never;
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
             404: components["responses"]["NotFound"];
             500: components["responses"]["InternalError"];
         };
@@ -9558,6 +10102,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
             404: components["responses"]["NotFound"];
             500: components["responses"]["InternalError"];
         };
@@ -9586,6 +10131,7 @@ export interface operations {
                 content?: never;
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
             404: components["responses"]["NotFound"];
             500: components["responses"]["InternalError"];
         };
@@ -9614,6 +10160,7 @@ export interface operations {
                 content?: never;
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
             404: components["responses"]["NotFound"];
             500: components["responses"]["InternalError"];
         };
@@ -9720,6 +10267,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
             404: components["responses"]["NotFound"];
             500: components["responses"]["InternalError"];
         };
@@ -9760,6 +10308,7 @@ export interface operations {
                 content?: never;
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["UnprocessableEntity"];
             500: components["responses"]["InternalError"];
@@ -9793,6 +10342,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["UnprocessableEntity"];
             500: components["responses"]["InternalError"];
@@ -9828,6 +10378,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["UnprocessableEntity"];
             500: components["responses"]["InternalError"];
@@ -9856,6 +10407,7 @@ export interface operations {
                 content?: never;
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
             404: components["responses"]["NotFound"];
             500: components["responses"]["InternalError"];
         };
@@ -9887,6 +10439,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["UnprocessableEntity"];
             500: components["responses"]["InternalError"];
@@ -9924,6 +10477,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["UnprocessableEntity"];
             500: components["responses"]["InternalError"];
@@ -9958,6 +10512,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["UnprocessableEntity"];
             500: components["responses"]["InternalError"];
@@ -9990,6 +10545,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["UnprocessableEntity"];
             500: components["responses"]["InternalError"];
@@ -10021,6 +10577,7 @@ export interface operations {
                 content?: never;
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
             404: components["responses"]["NotFound"];
             500: components["responses"]["InternalError"];
         };
@@ -10053,6 +10610,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["UnprocessableEntity"];
             500: components["responses"]["InternalError"];
@@ -10087,6 +10645,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["UnprocessableEntity"];
             500: components["responses"]["InternalError"];
@@ -10128,6 +10687,7 @@ export interface operations {
                 content?: never;
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["UnprocessableEntity"];
             500: components["responses"]["InternalError"];
@@ -10163,14 +10723,14 @@ export interface operations {
             query?: {
                 /** @description Opaque cursor returned in the previous response's `pagination.nextCursor`. Omit to fetch the first page. */
                 cursor?: string;
-                /** @description First-class alias for cursor-based pagination. Mutually exclusive with `cursor` — passing both returns 422. Accepts integers in `[0, 10000]`; deeper walks must use `cursor` (constant per-page cost). The response always includes `pagination.next_cursor` so consumers can switch from offset → cursor mid-walk for deep pagination without re-keying. */
+                /** @description First-class alias for cursor-based pagination. Mutually exclusive with `cursor` — passing both returns 422. Accepts integers in `[0, 10000]`; deeper walks must use `cursor` (constant per-page cost). The response always includes `pagination.nextCursor` so consumers can switch from offset → cursor mid-walk for deep pagination without re-keying. */
                 offset?: components["parameters"]["Offset"];
                 /** @description Max items per page. Hard cap is 100. */
                 limit?: number;
                 /** @description Case-insensitive substring search on name, street, or city. */
                 q?: string;
-                /** @description Filter by listing status. */
-                status?: "active" | "inactive" | "archived";
+                /** @description Filter by listing status. Defaults to `active`. Pass `inactive` to list the listings you can activate, `archived` for archived ones, or `all` for every status. Inactive listings are returned with identity fields only — `id`, `name`, `status` and `channels` — and never with `address`, `thumbnailUrl`, `content` or `details`; activate one to see the rest. */
+                status?: "active" | "inactive" | "archived" | "all";
                 /** @description Restrict to listings published on the given channel (`airbnb`, `booking`, `vrbo`, etc.). Joins through `listing_platform_links` and matches active links only. */
                 channel?: string;
                 /** @description Comma-separated optional expansions. Currently supported: `content`, `details`. Unknown values return 422 with a `valid_values` envelope. (Note: `amenities` is not yet supported on the list endpoint — use the detail endpoint to fetch amenity rows for a single listing.) */
@@ -10252,6 +10812,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["UnprocessableEntity"];
         };
@@ -10339,6 +10900,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["UnprocessableEntity"];
         };
@@ -10367,6 +10929,7 @@ export interface operations {
                     "application/json": components["schemas"]["ListingGenerateContentResponse"];
                 };
             };
+            403: components["responses"]["ListingInactive"];
             404: components["responses"]["NotFound"];
             /** @description AI provider failed or returned non-JSON */
             502: {
@@ -10402,6 +10965,7 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
+            403: components["responses"]["ListingInactive"];
         };
     };
     publishListingToBooking: {
@@ -10425,6 +10989,7 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
+            403: components["responses"]["ListingInactive"];
         };
     };
     getListingPublishStatus: {
@@ -10447,6 +11012,7 @@ export interface operations {
                     "application/json": components["schemas"]["ListingPublishStatusResponse"];
                 };
             };
+            403: components["responses"]["ListingInactive"];
             404: components["responses"]["NotFound"];
             429: components["responses"]["TooManyRequests"];
         };
@@ -10477,6 +11043,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["UnprocessableEntity"];
         };
@@ -10503,6 +11070,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
             404: components["responses"]["NotFound"];
         };
     };
@@ -10532,6 +11100,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["UnprocessableEntity"];
         };
@@ -10587,6 +11156,7 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
             404: components["responses"]["NotFound"];
             500: components["responses"]["InternalError"];
         };
@@ -10613,6 +11183,7 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
             404: components["responses"]["NotFound"];
             500: components["responses"]["InternalError"];
         };
@@ -10633,6 +11204,8 @@ export interface operations {
                 };
                 content?: never;
             };
+            403: components["responses"]["ListingInactive"];
+            404: components["responses"]["NotFound"];
         };
     };
     update_booking_content: {
@@ -10651,6 +11224,8 @@ export interface operations {
                 };
                 content?: never;
             };
+            403: components["responses"]["ListingInactive"];
+            404: components["responses"]["NotFound"];
         };
     };
     list_booking_conversations: {
@@ -10671,6 +11246,8 @@ export interface operations {
                     "application/json": components["schemas"]["BookingConversationListResponse"];
                 };
             };
+            403: components["responses"]["ListingInactive"];
+            404: components["responses"]["NotFound"];
         };
     };
     send_booking_message: {
@@ -10702,6 +11279,7 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
             404: components["responses"]["NotFound"];
             500: components["responses"]["InternalError"];
         };
@@ -10726,6 +11304,7 @@ export interface operations {
                 content?: never;
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
             404: components["responses"]["NotFound"];
             500: components["responses"]["InternalError"];
         };
@@ -10762,6 +11341,8 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
+            404: components["responses"]["NotFound"];
             422: components["responses"]["UnprocessableEntity"];
             /** @description Booking.com upstream rejected the reply. */
             502: {
@@ -10803,6 +11384,7 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
             404: components["responses"]["NotFound"];
             500: components["responses"]["InternalError"];
         };
@@ -10833,6 +11415,7 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
             404: components["responses"]["NotFound"];
             500: components["responses"]["InternalError"];
         };
@@ -10858,6 +11441,7 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
             404: components["responses"]["NotFound"];
             500: components["responses"]["InternalError"];
         };
@@ -10891,6 +11475,7 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
             404: components["responses"]["NotFound"];
             500: components["responses"]["InternalError"];
         };
@@ -10918,6 +11503,7 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
             404: components["responses"]["NotFound"];
             500: components["responses"]["InternalError"];
         };
@@ -10943,6 +11529,7 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
             404: components["responses"]["NotFound"];
             500: components["responses"]["InternalError"];
         };
@@ -10976,6 +11563,7 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
             404: components["responses"]["NotFound"];
             500: components["responses"]["InternalError"];
         };
@@ -11051,6 +11639,7 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
             404: components["responses"]["NotFound"];
             500: components["responses"]["InternalError"];
         };
@@ -11064,16 +11653,8 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Subscriptions */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
             401: components["responses"]["Unauthorized"];
-            404: components["responses"]["NotFound"];
-            500: components["responses"]["InternalError"];
+            403: components["responses"]["Forbidden"];
         };
     };
     create_booking_webhook: {
@@ -11097,17 +11678,8 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Subscribed */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
-            404: components["responses"]["NotFound"];
-            500: components["responses"]["InternalError"];
+            403: components["responses"]["Forbidden"];
         };
     };
     delete_booking_webhook: {
@@ -11122,17 +11694,8 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Unsubscribed */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
-            404: components["responses"]["NotFound"];
-            500: components["responses"]["InternalError"];
+            403: components["responses"]["Forbidden"];
         };
     };
     list_vrbo_listings: {
@@ -11160,7 +11723,7 @@ export interface operations {
             query?: {
                 /** @description Opaque cursor returned in the previous response's `pagination.nextCursor`. */
                 cursor?: string;
-                /** @description First-class alias for cursor-based pagination. Mutually exclusive with `cursor` — passing both returns 422. Accepts integers in `[0, 10000]`; deeper walks must use `cursor` (constant per-page cost). The response always includes `pagination.next_cursor` so consumers can switch from offset → cursor mid-walk for deep pagination without re-keying. */
+                /** @description First-class alias for cursor-based pagination. Mutually exclusive with `cursor` — passing both returns 422. Accepts integers in `[0, 10000]`; deeper walks must use `cursor` (constant per-page cost). The response always includes `pagination.nextCursor` so consumers can switch from offset → cursor mid-walk for deep pagination without re-keying. */
                 offset?: components["parameters"]["Offset"];
                 limit?: number;
                 /** @description When `true` (default), the response's `pagination.total` carries the count of rows matching the current filter, across all pages. Pass `false` to skip the count for very large workspaces where the per-page COUNT(*) cost matters. */
@@ -11219,6 +11782,7 @@ export interface operations {
                 };
                 content?: never;
             };
+            403: components["responses"]["ListingInactive"];
         };
     };
     update_plumguide_availability: {
@@ -11237,6 +11801,7 @@ export interface operations {
                 };
                 content?: never;
             };
+            403: components["responses"]["ListingInactive"];
         };
     };
     get_plumguide_pricing: {
@@ -11255,6 +11820,7 @@ export interface operations {
                 };
                 content?: never;
             };
+            403: components["responses"]["ListingInactive"];
         };
     };
     update_plumguide_pricing: {
@@ -11273,6 +11839,7 @@ export interface operations {
                 };
                 content?: never;
             };
+            403: components["responses"]["ListingInactive"];
         };
     };
     list_plumguide_bookings: {
@@ -11297,6 +11864,7 @@ export interface operations {
                 content?: never;
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
             404: components["responses"]["NotFound"];
             500: components["responses"]["InternalError"];
         };
@@ -11399,6 +11967,7 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
             /** @description Upstream Atlas/main vanio failure */
             502: {
                 headers: {
@@ -11433,6 +12002,7 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
+            403: components["responses"]["ListingInactive"];
         };
     };
     get_listing_pricing_strategy: {
@@ -11456,6 +12026,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
         };
     };
     update_listing_pricing_strategy: {
@@ -11484,6 +12055,7 @@ export interface operations {
                     };
                 };
             };
+            403: components["responses"]["ListingInactive"];
         };
     };
     bulkApplyPricing: {
@@ -11510,6 +12082,7 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
             422: components["responses"]["UnprocessableEntity"];
             /** @description Upstream Atlas/main vanio failure */
             502: {
@@ -11532,7 +12105,7 @@ export interface operations {
                 limit?: number;
                 /** @description Opaque cursor returned in the previous response's `pagination.nextCursor`. Omit to fetch the first page. */
                 cursor?: string;
-                /** @description First-class alias for cursor-based pagination. Mutually exclusive with `cursor` — passing both returns 422. Accepts integers in `[0, 10000]`; deeper walks must use `cursor` (constant per-page cost). The response always includes `pagination.next_cursor` so consumers can switch from offset → cursor mid-walk for deep pagination without re-keying. */
+                /** @description First-class alias for cursor-based pagination. Mutually exclusive with `cursor` — passing both returns 422. Accepts integers in `[0, 10000]`; deeper walks must use `cursor` (constant per-page cost). The response always includes `pagination.nextCursor` so consumers can switch from offset → cursor mid-walk for deep pagination without re-keying. */
                 offset?: components["parameters"]["Offset"];
             };
             header?: never;
@@ -11554,6 +12127,7 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["UnprocessableEntity"];
             /** @description Upstream Atlas/main vanio failure */
@@ -11598,6 +12172,7 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
             404: components["responses"]["NotFound"];
             /** @description Upstream Atlas/main vanio failure */
             502: {
@@ -11637,6 +12212,7 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
             404: components["responses"]["NotFound"];
             /** @description Upstream Atlas/main vanio failure */
             502: {
@@ -11688,7 +12264,7 @@ export interface operations {
                 min_listings?: number;
                 /** @description Opaque cursor returned by the previous page's `pagination.nextCursor`. */
                 cursor?: string;
-                /** @description First-class alias for cursor-based pagination. Mutually exclusive with `cursor` — passing both returns 422. Accepts integers in `[0, 10000]`; deeper walks must use `cursor` (constant per-page cost). The response always includes `pagination.next_cursor` so consumers can switch from offset → cursor mid-walk for deep pagination without re-keying. */
+                /** @description First-class alias for cursor-based pagination. Mutually exclusive with `cursor` — passing both returns 422. Accepts integers in `[0, 10000]`; deeper walks must use `cursor` (constant per-page cost). The response always includes `pagination.nextCursor` so consumers can switch from offset → cursor mid-walk for deep pagination without re-keying. */
                 offset?: components["parameters"]["Offset"];
                 limit?: number;
                 sort?: "listings_desc" | "name_asc";
@@ -11829,9 +12405,9 @@ export interface operations {
                 q?: string;
                 /** @description Page size (max 200). */
                 limit?: number;
-                /** @description Opaque cursor from the previous response's `pagination.next_cursor`. */
+                /** @description Opaque cursor from the previous response's `pagination.nextCursor`. */
                 cursor?: string;
-                /** @description First-class alias for cursor-based pagination. Mutually exclusive with `cursor` — passing both returns 422. Accepts integers in `[0, 10000]`; deeper walks must use `cursor` (constant per-page cost). The response always includes `pagination.next_cursor` so consumers can switch from offset → cursor mid-walk for deep pagination without re-keying. */
+                /** @description First-class alias for cursor-based pagination. Mutually exclusive with `cursor` — passing both returns 422. Accepts integers in `[0, 10000]`; deeper walks must use `cursor` (constant per-page cost). The response always includes `pagination.nextCursor` so consumers can switch from offset → cursor mid-walk for deep pagination without re-keying. */
                 offset?: components["parameters"]["Offset"];
                 /** @description When `true` (default), the response's `pagination.total` carries the count of rows matching the current filter, across all pages. Pass `false` to skip the count for very large workspaces where the per-page COUNT(*) cost matters. */
                 include_total?: components["parameters"]["IncludeTotal"];
@@ -12295,6 +12871,35 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+        };
+    };
+    setListingsStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ListingStatusBatchRequest"];
+            };
+        };
+        responses: {
+            /** @description Every listing is now in the requested state */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListingStatusBatchResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            402: components["responses"]["PaymentRequired"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["UnprocessableEntity"];
         };
     };
 }

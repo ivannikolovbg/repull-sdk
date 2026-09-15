@@ -21,6 +21,16 @@ export type Listing = components['schemas']['Listing'];
 export type ListingChannel = components['schemas']['ListingChannel'];
 export type ListingActiveRequest = components['schemas']['ListingActiveRequest'];
 export type ListingActiveResponse = components['schemas']['ListingActiveResponse'];
+/** Body of `POST /v1/listings/status` (bulk activate/deactivate, up to 500 ids). */
+export type ListingStatusBatchRequest = components['schemas']['ListingStatusBatchRequest'];
+/** Response of `POST /v1/listings/status` — `{ active, updated, unchanged }`. */
+export type ListingStatusBatchResponse = components['schemas']['ListingStatusBatchResponse'];
+/**
+ * `DELETE /v1/connect/{provider}` response —
+ * `{ disconnected, provider, accountId, listingsDeactivated }`.
+ */
+export type ConnectDisconnectResponse =
+  paths['/v1/connect/{provider}']['delete']['responses'][200]['content']['application/json'];
 export type Guest = components['schemas']['Guest'];
 export type CalendarDay = components['schemas']['CalendarDay'];
 export type Conversation = components['schemas']['Conversation'];
@@ -199,7 +209,24 @@ export interface ConnectStatus {
    * account-level confirmation card (avatar + name) instead of just an ID.
    */
   host?: ConnectHost | null;
+  /**
+   * Airbnb only: every Airbnb account this workspace has connected, including
+   * ones since disconnected. Pass `externalAccountId` as `accountId` to
+   * `disconnect()` to disconnect one account.
+   */
+  accounts?: ConnectAccount[];
   [key: string]: unknown;
+}
+
+/** One entry of {@link ConnectStatus.accounts}. */
+export interface ConnectAccount {
+  /** Airbnb host id, as a string (it can exceed 2^53). */
+  externalAccountId?: string;
+  name?: string | null;
+  pictureUrl?: string | null;
+  status?: string | null;
+  /** True while the account is active and its authorization is usable. */
+  connected?: boolean;
 }
 
 export type AirbnbAccessType = 'read_only' | 'full_access' | 'messaging';

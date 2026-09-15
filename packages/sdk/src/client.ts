@@ -35,6 +35,9 @@ import type {
   HealthResponse,
   Listing,
   ListingActiveResponse,
+  ListingStatusBatchRequest,
+  ListingStatusBatchResponse,
+  ConnectDisconnectResponse,
   ListResponse,
   MarketBrowseResponse,
   MarketsResponse,
@@ -54,7 +57,7 @@ import { RepullError } from './errors.js';
 import { KvNamespace } from './kv.js';
 
 const DEFAULT_BASE_URL = 'https://api.repull.dev';
-const DEFAULT_USER_AGENT = '@repull/sdk/0.2.13';
+const DEFAULT_USER_AGENT = '@repull/sdk/0.2.14';
 
 export type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
@@ -278,9 +281,18 @@ class ConnectNamespace {
     return this.client.request<ConnectStatus>('GET', `/v1/connect/${encodeURIComponent(provider)}`);
   }
 
-  /** Generic provider disconnect. */
-  disconnect(provider: string): Promise<unknown> {
-    return this.client.request('DELETE', `/v1/connect/${encodeURIComponent(provider)}`);
+  /**
+   * DELETE /v1/connect/{provider} — disconnect ONE connected account.
+   *
+   * Pass `accountId` (the Airbnb host id from `status().accounts[].externalAccountId`,
+   * or the Booking.com hotel id). It may be omitted only when the workspace has
+   * exactly one account for the provider — with several, the API returns 422
+   * listing the valid ids. The account's listings are deactivated (not deleted)
+   * and returned in `listingsDeactivated`; reactivate them with
+   * `repull.listings.setStatus({ listingIds, active: true })` after reconnecting.
+   */
+  disconnect(provider: string, opts: DisconnectOptions = {}): Promise<ConnectDisconnectResponse> {
+    return disconnectProvider(this.client, provider, opts);
   }
 }
 
@@ -295,12 +307,19 @@ class AirbnbConnectNamespace {
    * `redirectUrl` after consent.
    *
    * v0.2.0: response field renamed `oauthUrl` → `url`.
+   *
+   * `accessType` is optional. Omit it to let the host pick the tier on the
+   * consent screen; pass it to fix the tier and hide that choice. (Before
+   * v0.2.14 the SDK always sent `full_access` when omitted.)
    */
   create(opts: { redirectUrl: string; accessType?: AirbnbAccessType }): Promise<ConnectSession> {
+    // Only send `accessType` when the caller chose one: the API locks the
+    // consent screen to whatever tier is sent, so defaulting it here would
+    // silently take the tier choice away from the host.
     return this.client.request<ConnectSession>('POST', '/v1/connect/airbnb', {
       body: {
         redirectUrl: opts.redirectUrl,
-        accessType: opts.accessType ?? 'full_access',
+        ...(opts.accessType !== undefined ? { accessType: opts.accessType } : {}),
       },
     });
   }
@@ -310,9 +329,13 @@ class AirbnbConnectNamespace {
     return this.client.request<ConnectStatus>('GET', '/v1/connect/airbnb');
   }
 
-  /** DELETE /v1/connect/airbnb — disconnect Airbnb. */
-  disconnect(): Promise<unknown> {
-    return this.client.request('DELETE', '/v1/connect/airbnb');
+  /**
+   * DELETE /v1/connect/airbnb — disconnect one Airbnb account. Pass
+   * `accountId` (a host id from `status().accounts[].externalAccountId`)
+   * when the workspace has more than one.
+   */
+  disconnect(opts: DisconnectOptions = {}): Promise<ConnectDisconnectResponse> {
+    return disconnectProvider(this.client, 'airbnb', opts);
   }
 }
 
@@ -343,9 +366,12 @@ class BookingConnectNamespace {
     return this.client.request<ConnectStatus>('GET', '/v1/connect/booking');
   }
 
-  /** DELETE /v1/connect/booking — disconnect Booking.com. */
-  disconnect(): Promise<unknown> {
-    return this.client.request('DELETE', '/v1/connect/booking');
+  /**
+   * DELETE /v1/connect/booking — disconnect one Booking.com property. Pass
+   * `accountId` (the hotel id) when the workspace has more than one.
+   */
+  disconnect(opts: DisconnectOptions = {}): Promise<ConnectDisconnectResponse> {
+    return disconnectProvider(this.client, 'booking', opts);
   }
 }
 
@@ -360,8 +386,8 @@ class ProviderConnectNamespace {
     return this.client.request('POST', `/v1/connect/${this.provider}`, { body });
   }
 
-  disconnect(): Promise<unknown> {
-    return this.client.request('DELETE', `/v1/connect/${this.provider}`);
+  disconnect(opts: DisconnectOptions = {}): Promise<ConnectDisconnectResponse> {
+    return disconnectProvider(this.client, this.provider, opts);
   }
 }
 
@@ -640,7 +666,8 @@ class PropertiesNamespace {
     query: {
       limit?: number;
       cursor?: string;
-      status?: 'active' | 'all';
+      /** Defaults to `active`. `inactive` properties carry identity fields only. */
+      status?: 'active' | 'inactive' | 'all';
       channel?: 'airbnb' | 'booking' | 'vrbo';
       include_total?: boolean;
     } = {},
@@ -780,7 +807,11 @@ class ListingsNamespace {
       limit?: number;
       cursor?: string;
       q?: string;
-      status?: 'active' | 'inactive' | 'archived';
+      /**
+       * Defaults to `active`. `inactive` lists listings you can activate
+       * (identity fields only); `all` returns every status.
+       */
+      status?: 'active' | 'inactive' | 'archived' | 'all';
       channel?: string;
       include_total?: boolean;
     } = {},
@@ -836,6 +867,30 @@ class ListingsNamespace {
    */
   update(id: string | number, body: { active: boolean }): Promise<ListingActiveResponse> {
     return this.setActive(id, body.active);
+  }
+
+  /**
+   * POST /v1/listings/status — activate or deactivate up to 500 listings in
+   * one call. New in v0.2.14.
+   *
+   * All or nothing: an id outside this workspace fails the whole call with
+   * 404, and activating past the plan's listing cap fails with 402
+   * `listings_limit_exceeded`. Idempotent — ids already in the requested
+   * state come back in `unchanged`, ids this call changed in `updated`.
+   * Inactive listings keep syncing but cannot be read or written through the
+   * API (403 `listing_inactive`) until activated.
+   */
+  setStatus(body: {
+    listingIds: Array<string | number>;
+    active: boolean;
+  }): Promise<ListingStatusBatchResponse> {
+    const payload: ListingStatusBatchRequest = {
+      listingIds: body.listingIds.map((id) => String(id)),
+      active: body.active,
+    };
+    return this.client.request<ListingStatusBatchResponse>('POST', '/v1/listings/status', {
+      body: payload,
+    });
   }
 }
 
@@ -943,6 +998,29 @@ class SchemasNamespace {
 }
 
 // helpers
+
+/** Options for `disconnect()` on the connect namespaces. */
+export interface DisconnectOptions {
+  /**
+   * The account to disconnect: the Airbnb host id
+   * (`status().accounts[].externalAccountId`) or the Booking.com hotel id.
+   * Required when the workspace has more than one account for the provider.
+   * Not the same as the `X-Account-Id` header.
+   */
+  accountId?: string | number;
+}
+
+function disconnectProvider(
+  client: Repull,
+  provider: string,
+  opts: DisconnectOptions,
+): Promise<ConnectDisconnectResponse> {
+  return client.request<ConnectDisconnectResponse>(
+    'DELETE',
+    `/v1/connect/${encodeURIComponent(provider)}`,
+    opts.accountId !== undefined ? { query: { accountId: String(opts.accountId) } } : {},
+  );
+}
 
 function buildUrl(baseUrl: string, path: string, query?: Record<string, unknown>): string {
   const trimmedBase = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;

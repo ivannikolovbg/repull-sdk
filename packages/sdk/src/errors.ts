@@ -73,6 +73,11 @@ export class RepullError extends Error {
   readonly didYouMean?: string;
   /** Seconds the client should wait before retrying (mirrors `Retry-After`). */
   readonly retryAfter?: number;
+  /**
+   * Inactive listing ids involved. Present on 403 `listing_inactive` —
+   * activate them with `repull.listings.setStatus({ listingIds, active: true })`.
+   */
+  readonly listingIds?: string[];
   readonly details?: unknown;
 
   constructor(args: {
@@ -89,6 +94,7 @@ export class RepullError extends Error {
     endpoint?: string;
     didYouMean?: string;
     retryAfter?: number;
+    listingIds?: string[];
     details?: unknown;
   }) {
     super(args.message);
@@ -105,6 +111,7 @@ export class RepullError extends Error {
     this.endpoint = args.endpoint;
     this.didYouMean = args.didYouMean;
     this.retryAfter = args.retryAfter;
+    this.listingIds = args.listingIds;
     this.details = args.details;
   }
 
@@ -121,6 +128,7 @@ export class RepullError extends Error {
     let endpoint: string | undefined;
     let didYouMean: string | undefined;
     let retryAfter: number | undefined;
+    let listingIds: string[] | undefined;
     let details: unknown = undefined;
 
     if (typeof body === 'string' && body.length > 0) {
@@ -152,6 +160,8 @@ export class RepullError extends Error {
         if (typeof dym === 'string') didYouMean = dym;
         const ra = inner.retry_after ?? inner.retryAfter;
         if (typeof ra === 'number') retryAfter = ra;
+        const li = inner.listing_ids ?? inner.listingIds;
+        if (Array.isArray(li)) listingIds = li.map((v) => String(v));
         const det = inner.details;
         details = det;
       }
@@ -171,6 +181,7 @@ export class RepullError extends Error {
       endpoint,
       didYouMean,
       retryAfter,
+      listingIds,
       details,
     };
 

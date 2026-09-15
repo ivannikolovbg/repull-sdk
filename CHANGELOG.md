@@ -3,6 +3,50 @@
 All notable changes to `@repull/sdk` and `@repull/types` are recorded here.
 This project follows [Semantic Versioning](https://semver.org/).
 
+## v0.2.14 — 2026-09-15
+
+Regenerated `@repull/types` against the live spec (174 → 175 operations) and
+updated the hand-written facade to match.
+
+### Added
+
+- **`repull.listings.setStatus({ listingIds, active })`** — `POST /v1/listings/status`,
+  activate or deactivate up to 500 listings in one all-or-nothing call. Returns
+  `{ active, updated, unchanged }` (`ListingStatusBatchResponse`).
+- **`disconnect({ accountId })`** on `connect.airbnb`, `connect.booking`,
+  `connect.vrbo`, `connect.plumguide`, and `connect.disconnect(provider, { accountId })`
+  — sent as the `accountId` query param to `DELETE /v1/connect/{provider}`. Required
+  when a workspace has more than one account for the provider. Now typed as
+  `ConnectDisconnectResponse` (`{ disconnected, provider, accountId, listingsDeactivated }`)
+  instead of `unknown`. The disconnected account's listings are deactivated, not deleted.
+- **`ConnectStatus.accounts[]`** (`ConnectAccount`) — every Airbnb account the workspace
+  has connected; pass `externalAccountId` as `accountId` to disconnect one.
+- **`RepullError.listingIds`** — populated on the new `403 listing_inactive` error, which
+  83 operations now declare (`components.responses.ListingInactive`).
+- New `@repull/types` aliases: `ListingStatusBatchRequest`, `ListingStatusBatchResponse`,
+  `ConnectDisconnectResponse`, `ConnectAccount`.
+
+### Changed
+
+- **`connect.airbnb.create()` no longer sends `accessType: 'full_access'` when you omit
+  it.** The API now locks the consent screen to whatever tier is sent, so the old
+  default silently took the tier choice away from the host. Pass `accessType`
+  explicitly to keep the previous behaviour.
+- **Lists default to active listings.** `listings.list` accepts
+  `status: 'active' | 'inactive' | 'archived' | 'all'` and `properties.list` accepts
+  `status: 'active' | 'inactive' | 'all'`. Inactive rows carry identity fields only,
+  and reading or writing an inactive listing returns `403 listing_inactive`.
+- **Airbnb calendar writes** (`PUT /v1/channels/airbnb/listings/{id}/pricing` and
+  `/availability`) gain `busy_subtype`, stricter validation (unknown fields such as
+  `price` instead of `daily_price` are refused with `422 invalid_params`), and new
+  error responses: `422 airbnb_rejected`, `403 connection_reauth_required`,
+  `429 airbnb_rate_limited`.
+
+### Deprecated
+
+- Booking.com webhooks endpoints (`GET`/`POST`/`DELETE /v1/channels/booking/webhooks`)
+  are deprecated and always return `403`.
+
 ## v0.2.13 — 2026-09-11
 
 ### Fixed

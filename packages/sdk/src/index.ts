@@ -32,7 +32,7 @@
  */
 
 export { Repull } from './client.js';
-export type { RepullOptions, FetchLike } from './client.js';
+export type { RepullOptions, FetchLike, DisconnectOptions } from './client.js';
 export { RepullError, RepullAuthError, RepullRateLimitError, RepullValidationError } from './errors.js';
 export { KvNamespace } from './kv.js';
 export type { KvOptions, KvSetOptions, KvListOptions, KvClearOptions, KvEntry } from './kv.js';
@@ -41,6 +41,9 @@ export type {
   Reservation,
   Listing,
   ListingChannel,
+  ListingActiveResponse,
+  ListingStatusBatchRequest,
+  ListingStatusBatchResponse,
   Guest,
   Conversation,
   Message,
@@ -50,6 +53,8 @@ export type {
   AIOperation,
   ConnectSession,
   ConnectStatus,
+  ConnectAccount,
+  ConnectDisconnectResponse,
   ConnectHost,
   ConnectPickerSession,
   ConnectProvider,
