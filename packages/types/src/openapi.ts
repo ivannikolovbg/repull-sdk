@@ -91,7 +91,7 @@ export interface paths {
          *
          *     **`days` contains only the dates we actually hold calendar data for.** Requested dates with no calendar row are listed in `coverage.missingDates` — their availability is unknown. Never treat a missing date as bookable: this endpoint deliberately does not synthesise availability, because a fabricated open date can be double-booked. A property with no calendar still returns a real 200 (`days: []`, every date in `coverage.missingDates`), never a 404 — 404 means the property id does not exist or belongs to a different workspace.
          *
-         *     This endpoint is read-only, and the projected per-date shape carries **availability, price, and min-nights only** — it does NOT expose max-stay, closed-to-arrival (CTA), closed-to-departure (CTD), or the dedicated stop-sell flag. To read or write that full restriction set on Booking.com use the channel routes: `GET`/`PUT /v1/channels/booking/availability` (with the room + rate ids from `GET /v1/channels/booking/properties/{id}/rooms`). Availability **writes** always stay per-channel: `PUT /v1/channels/airbnb/listings/{id}/availability` (Airbnb) or `PUT /v1/channels/booking/availability` (Booking.com).
+         *     This endpoint is read-only, and the projected per-date shape carries **availability, price, and min-nights only** — it does NOT expose max-stay, closed-to-arrival (CTA), closed-to-departure (CTD), or the dedicated stop-sell flag. To read or write that full restriction set on Booking.com use the channel routes: `GET`/`PUT /v1/channels/booking/availability` (with the room + rate ids from `GET /v1/channels/booking/properties/{id}/rooms`). To **write** calendar values use `PUT /v1/availability/{propertyId}` (or `PATCH /v1/availability/batch`), which updates the property calendar and pushes to its connected channels; channel-only settings stay on the channel routes.
          *
          *     Returns `403 listing_inactive` when the listing is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
@@ -453,7 +453,7 @@ export interface paths {
         put?: never;
         /**
          * Bind a picker session to a provider
-         * @description Called by the hosted picker page once the user clicks a channel card. Validates the provider exists and is permitted by the session's `allowed_providers` whitelist (if any), then returns the next-step URL the picker should navigate to.
+         * @description Called by the hosted picker page once the user clicks a channel card. Validates the provider exists and is permitted by the session's `allowedProviders` whitelist (if any), then returns the next-step URL the picker should navigate to.
          *
          *     No API key required — the session ID is the capability token. The session must still be pending and unexpired.
          */
@@ -498,7 +498,7 @@ export interface paths {
          *
          *     The change is all or nothing. For Airbnb, the host can also revoke access on Airbnb's side (Account → Privacy & sharing → Connected apps); that alone does not update this workspace, so call this endpoint as well.
          *
-         *     Other providers return `501 not_implemented` with instructions for disconnecting on the provider's side.
+         *     Other providers return `501 not_implemented` with instructions for disconnecting on the provider's side. That answer depends only on the provider, not on your workspace: an unsupported provider returns `501` whether or not you have a connection to it. `404 not_found` on a supported provider means this workspace has no connection to it (or, with `accountId`, that the account is not connected here).
          */
         delete: operations["delete_connection"];
         options?: never;
@@ -1261,7 +1261,13 @@ export interface paths {
          *
          *     Pass `?include=amenities` to enrich each connection with its locally-cached amenity set. Returns `null` per connection when the cache is empty.
          *
+         *     Pass `?include=thumbnail` to add `thumbnailUrl` to each listing — one extra column on the query that already runs, so a selection screen renders from a single request instead of one call per listing. `null` when the listing has no thumbnail stored. Combine comma-separated, e.g. `?include=amenities,thumbnail`.
+         *
+         *     **Can this listing be written to?** Every connection carries `syncCategory` — Airbnb's own per-listing API sync decision (`sync_all`, `sync_rates_and_availability`, or `none`) — and `writable`, which is `false` exactly when that category is `none`. Airbnb authorises sync one listing at a time, so a connected account can still hold listings Airbnb refuses every write to; a write to one of those returns `403 listing_not_api_connected` before anything is sent, and reconnecting the account does not change it (the host must switch the listing on in Airbnb). Check `writable` here before a portfolio-wide push instead of discovering it one 403 at a time.
+         *
          *     Inactive listings are left out; they keep syncing and reappear once activated. Use `GET /v1/listings?status=inactive` to find them.
+         *
+         *     **Several Airbnb accounts?** A workspace can connect more than one. By default this returns every connected account's rows; pass `?account_id=<airbnb host id>` to scope to one. Every row carries `accountId` + `accountName` either way, and `dataFreshness.accounts[]` reports each account's freshness separately, so one disconnected host no longer marks the whole response stale.
          */
         get: operations["list_airbnb_listings"];
         put?: never;
@@ -1283,21 +1289,27 @@ export interface paths {
          * Get Airbnb listing
          * @description Fetch all Airbnb connection rows for a single Vanio listing id. A property may be linked from multiple Airbnb hosts — every match is returned. Pass `?include=amenities` to enrich each row with its current Airbnb amenities.
          *
+         *     Each row carries `syncCategory` — Airbnb's own per-listing API sync decision (`sync_all`, `sync_rates_and_availability`, or `none`) — and `writable`, which is `false` exactly when that category is `none`, meaning Airbnb refuses every write to the listing and Repull returns `403 listing_not_api_connected` without sending anything. `GET /v1/channels/airbnb/listings` reports both fields for the whole portfolio in one call.
+         *
          *     Returns `403 listing_inactive` when the listing is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
         get: operations["get_airbnb_listing"];
         put?: never;
         /**
-         * Listing action (delete/push/publish)
+         * Listing action (delete/push/publish/unlist/relist)
          * @description Apply a state action to a listing by id. The path `id` is the canonical Repull listing id.
          *
-         *     `delete` is a **deactivate of the Repull record only** — it sets the listing inactive and KEEPS the row; it does NOT touch the upstream Airbnb listing (Repull never deletes or deactivates on Airbnb's side). Use it to exclude a listing / trim back under the plan-listings cap; reactivate via `PATCH /v1/listings/{id}` with `{ "active": true }`. Idempotent.
+         *     **Deactivating in Repull and unlisting on Airbnb are different operations.**
          *
-         *     `push` / `publish` push the listing's content to Airbnb via the same host-side sync orchestrator as `POST /v1/listings/{id}/publish/airbnb` — pass `airbnbConnectionId` to update an already-mapped Airbnb listing, or `hostId` to create + publish a new one under that host. `force` re-pushes every field, ignoring dirty-field tracking.
+         *     `delete` is a **deactivate of the Repull record only** — it sets the listing inactive and KEEPS the row; it does NOT touch the Airbnb listing, which stays live and keeps taking bookings. Use it to exclude a listing from the API / trim back under the plan-listings cap; reactivate via `PATCH /v1/listings/{id}` with `{ "active": true }`. Idempotent.
          *
-         *     Any other action (e.g. `pull`, `unlist`) returns a structured 422 naming the supported actions.
+         *     `unlist` calls Airbnb and **takes the live listing down**: it is deactivated with a valid deactivation reason and then READ BACK, so "Airbnb accepted the call but the listing is still live" is reported as a failure rather than a success. Requires `airbnbConnectionId` — a listing can be connected to more than one Airbnb listing, and taking down the wrong one is not undoable through this API. `relist` puts it back up (re-enables sync and makes the listing available again); it does not push content.
          *
-         *     Returns `403 listing_inactive` for `push`/`publish` when the listing is inactive. `delete` (deactivation) is always accepted.
+         *     `push` / `publish` push the listing's content to Airbnb via the same host-side sync orchestrator as `POST /v1/listings/{id}/publish/airbnb` — pass `airbnbConnectionId` to update an already-mapped Airbnb listing, or `hostId` to create + publish a new one under that host. `force` re-pushes every field, ignoring dirty-field tracking. The result is per-section: see `AirbnbPublishResult`.
+         *
+         *     Any other action (e.g. `pull`) returns a structured 422 naming the supported actions.
+         *
+         *     Returns `403 listing_inactive` for `push`/`publish`/`unlist`/`relist` when the listing is inactive. `delete` (deactivation) is always accepted.
          */
         post: operations["airbnb_listing_action"];
         delete?: never;
@@ -1356,7 +1368,7 @@ export interface paths {
          *
          *     **Blocking dates:** Airbnb requires a `busy_subtype` whenever `availability` is `"unavailable"`. If an operation leaves it out, Repull sends `busy_subtype: "BLOCKED_BY_HOST"`; send `"OUTSIDE_RESERVATION"` for dates held by a booking made on another channel.
          *
-         *     **Errors:** `403 connection_reauth_required` — Airbnb no longer accepts the connection for this listing (reconnect; retrying won't help). `403 listing_inactive` — the listing is inactive. `404 not_found` — no Airbnb-connected listing with this id in the workspace. `422 airbnb_rejected` — Airbnb refused the change; `message` carries its reason. `429 airbnb_rate_limited` — back off. `502 airbnb_error` — Airbnb outage or timeout; retry.
+         *     **Errors:** `403 listing_not_api_connected` — Airbnb was never told to sync this listing (its `syncCategory` is `none`); the host must switch API sync on for it in Airbnb, reconnecting the account will not help. `403 connection_reauth_required` — Airbnb no longer accepts the connection at all (reconnect; retrying won't help). `403 listing_inactive` — the listing is inactive. `404 not_found` — no Airbnb-connected listing with this id in the workspace. `422 airbnb_rejected` — Airbnb refused the change; `message` carries its reason. `429 airbnb_rate_limited` — back off. `502 airbnb_error` — Airbnb outage or timeout; retry.
          */
         put: operations["update_airbnb_listing_pricing"];
         post?: never;
@@ -1390,7 +1402,7 @@ export interface paths {
          *
          *     **Blocking dates:** Airbnb requires a `busy_subtype` whenever `availability` is `"unavailable"`. If an operation leaves it out, Repull sends `busy_subtype: "BLOCKED_BY_HOST"`; send `"OUTSIDE_RESERVATION"` for dates held by a booking made on another channel.
          *
-         *     **Errors:** `403 connection_reauth_required` — Airbnb no longer accepts the connection for this listing (reconnect; retrying won't help). `403 listing_inactive` — the listing is inactive. `404 not_found` — no Airbnb-connected listing with this id in the workspace. `422 airbnb_rejected` — Airbnb refused the change; `message` carries its reason. `429 airbnb_rate_limited` — back off. `502 airbnb_error` — Airbnb outage or timeout; retry.
+         *     **Errors:** `403 listing_not_api_connected` — Airbnb was never told to sync this listing (its `syncCategory` is `none`); the host must switch API sync on for it in Airbnb, reconnecting the account will not help. `403 connection_reauth_required` — Airbnb no longer accepts the connection at all (reconnect; retrying won't help). `403 listing_inactive` — the listing is inactive. `404 not_found` — no Airbnb-connected listing with this id in the workspace. `422 airbnb_rejected` — Airbnb refused the change; `message` carries its reason. `429 airbnb_rate_limited` — back off. `502 airbnb_error` — Airbnb outage or timeout; retry.
          */
         put: operations["update_airbnb_listing_availability"];
         post?: never;
@@ -1417,21 +1429,39 @@ export interface paths {
         put?: never;
         /**
          * Upload photos to Airbnb
-         * @description Upload one or more photos to an Airbnb listing. Accepts public image URLs (Airbnb fetches them) — direct binary upload is not supported on this endpoint.
+         * @description Upload one or more photos to an Airbnb listing.
+         *
+         *     `image` is base64 image DATA, not a url — a `data:image/jpeg;base64,…` prefix is accepted and stripped, and the decoded image must be under 25 MB. (This operation previously documented public image urls that Airbnb would fetch. It never did: a url arrived at Airbnb as a ~60-byte image.)
+         *
+         *     Airbnb assigns the photo id and CDN urls, so the newly uploaded photos appear in `GET /photos` after the next sync. Caption, order and room assignment can be set straight away with `PATCH /photos`, `PUT /photos/order` and `PUT /photos/cover`.
          *
          *     Returns `403 listing_inactive` when the listing is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
         post: operations["upload_airbnb_listing_photos"];
         /**
          * Delete an Airbnb photo
-         * @description Remove a single photo from an Airbnb listing. Pass the Airbnb-side photo id as `?photoId=`. Write-side — calls Airbnb upstream; the local photo cache is reconciled by the sync worker afterwards.
+         * @description Remove a single photo from an Airbnb listing. Pass the Airbnb-side photo id as `?photoId=`. **Write-side** — calls Airbnb upstream.
+         *
+         *     The photo is proven to belong to the listing named in the path first; a photo from another listing returns `404`. Airbnb refuses to delete a listing's last photo. Both stored copies drop the photo on success — `stored` reports whether that succeeded.
          *
          *     Returns `403 listing_inactive` when the listing is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
         delete: operations["delete_airbnb_listing_photo"];
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * Update an Airbnb photo
+         * @description Change one photo's caption, its position in the tour, the room it is filed under, or its metadata. **Write-side** — calls Airbnb upstream.
+         *
+         *     Airbnb's photo endpoints are keyed by photo id alone, so the photo is proven to belong to the listing named in the path before anything is sent; a photo from another listing returns `404`, the same answer a photo that does not exist gets.
+         *
+         *     On success both stored copies are updated — the Airbnb mirror `GET /photos` serves AND the canonical photo tour behind `GET /v1/listings/{id}` — so a read straight after this write returns the new value instead of waiting for the next sync. `stored` says whether that succeeded; `false` means Airbnb accepted the change but our copy will only catch up at the next sync.
+         *
+         *     To move several photos at once use `PUT /photos/order`: it is one call instead of N, it validates the whole order before writing anything, and it reports exactly what landed if Airbnb refuses part-way.
+         *
+         *     Returns `403 listing_inactive` when the listing is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
+         */
+        patch: operations["update_airbnb_listing_photo"];
         trace?: never;
     };
     "/v1/channels/airbnb/messaging": {
@@ -1446,6 +1476,8 @@ export interface paths {
          * @description List Airbnb message threads (one per guest conversation). Cursor-paginated. Each thread includes a preview of the latest message.
          *
          *     Threads on inactive listings are left out; they keep syncing and reappear once the listing is activated. Filtering by an inactive listing (`listing_id`) returns `403 listing_inactive`.
+         *
+         *     **Several Airbnb accounts?** A workspace can connect more than one. By default this returns every connected account's rows; pass `?account_id=<airbnb host id>` to scope to one. Every row carries `accountId` + `accountName` either way, and `dataFreshness.accounts[]` reports each account's freshness separately, so one disconnected host no longer marks the whole response stale.
          */
         get: operations["list_airbnb_threads"];
         put?: never;
@@ -1504,6 +1536,8 @@ export interface paths {
          *     When `status` is omitted, all statuses are returned (Airbnb defaults to `accepted` only on its own surface, but this endpoint normalises to "all"). Pass `?status=accepted` to scope.
          *
          *     Reservations on inactive listings are left out (counts and cursors included); they keep syncing and reappear once the listing is activated. Filtering by an inactive listing (`listing_id`) returns `403 listing_inactive`.
+         *
+         *     **Several Airbnb accounts?** A workspace can connect more than one. By default this returns every connected account's rows; pass `?account_id=<airbnb host id>` to scope to one. Every row carries `accountId` + `accountName` either way, and `dataFreshness.accounts[]` reports each account's freshness separately, so one disconnected host no longer marks the whole response stale.
          */
         get: operations["list_airbnb_reservations"];
         put?: never;
@@ -1554,6 +1588,8 @@ export interface paths {
          * @description List reviews left by guests on Airbnb listings in this workspace. Includes both reviews of the host and reviews of the guest (where the host has not yet submitted theirs).
          *
          *     Reviews of inactive listings are left out; they keep syncing and reappear once the listing is activated. Filtering by an inactive listing (`listing_id`) returns `403 listing_inactive`.
+         *
+         *     **Several Airbnb accounts?** A workspace can connect more than one. By default this returns every connected account's rows; pass `?account_id=<airbnb host id>` to scope to one. Every row carries `accountId` + `accountName` either way, and `dataFreshness.accounts[]` reports each account's freshness separately, so one disconnected host no longer marks the whole response stale.
          */
         get: operations["list_airbnb_reviews"];
         put?: never;
@@ -1630,15 +1666,23 @@ export interface paths {
          *
          *     Default returns only pending alterations; pass `?type=all` for the full history. Filter to a single reservation with `?reservation_code=<confirmation code>`. Every response carries the `dataFreshness` envelope.
          *
+         *     Each row carries the proposed change in its `new*` fields. A **listing transfer** shows up as `newListingId` (Repull listing id) and `newAirbnbListingId` (Airbnb's own id); both are `null` when the alteration does not move the reservation.
+         *
          *     Alterations of reservations on inactive listings are left out. Filtering by a reservation on an inactive listing (`reservation_code`) returns `403 listing_inactive`.
+         *
+         *     **Several Airbnb accounts?** A workspace can connect more than one. By default this returns every connected account's rows; pass `?account_id=<airbnb host id>` to scope to one. Every row carries `accountId` + `accountName` either way, and `dataFreshness.accounts[]` reports each account's freshness separately, so one disconnected host no longer marks the whole response stale.
          */
         get: operations["list_airbnb_alterations"];
         put?: never;
         /**
          * Create Airbnb alteration
-         * @description Create a reservation alteration request (change dates, guest count, or price) on Airbnb. **Write-side** — calls Airbnb upstream. Requires a connected Airbnb host for the workspace, else `404 no_connection`.
+         * @description Propose a change to an existing Airbnb reservation: new dates, a new guest count, a new total price, or a move to a different listing. **Write-side** — calls Airbnb upstream. Requires a connected Airbnb host for the workspace, else `404 no_connection`.
          *
-         *     Returns `403 listing_inactive` when the listing this resolves to is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
+         *     The body is validated before anything reaches Airbnb. `confirmation_code` is required and **at least one** of `check_in`, `check_out`, `number_of_guests`, `total_price` or `listing_id` must be sent with it — an alteration that changes nothing is `422 invalid_params`, not a request Airbnb is asked to act on. Unknown fields are refused rather than ignored, so a misspelling can never look like a successful write.
+         *
+         *     **Listing transfer.** `listing_id` moves the reservation to another listing in your workspace. Send the **Repull** listing id (the `id` from `GET /v1/properties`); Repull checks you own it, that it is active and connected to Airbnb, translates it to the Airbnb listing id and sends it upstream. Callers who hold the Airbnb-side id instead may send `airbnb_listing_id`. **Airbnb decides** whether to honour a listing change on an alteration — Repull sends it and reports Airbnb’s answer; a refusal comes back as `422 airbnb_rejected` carrying Airbnb’s own message.
+         *
+         *     Returns `403 listing_inactive` when the reservation’s listing, or the listing it is being moved to, is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
         post: operations["create_airbnb_alteration"];
         delete?: never;
@@ -1725,6 +1769,8 @@ export interface paths {
          * @description List Airbnb host transactions (reservation earnings, payouts, resolution adjustments) for this workspace, newest first. **Pure DB read** — customer-facing reads never call Airbnb upstream; they serve the `airbnb_transactions` mirror. Each row carries the genuine host- and guest-side financial breakdown (accommodation subtotal, cleaning fee, host + guest service fees split base/VAT, tax buckets, expected/actual host payout with settlement status). Trigger a refresh with `POST` on this path. When the mirror is empty or the host disconnected, `dataFreshness.stale = true` with a `reason` (`never_synced`, `host_disconnected_<iso>`, `sync_lag_>_24h`).
          *
          *     Transactions of reservations on inactive listings are left out; payout rows, which belong to no listing, are always included.
+         *
+         *     **Several Airbnb accounts?** A workspace can connect more than one. By default this returns every connected account's rows; pass `?account_id=<airbnb host id>` to scope to one. Every row carries `accountId` + `accountName` either way, and `dataFreshness.accounts[]` reports each account's freshness separately, so one disconnected host no longer marks the whole response stale.
          */
         get: operations["list_airbnb_transactions"];
         put?: never;
@@ -1804,7 +1850,19 @@ export interface paths {
          *     Returns `403 listing_inactive` when the listing is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
         get: operations["list_airbnb_listing_amenities"];
-        put?: never;
+        /**
+         * Update Airbnb amenities
+         * @description Set amenities on an Airbnb listing. **Write-side** — calls Airbnb upstream.
+         *
+         *     **Partial by design**: only the amenities you name change, so turning one off is a one-line body and nothing else on the listing moves. Ids are the `id` values `GET /amenities` returns (e.g. `wireless_internet`, `ac`, `kitchen`); case is ignored. Airbnb refuses ids outside its vocabulary — that comes back as `422 airbnb_rejected` carrying Airbnb's own message.
+         *
+         *     `accessibility_amenities` go to Airbnb's separate accessibility resource, which has **no read side at all** — Airbnb offers no endpoint to fetch them back, and the combined amenities GET 404s on production listings. What you can read back is our own copy: this endpoint updates it on success, and `GET /amenities` returns it under `accessibilityAmenities`. Airbnb may also hold an accessibility claim for review until photo evidence is attached; pass `photo_ids` to supply it.
+         *
+         *     Our Airbnb copy is updated on success so a read straight after this write returns the new values. The platform-neutral copy behind `GET /v1/listings/{id}?include=amenities` uses a different amenity vocabulary and is refreshed by the next sync, except where an id happens to be identical in both.
+         *
+         *     Returns `403 listing_inactive` when the listing is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
+         */
+        put: operations["update_airbnb_listing_amenities"];
         post?: never;
         delete?: never;
         options?: never;
@@ -1876,7 +1934,23 @@ export interface paths {
          *     Returns `403 listing_inactive` when the listing is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
         get: operations["list_airbnb_listing_descriptions"];
-        put?: never;
+        /**
+         * Update an Airbnb description for one locale
+         * @description Write one locale's copy to the live Airbnb listing.
+         *
+         *     Airbnb keeps a SEPARATE description per locale (`PUT /v2/listing_descriptions/{listingId}/{locale}`), which is why `locale` is part of the request and not a guess: a listing can carry twelve of them, and writing Italian copy into the English row is how a translation gets lost. Only the fields you send are written; Airbnb keeps the rest. `GET /v1/channels/airbnb/listings/{id}/settings?type=locales` lists the locales already synced for the listing.
+         *
+         *     `description` is not an accepted field: Airbnb composes the public description from the sections (`summary`, `space`, `access`, …) and ignores a directly-supplied one.
+         *
+         *     **A 200 does not by itself mean the change was applied.** On an established listing Airbnb LOCKS host-managed description fields — the write returns 200, reports them as locked, and applies nothing for them. The response reports `blockedFields`: the fields YOU sent that Airbnb dropped. `blockedFields: []` is what a landed write looks like; a non-empty list is still a 200 (the other fields really were written) with a `message` naming what was not. Reporting that as a clean success is the bug behind "the description does not push to Airbnb".
+         *
+         *     This writes to AIRBNB. To write Repull's own canonical copy — the content a later publish distributes — use `PUT /v1/listings/{id}/content` with `locale`.
+         *
+         *     Send `Idempotency-Key` to make a retry safe.
+         *
+         *     Returns `403 listing_inactive` when the listing is inactive.
+         */
+        put: operations["updateAirbnbListingDescription"];
         post?: never;
         delete?: never;
         options?: never;
@@ -1915,22 +1989,38 @@ export interface paths {
         };
         /**
          * List Airbnb rooms
-         * @description List the rooms configured on an Airbnb listing, ordered by room number. **Pure DB read** from `listings_airbnb_rooms`. Returns `404` when the listing has no Airbnb connection in this workspace.
+         * @description List the rooms configured on an Airbnb listing, ordered by room number, each with its sleeping arrangement in `beds`. **Pure DB read** from `listings_airbnb_rooms` + `listings_airbnb_beds`. Returns `404` when the listing has no Airbnb connection in this workspace.
          *
          *     Returns `403 listing_inactive` when the listing is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
         get: operations["list_airbnb_listing_rooms"];
-        put?: never;
+        /**
+         * Update an Airbnb room
+         * @description Change a room's type, number, privacy or sleeping arrangement. **Write-side** — calls Airbnb upstream. Pass the Airbnb-side room id as `?roomId=` and send only the fields you want to change.
+         *
+         *     `beds` REPLACES the room's whole arrangement — that is Airbnb's semantics for the field — so send every bed the room has, not just the changed one.
+         *
+         *     Airbnb's room endpoints are keyed by room id alone, so the room is proven to belong to the listing named in the path before anything is sent; a room from another listing returns `404`, the same answer a room that does not exist gets.
+         *
+         *     On success both stored copies are rebuilt to match, so a read straight after this write returns the new arrangement. `stored` says whether that succeeded.
+         *
+         *     Returns `403 listing_inactive` when the listing is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
+         */
+        put: operations["update_airbnb_listing_room"];
         /**
          * Create an Airbnb room
-         * @description Create a new room on an Airbnb listing. **Write-side** — calls Airbnb upstream. Body is the full room object minus `room_id`. Requires a connected Airbnb host, else `404 no_connection`.
+         * @description Create a new room on an Airbnb listing, with its sleeping arrangement. **Write-side** — calls Airbnb upstream. Requires a connected Airbnb host, else `404 no_connection`.
+         *
+         *     The response is the room object as Airbnb returned it. The new room is also seeded into our own copy, so the very next `GET /rooms` shows it rather than waiting for the sync.
          *
          *     Returns `403 listing_inactive` when the listing is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
         post: operations["create_airbnb_listing_room"];
         /**
          * Delete an Airbnb room
-         * @description Delete a room from an Airbnb listing. **Write-side** — calls Airbnb upstream. Pass the Airbnb-side room id as `?roomId=`. Requires a connected Airbnb host, else `404 no_connection`.
+         * @description Delete a room from an Airbnb listing, and its beds with it. **Write-side** — calls Airbnb upstream. Pass the Airbnb-side room id as `?roomId=`. Requires a connected Airbnb host, else `404 no_connection`.
+         *
+         *     The room is proven to belong to the listing named in the path first; a room from another listing returns `404`. Both stored copies drop the room on success — `stored` reports whether that succeeded.
          *
          *     Returns `403 listing_inactive` when the listing is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
@@ -2004,9 +2094,9 @@ export interface paths {
          * List listings
          * @description Cursor-paginated list of listings owned by the authenticated workspace. Use `pagination.nextCursor` from one response as the `cursor` query param of the next request to walk the full set. `?offset=` is also accepted as a first-class alias for shallow paging (0..10000) — see the `offset` parameter below. Mutually exclusive with `cursor`. Filters: `q` (substring on name/street/city), `status`, `channel`.
          *
-         *     **Optional expansions:** Pass `?include=content` to enrich each row with the rich content slab (summary, description, space, house rules, etc. — sourced from `listings_descriptions` for the `en` locale). Pass `?include=details` for the structural slab (bedrooms, bathrooms, person capacity, check-in window, wifi, house manual, etc.). Both default to `null` per row when the underlying `listings_descriptions` / `listings_details` row is missing — distinct from the field being absent (which signals the expansion was not requested). Combine comma-separated, e.g. `?include=content,details`. The default response stays lean; consumers must opt in.
+         *     **Optional expansions:** Pass `?include=content` to enrich each row with the rich content slab (summary, description, space, house rules, etc. — sourced from `listings_descriptions` for the `en` locale). Pass `?include=details` for the structural slab (bedrooms, bathrooms, person capacity, check-in window, wifi, house manual, etc.). Both default to `null` per row when the underlying `listings_descriptions` / `listings_details` row is missing — distinct from the field being absent (which signals the expansion was not requested). Pass `?include=thumbnail` to guarantee `thumbnailUrl` on every returned row — including the reduced inactive ones. Combine comma-separated, e.g. `?include=content,thumbnail`. The default response stays lean; consumers must opt in.
          *
-         *     **Inactive listings:** by default only active listings are returned. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated, so when `status` asks for inactive ones they carry only `id`, `name`, `status` and `channels` — enough to choose what to activate with `PATCH /v1/listings/{id}`. `?include=` expansions are not applied to them.
+         *     **Inactive listings:** by default only active listings are returned. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated, so when `status` asks for inactive ones they carry only `id`, `name`, `status` and `channels` — enough to choose what to activate with `PATCH /v1/listings/{id}`. The `content` and `details` expansions are not applied to them. `?include=thumbnail` is the one exception: it adds `thumbnailUrl` to an inactive row so a single request can render an active/inactive selection screen with pictures, instead of one follow-up call per listing (which an inactive listing would answer with `403 listing_inactive` anyway).
          */
         get: operations["listListings"];
         put?: never;
@@ -2081,6 +2171,8 @@ export interface paths {
          *
          *     **Partial update:** every field is optional. Only the fields you send are written; absent fields are left untouched. `amenities` is a FULL replacement of the amenity set (omit to leave untouched, send `[]` to clear).
          *
+         *     **Multilingual:** send `locale` to say which language this copy is in (`it`, `pt-BR`, …). Canonical content is stored per locale, so each language keeps its own row instead of overwriting the English one. Omit it for English.
+         *
          *     **Local write only — NOT a channel publish.** This mutates Repull's own copy of the content. It does NOT push to Airbnb / Booking.com; it marks the channels dirty so a later publish knows what changed. Distribution stays a separate explicit step.
          *
          *     **Photos are deferred:** a provided `photos` array is echoed back in the `deferred` field and NOT persisted (media ingestion is a follow-up).
@@ -2130,7 +2222,17 @@ export interface paths {
         put?: never;
         /**
          * Publish a listing to Airbnb
-         * @description Push a Repull listing to Airbnb. Pass `airbnbConnectionId` to update an already-mapped Airbnb listing, or `hostId` to create a brand-new Airbnb listing under that host.
+         * @description Push a Repull listing's canonical content to Airbnb. Pass `airbnbConnectionId` to update an already-mapped Airbnb listing, or `hostId` to create a brand-new Airbnb listing under that host.
+         *
+         *     **A publish is not one call to Airbnb.** It is up to eight independent ones — details, description, amenities, rooms, policies, photos, pricing, checkout_tasks — and each can fail on its own. `result.published` is true only when every attempted section landed; `result.sections` lists the ones that did and `result.errors[]` carries Airbnb's own reason, per section, for the ones that did not. **A partial publish is normal and is not rolled back**: what succeeded stays applied. Publish again once you have fixed the failing sections — a re-publish of an unchanged section is harmless.
+         *
+         *     `result.lockedFields` names the fields Airbnb will not let this listing change at all. They are not retryable by anyone: Airbnb answers 200 and applies nothing. `GET /v1/channels/airbnb/listings/{id}` reports the same list up front.
+         *
+         *     **Which fields this pushes** — title, description sections and house rules (English/primary locale), amenities, rooms and beds, photos, nightly price and fees, cancellation policy and guest controls, check-in/out times, quiet hours, property and room type, checkout tasks. **Not pushed by this endpoint:** non-primary locales (`PUT /v1/channels/airbnb/listings/{id}/descriptions`), guest-safety disclosures (`PUT …/safety-disclosures`), check-in method (`PUT …/details`), permits (`PUT …/permits`), and the calendar (`PUT …/availability`).
+         *
+         *     `force: true` re-pushes every section, ignoring dirty-field tracking. Without it only the sections changed since the last successful publish are sent.
+         *
+         *     Send `Idempotency-Key` to make a retry safe: a timeout on a publish otherwise leaves you unable to tell whether it ran.
          *
          *     Returns `403 listing_inactive` when the listing is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
@@ -3234,6 +3336,279 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/channels/airbnb/alterations/{id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel Airbnb alteration
+         * @description Withdraw an alteration you proposed, before the other side has answered it. **Write-side** — calls Airbnb upstream (`respondToAlteration` with status `canceled`). Use this when you sent the wrong dates, guest count, price or listing: the alteration stops being pending instead of sitting there until the guest acts on it.
+         *
+         *     This is the third of Airbnb's three answers to a pending alteration, alongside `accept` and `decline`, and behaves identically to them: requires a connected Airbnb host for the workspace (else `404 no_connection`) and that the alteration id belongs to a reservation in your workspace (else `404 not_found`). No request body is required.
+         *
+         *     Airbnb decides whether an alteration can still be withdrawn — one that has already been accepted or declined is refused upstream, and Airbnb's own reason comes back in `message`.
+         *
+         *     Returns `403 listing_inactive` when the listing this resolves to is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
+         */
+        post: operations["cancel_airbnb_alteration"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/listings/{id}/pull/airbnb": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Refresh a listing from Airbnb
+         * @description Re-read this listing from Airbnb and update your stored copy, then report what was refreshed and when. The mirror image of `POST /v1/listings/{id}/publish/airbnb`.
+         *
+         *     Every other Airbnb read on this API is served from our database. This endpoint is the one that goes and asks Airbnb — use it after a push, to see the values Airbnb actually kept, or when a host has changed something in the Airbnb app.
+         *
+         *     **What it refreshes:** basic listing facts (property type, bedrooms, beds, bathrooms, capacity), descriptions, photos, rooms and beds, amenities, booking settings (check-in/check-out windows, guest controls, cancellation policy), stay rules (min/max nights, advance-booking window, turnover buffer), pricing settings and standard fees, permits, checkout tasks and the check-in guide. After it returns, those values are what `GET /v1/listings/{id}?include=content,details` and the `/v1/channels/airbnb/**` routes serve.
+         *
+         *     **What it does NOT refresh:** the calendar (nightly rates and availability — see `GET /v1/channels/airbnb/listings/{id}/availability`), reservations, messages, reviews or payouts. Those arrive continuously through the channel's own sync and never need a manual pull.
+         *
+         *     **Runs synchronously** — the response is the result, not a job id. Expect several seconds.
+         *
+         *     **One pull per listing per 15 minutes.** A pull is roughly a dozen Airbnb calls; a second call inside the window returns `429 rate_limit_exceeded` with `Retry-After` and `nextPullAvailableAt`, and makes no Airbnb calls. Two simultaneous calls cannot both run.
+         *
+         *     Returns `403 listing_inactive` when the listing is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
+         */
+        post: operations["pullListingFromAirbnb"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/airbnb/listings/{id}/booking-settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Airbnb booking settings
+         * @description Read how an Airbnb listing takes bookings and what happens when a guest cancels: booking mode, Instant Book state, the good-track-record requirement, check-in/check-out times, advance notice, preparation time, booking window, the short-stay and long-stay cancellation policies, and the non-refundable option.
+         *
+         *     **This is Repull's stored copy, not a live call to Airbnb.** Values come from the local Airbnb mirror that the sync workers fill, so the response always carries `dataFreshness` — check `dataFreshness.stale` (and `dataFreshness.accounts[]` when the workspace has several Airbnb accounts) before treating a value as current.
+         *
+         *     **Not exposed by Airbnb.** The pre-reservation message and automatic stay extension have no field on Airbnb's `booking_settings` resource, so neither can be read or written here; set the pre-reservation message in the Airbnb host dashboard, and handle extensions through `/v1/channels/airbnb/alterations`. Airbnb also expresses the same-day cutoff only as whole hours of advance notice, so `advanceNotice.hours` is as precise as the cutoff gets.
+         *
+         *     Returns `404` when the listing has no Airbnb connection in this workspace, and `403 listing_inactive` when the listing is inactive — an inactive listing keeps syncing but cannot be read or changed through the API until it is activated.
+         */
+        get: operations["get_airbnb_booking_settings"];
+        /**
+         * Update Airbnb booking settings
+         * @description Set any subset of a listing's booking settings on Airbnb. Partial — a field you do not send is left as it is.
+         *
+         *     `{id}` is the **Repull listing id** (from `GET /v1/properties` or `GET /v1/channels/airbnb/listings`), not the Airbnb listing id; Repull translates it before calling Airbnb.
+         *
+         *     The body is validated before anything reaches Airbnb, so a bad value is a `422` naming the field rather than a failed upstream call. Unknown fields are refused rather than dropped.
+         *
+         *     **Two groups, applied in order.** Instant Book, check-in/out and the cancellation fields go to Airbnb's booking-settings resource. Advance notice, preparation time and booking window go to Airbnb's availability rules — Airbnb replaces that whole document, so Repull reads the current rules first and merges your change onto them, which is why setting a preparation time does not blank the listing's min/max nights. The response's `applied` array names the groups that were written.
+         *
+         *     **Non-refundable is a percentage here, a factor on Airbnb.** Airbnb stores `non_refundable_price_factor` between 0.7 and 1.0; send `cancellation.nonRefundable.discountPercent` (0-30) and Repull converts — 10% becomes 0.9. `enabled: false` sets the factor to 1.0.
+         *
+         *     **Not exposed by Airbnb:** `preReservationMessage` and `automaticStayExtension`. Sending either returns a `422` explaining where to set it instead.
+         *
+         *     **Errors:** `403 connection_reauth_required` — Airbnb no longer accepts the connection for this listing (reconnect; retrying won't help). `403 listing_inactive` — the listing is inactive. `404 not_found` — no Airbnb-connected listing with this id in the workspace. `422 invalid_params` — the body is wrong; `field` names it. `422 airbnb_rejected` — Airbnb refused the change; `message` carries its reason. `429 airbnb_rate_limited` — back off. `502 airbnb_error` — Airbnb outage or timeout; retry.
+         */
+        put: operations["update_airbnb_booking_settings"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/airbnb/listings/{id}/photos/cover": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set the Airbnb cover photo
+         * @description Choose which photo leads the listing. **Write-side** — calls Airbnb upstream.
+         *
+         *     Airbnb has no "cover" field: the cover is the first photo of the tour, so this is a position write. Usually it is a single upstream request — the chosen photo takes a position below the current first one and nothing else moves. When the tour already starts at position 1 and there is no room below it, the tour is renumbered instead, one request per photo whose position actually changes, with the same stop-at-first-failure reporting as `PUT /photos/order` (`applied`, `failed_photo_id`, `not_attempted`; re-send the identical body to finish).
+         *
+         *     The listing thumbnail — what every list view renders — is repointed at the new cover, so the change is not visible only inside the photo tour.
+         *
+         *     The photo must already be in our cached copy of the tour; one uploaded since the last sync returns `404`, and `PATCH /photos` can set its position in the meantime.
+         *
+         *     Returns `403 listing_inactive` when the listing is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
+         */
+        put: operations["set_airbnb_listing_cover_photo"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/airbnb/listings/{id}/photos/order": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Reorder the Airbnb photo tour
+         * @description Set the order of a listing's photo tour in one call. **Write-side** — calls Airbnb upstream.
+         *
+         *     Send the photo ids in the order you want them shown, first photo first. Ids you leave out keep their current relative order behind the ones you list, so moving one photo to the front is `{"photo_ids": ["<id>"]}`. Positions are then written as a dense run starting at 1.
+         *
+         *     Airbnb has no bulk photo endpoint — order is one `sort_order` per photo — so this saves a loop of up to 200 requests against your rate limit and makes the partial-failure case reportable. How much is atomic:
+         *
+         *     - Everything is validated before anything is written. A duplicate id, an id that is not on this listing, an inactive listing or a missing connection all fail with **zero** upstream writes.
+         *     - Only photos whose position actually changes are written; re-sending the order you already have writes nothing.
+         *     - On the first upstream failure the run stops — nothing after it is attempted. The error carries `applied`, `failed_photo_id` and `not_attempted`, uses Airbnb's own status (`422` rejected / `403` reauth / `429` / `502`), and the operation is idempotent: re-send the identical body to finish the run.
+         *     - Our stored copy records what actually landed, never the intent.
+         *
+         *     Validation is against our cached copy of the tour, so a listing whose photos have never synced returns `404` — use `PATCH /photos` (which needs no cache) until the first sync lands.
+         *
+         *     Returns `403 listing_inactive` when the listing is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
+         */
+        put: operations["reorder_airbnb_listing_photos"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/airbnb/listings/{id}/details": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Airbnb listing details
+         * @description What kind of property Airbnb thinks this is — property type group and category, room type, capacity — plus the check-in method (`checkInOption`), whether the listing is live (`hasAvailability`), and **`lockedFields`: the attributes Airbnb refuses to change on this listing**.
+         *
+         *     **Pure DB read** from the local mirror, one entry per Airbnb connection.
+         *
+         *     Read `lockedFields` before a content write. Airbnb does not refuse a write to a locked attribute: it returns 200, reports the attribute as locked, and applies nothing — which is why a write can look successful and change nothing. 1,180 of 5,917 synced listings carry at least one locked attribute.
+         *
+         *     Returns `404` when the listing has no Airbnb connection in this workspace, and `403 listing_inactive` when the listing is inactive.
+         */
+        get: operations["getAirbnbListingDetails"];
+        /**
+         * Update property type, room type, quiet hours or check-in method
+         * @description Change what kind of property the Airbnb listing is, when its quiet hours are, or how the guest gets in. Partial: only the fields you send are written. At least one required; an unknown field is refused by name rather than dropped.
+         *
+         *     This is the UPDATE path for fields that previously had none. `POST /v1/listings` accepts a `propertyType` when a listing is CREATED and nothing could change it afterwards, so a listing mis-typed at import stayed mis-typed; the check-in method was mirrored and never exposed at all.
+         *
+         *     **A 200 does not by itself mean the change was applied.** `property_type_category`, `property_type_group` and `check_in_option` are among the attributes Airbnb locks on established listings: the write returns 200, and Airbnb applies nothing for the locked ones. The response reports `blockedFields` — the fields YOU sent that Airbnb dropped — and `blockedFields: []` is what a landed write looks like. `GET …/details` reports the same list as `lockedFields` so you can check first.
+         *
+         *     Canonical property type (the value Repull keeps and republishes) is set with `PUT /v1/listings/{id}/content` under `details`; this endpoint writes straight to Airbnb.
+         *
+         *     Send `Idempotency-Key` to make a retry safe.
+         */
+        put: operations["updateAirbnbListingDetails"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/airbnb/listings/{id}/permits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Airbnb permits and licences
+         * @description The regulatory permits, licences and registration numbers attached to an Airbnb listing.
+         *
+         *     **DB-only by default.** `?source=cache` (the default) returns the permits as last mirrored by the sync worker — regulatory body, regulation type, status, permit number — with no upstream call.
+         *
+         *     **`?source=live` also returns the QUESTIONS.** The mirror stores the RESULT of a permit, not what Airbnb asks for it, so a caller that is about to write needs `?source=live` once: it returns each permit flow with the `question_key`, `answer_type` and `options` of every question, and the answers already on file. Airbnb refuses a `question_key` it did not ask for on this listing, so this is not optional guesswork you can skip.
+         *
+         *     Returns `404` when the listing has no Airbnb connection in this workspace, and `403 listing_inactive` when the listing is inactive.
+         */
+        get: operations["listAirbnbListingPermits"];
+        /**
+         * Answer Airbnb permit questions
+         * @description Answer the regulatory permit questions for a listing — the licence or registration number a city requires to keep the listing up.
+         *
+         *     Read the questions first with `GET …/permits?source=live`: every answer is keyed by a `question_key` Airbnb asks for THIS listing, and the question's `answer_type` decides which value field applies (`text_value`, `date_value`, or `selected_options_value`). Answers are forwarded verbatim — nothing is defaulted or inferred, because a wrong licence number can take a listing down in a regulated city.
+         *
+         *     Send `Idempotency-Key`: a timeout here leaves you unable to tell "never arrived" from "arrived, response lost", and this is a compliance filing.
+         *
+         *     Airbnb refusing the answers (an unknown question key, a malformed licence number) is `422 airbnb_rejected` carrying Airbnb's own reason. An expired or revoked Airbnb connection is `403 connection_reauth_required`.
+         */
+        put: operations["updateAirbnbListingPermits"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/airbnb/listings/{id}/safety-disclosures": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List guest-safety disclosures
+         * @description What a guest is told about the property before they book — exterior security cameras, a decibel noise monitor, pets on the property, stairs, a pool with no fence, weapons, shared spaces, limited parking. Airbnb calls them `listing_expectations_for_guests` and shows them at booking time.
+         *
+         *     **Pure DB read** from the local mirror. EVERY supported disclosure type is returned, including the ones this listing has not declared (`value: false`), so "does this property have cameras?" has an answer rather than a missing key — `declared` tells you whether Airbnb holds an explicit answer. Types Airbnb returns that are not in the documented set are passed through rather than dropped.
+         *
+         *     Where a listing is connected to several Airbnb listings, a disclosure declared on any of them is reported as true of the property.
+         *
+         *     Returns `404` when the listing has no Airbnb connection in this workspace, and `403 listing_inactive` when the listing is inactive.
+         */
+        get: operations["listAirbnbListingSafetyDisclosures"];
+        /**
+         * Update guest-safety disclosures
+         * @description Declare or retract the guest-safety disclosures on the live Airbnb listing.
+         *
+         *     **This is a MERGE, not a replacement.** Airbnb keeps one value per disclosure type: a type you leave out keeps the value it has, and to retract one you send it with `value: false`. A full replacement would let a partial request silently un-declare a security camera — a guest-safety statement, not a preference.
+         *
+         *     Only the disclosures are sent upstream. The same Airbnb endpoint carries the cancellation policy and instant-book settings, and this endpoint never touches them.
+         *
+         *     Send `Idempotency-Key` to make a retry safe.
+         *
+         *     Airbnb refusing the change is `422 airbnb_rejected` with Airbnb's own reason; an expired or revoked connection is `403 connection_reauth_required`.
+         */
+        put: operations["updateAirbnbListingSafetyDisclosures"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -3505,6 +3880,16 @@ export interface components {
              * @example 2026-04-20
              */
             checkOut: string;
+            /**
+             * @description Local check-in time for this stay, `HH:MM` on a 24-hour clock in the **property's own timezone** — not UTC. Usually inherited from the listing policy, overridden per reservation where an early check-in was agreed. `null` when unknown. This is the same field `PATCH /v1/reservations/{id}` writes.
+             * @example 16:00
+             */
+            checkInTime?: string | null;
+            /**
+             * @description Local check-out time for this stay, `HH:MM` on a 24-hour clock in the property's own timezone. Pair with `checkOut` to schedule the turnover clean. `null` when unknown. This is the same field `PATCH /v1/reservations/{id}` writes.
+             * @example 10:00
+             */
+            checkOutTime?: string | null;
             /**
              * @description Lifecycle status. The API normalises a multi-decade internal taxonomy down to these four buckets, so the value you receive is always one of the enum constants. `completed` is derived from `checkOut < today`.
              * @example confirmed
@@ -4117,7 +4502,13 @@ export interface components {
          * @enum {string}
          */
         WebhookEventType: "reservation.created" | "reservation.updated" | "reservation.cancelled" | "reservation.message.received" | "reservation.alteration.created" | "reservation.alteration.responded" | "listing.created" | "listing.updated" | "listing.deleted" | "calendar.updated" | "account.created" | "account.disconnected" | "review.created" | "review.responded" | "ai.operation.completed" | "ai.operation.failed" | "payment.completed" | "payment.refunded" | "repull.ping";
-        /** @description Lightweight reservation snapshot delivered as `data.object` on every reservation webhook event. Stable across `reservation.created`, `reservation.updated`, and `reservation.cancelled`. Fetch the full reservation via `GET /v1/reservations/{id}` if you need pricing, guest contact info, or audit history — those are deliberately omitted to keep deliveries small. */
+        /**
+         * @description Lightweight reservation snapshot delivered as `data.object` on every reservation webhook event. Stable across `reservation.created`, `reservation.updated`, and `reservation.cancelled`. Fetch the full reservation via `GET /v1/reservations/{id}` if you need pricing, guest contact info, or audit history — those are deliberately omitted to keep deliveries small.
+         *
+         *     **Stay terms are the one exception to that rule.** `cancellationPolicy`, `checkInTime` and `checkOutTime` ride on every delivery, because the decisions they drive — is a refund owed, when can housekeeping turn the unit over — are made at the moment the webhook lands, not on a follow-up fetch. They are operational parameters of the booking, not contact or payment data. Guest email, payment method and payment reference stay off the snapshot; see `GET /v1/reservations/{id}`.
+         *
+         *     All three are `null` when the source channel did not supply them. They are never defaulted: a fabricated policy is worse than a missing one.
+         */
         ReservationWebhookObject: {
             /**
              * @description Repull-internal reservation id. Pass to `GET /v1/reservations/{id}`.
@@ -4161,6 +4552,26 @@ export interface components {
              * @example confirmed
              */
             status: string;
+            /**
+             * @description Cancellation policy the booking was made under, **verbatim from the source channel** — not normalised, because the codes do not mean the same thing across channels.
+             *
+             *     - Airbnb, Vrbo, direct and owner bookings carry a named code: `flexible`, `moderate`, `firm_14`, `strict_14_with_grace_period`, `better_strict_with_grace_period`, `super_strict_30`, `super_strict_60`, `tiered_pricing_non_refundable`, `long_term_flexible`, `flexible_new`.
+             *     - **Booking.com carries its numeric policy id as a string** (`"1"`, `"74"`, `"121"`). It is not self-describing — resolve it against the property's policy set on Booking.com.
+             *
+             *     `null` when the channel supplied none (iCal-imported bookings, some legacy direct rows).
+             * @example firm_14
+             */
+            cancellationPolicy?: string | null;
+            /**
+             * @description Local check-in time, `HH:MM` on a 24-hour clock in the **property's own timezone** — not UTC, and not the subscriber's. Usually inherited from the listing policy, but per-reservation where the channel or an agreed early check-in overrides it. `null` when unknown.
+             * @example 16:00
+             */
+            checkInTime?: string | null;
+            /**
+             * @description Local check-out time, `HH:MM` on a 24-hour clock in the property's own timezone. Pair it with `checkoutDate` to schedule the turnover. `null` when unknown.
+             * @example 10:00
+             */
+            checkOutTime?: string | null;
         };
         /** @description Payload for `reservation.created`. A new reservation arrived from any connected channel or direct booking. Stripe-pattern envelope: `data.object` carries the reservation snapshot. */
         ReservationCreatedPayload: {
@@ -4844,6 +5255,11 @@ export interface components {
             name?: string;
             /** @example Malibu */
             city?: string | null;
+            /**
+             * Format: uri
+             * @description Cover photo URL for the Vanio listing. **Only present when the caller passes `?include=thumbnail`.** `null` when the listing has no cover photo stored — the listing is still returned.
+             */
+            thumbnailUrl?: string | null;
             connections?: components["schemas"]["AirbnbConnection"][];
         };
         /** @description An Airbnb-side connection record for a Vanio listing. The same property may appear under multiple connections if it has been linked from multiple Airbnb host accounts. */
@@ -4855,15 +5271,53 @@ export interface components {
              * @example 1116939745194659457
              */
             airbnbId?: string;
-            /** @description Airbnb host user id */
-            hostId?: string;
+            /**
+             * @description Which connected Airbnb account this row belongs to — the Airbnb host id, as a string (they exceed 2^53). The same value `?account_id=` accepts and `GET /v1/connect/airbnb` returns as `accounts[].externalAccountId`.
+             * @example 1772489413932732258
+             */
+            accountId?: string | null;
+            /**
+             * @description Display name of that connected Airbnb account.
+             * @example Pomello
+             */
+            accountName?: string | null;
+            /** @description Alias of `accountId`, kept for compatibility — same Airbnb host id, same string. */
+            hostId?: string | null;
+            /** @description Alias of `accountName`, kept for compatibility. */
+            hostName?: string | null;
             active?: boolean;
             syncEnabled?: boolean;
             primary?: boolean;
             /** @description Decimal markup (e.g. "1.10" for +10%). */
             markup?: string | null;
+            /**
+             * @description Airbnb's own API sync decision for THIS listing, as Airbnb reports it. Airbnb authorises sync one listing at a time, so a connected account can still contain listings it will not accept writes for.
+             *
+             *     - `sync_all` — Repull manages content, rates and availability.
+             *     - `sync_rates_and_availability` — Repull manages rates and availability; listing content is managed by the host on Airbnb.
+             *     - `none` — the listing is **not** connected to Repull on Airbnb's side. Every write to it is refused with `403 listing_not_api_connected`; reconnecting the Airbnb account does not change this, the host must switch the listing on in Airbnb.
+             *
+             *     `null` when the listing has not synced yet. Not to be confused with `syncEnabled`, which is a Repull-side flag and says nothing about what Airbnb accepts.
+             * @example sync_all
+             * @enum {string|null}
+             */
+            syncCategory?: "sync_all" | "sync_rates_and_availability" | "none" | null;
+            /**
+             * @description Whether Repull will send a write for this listing to Airbnb. `false` exactly when `syncCategory` is `none` — such a write is refused with `403 listing_not_api_connected` before anything reaches Airbnb. Check this before a portfolio-wide push instead of discovering it one 403 at a time.
+             * @example true
+             */
+            writable?: boolean;
             /** Format: date-time */
             createdAt?: string;
+            /**
+             * @description Fields Airbnb will NOT let you change on this listing — `property_type_category`, `name`, `check_in_option`, `summary`, `space`, individual amenities, … Airbnb does not refuse a write to a locked field: it returns 200, reports the field as locked, and applies nothing. Check this before a content write; `[]` means nothing is known to be locked. Recorded at sync time, so a lock added on Airbnb since the last sync will show up on the write instead (as `blockedFields` in the response).
+             * @example [
+             *       "name",
+             *       "summary",
+             *       "property_type_category"
+             *     ]
+             */
+            lockedFields?: string[];
             /** @description Present only when `?include=amenities` is passed. Sourced from the local `listings_airbnb_amenities` cache (populated by the Airbnb sync worker). Returns `null` when the cache is empty for this connection — see the top-level `dataFreshness` envelope to disambiguate "never synced" vs "host disconnected" vs "fresh and genuinely empty". */
             amenities?: {
                 /** @description Airbnb amenity id (e.g. `wifi`, `kitchen`). */
@@ -4907,6 +5361,16 @@ export interface components {
             confirmationCode?: string;
             listingId?: string;
             /**
+             * @description Which connected Airbnb account this row belongs to — the Airbnb host id, as a string (they exceed 2^53). The same value `?account_id=` accepts and `GET /v1/connect/airbnb` returns as `accounts[].externalAccountId`.
+             * @example 1772489413932732258
+             */
+            accountId?: string | null;
+            /**
+             * @description Display name of that connected Airbnb account.
+             * @example Pomello
+             */
+            accountName?: string | null;
+            /**
              * @example accepted
              * @enum {string}
              */
@@ -4934,12 +5398,66 @@ export interface components {
         AirbnbThread: {
             id?: string;
             listingId?: string | null;
+            /**
+             * @description Which connected Airbnb account this row belongs to — the Airbnb host id, as a string (they exceed 2^53). The same value `?account_id=` accepts and `GET /v1/connect/airbnb` returns as `accounts[].externalAccountId`.
+             * @example 1772489413932732258
+             */
+            accountId?: string | null;
+            /**
+             * @description Display name of that connected Airbnb account.
+             * @example Pomello
+             */
+            accountName?: string | null;
             guestName?: string | null;
             /** Format: date-time */
             lastMessageAt?: string | null;
             unreadCount?: number | null;
         };
-        /** @description An Airbnb reservation alteration request (date change, guest-count change, or price change), mirrored locally in `reservation_alterations`. Fields prefixed `original*` describe the reservation as it stands today; `new*` fields describe the proposed change. Compare them to render a diff and decide whether to accept (`POST .../{id}/accept`) or decline (`POST .../{id}/decline`). */
+        /**
+         * @description A proposed change to an existing Airbnb reservation. `confirmation_code` names the reservation; at least one of `check_in`, `check_out`, `number_of_guests`, `total_price` or `listing_id` must be sent with it, because an alteration that changes nothing is not something Airbnb can act on (it is refused with `422 invalid_params`).
+         *
+         *     Unknown fields are refused rather than silently dropped. The older connector-native spellings (`start_date`, `end_date`, `total_price_override`, and an Airbnb guest-details object in place of `number_of_guests`) are still accepted for existing integrations; send the canonical names above in new code, and never a canonical field and its older spelling with different values.
+         */
+        AirbnbAlterationCreateRequest: {
+            /**
+             * @description Airbnb confirmation code of the reservation to alter. `GET /v1/channels/airbnb/reservations` lists them.
+             * @example HMX4CMA2X9
+             */
+            confirmation_code: string;
+            /**
+             * Format: date
+             * @description New check-in date, `YYYY-MM-DD`.
+             * @example 2026-08-02
+             */
+            check_in?: string;
+            /**
+             * Format: date
+             * @description New check-out date, `YYYY-MM-DD`. Must be after `check_in` when both are sent.
+             * @example 2026-08-06
+             */
+            check_out?: string;
+            /**
+             * @description New guest count for the stay.
+             * @example 3
+             */
+            number_of_guests?: number;
+            /**
+             * @description New total for the whole stay, in the listing currency. Sent to Airbnb as the alteration's price override.
+             * @example 640
+             */
+            total_price?: number;
+            /**
+             * @description Move the reservation to this listing — a **listing transfer**. This is the **Repull** listing id (the `id` from `GET /v1/properties`), the same id every other Airbnb channel route takes; Repull verifies you own it, that it is active and connected to Airbnb, and translates it to the Airbnb listing id before sending it. Airbnb decides whether to honour the move.
+             * @example 4118
+             */
+            listing_id?: number;
+            /**
+             * @description The transfer target as the **Airbnb** listing id, for callers who hold that instead of the Repull id. Prefer `listing_id`. Sending both is allowed only when they name the same listing.
+             * @example 18871326
+             */
+            airbnb_listing_id?: string;
+        };
+        /** @description An Airbnb reservation alteration request (date change, guest-count change, price change, or a move to another listing), mirrored locally in `reservation_alterations`. Fields prefixed `original*` describe the reservation as it stands today; `new*` fields describe the proposed change. Compare them to render a diff and decide whether to accept (`POST .../{id}/accept`) or decline (`POST .../{id}/decline`) — or, for one you proposed yourself, to withdraw it (`POST .../{id}/cancel`). */
         AirbnbAlteration: {
             /** @description Internal Repull mirror-row id (not the Airbnb alteration id — use `alterationId` for the `{id}` path param on the get / accept / decline routes). */
             id?: string;
@@ -4947,6 +5465,16 @@ export interface components {
             alterationId?: string | null;
             /** @description Repull reservation id the alteration belongs to. */
             reservationId?: string | null;
+            /**
+             * @description Which connected Airbnb account this row belongs to — the Airbnb host id, as a string (they exceed 2^53). The same value `?account_id=` accepts and `GET /v1/connect/airbnb` returns as `accounts[].externalAccountId`.
+             * @example 1772489413932732258
+             */
+            accountId?: string | null;
+            /**
+             * @description Display name of that connected Airbnb account.
+             * @example Pomello
+             */
+            accountName?: string | null;
             /**
              * @description Always `airbnb` on this surface.
              * @example airbnb
@@ -4989,6 +5517,16 @@ export interface components {
             /** @description Proposed new total price (decimal string). */
             newTotalPrice?: string | null;
             /**
+             * @description Repull listing id the alteration moves the reservation to — a **listing transfer**. `null` when the alteration does not change the listing, which is the usual case. Compare it with the reservation's current `listingId` to render the move. Like every id on this API it is a string.
+             * @example 4118
+             */
+            newListingId?: string | null;
+            /**
+             * @description The same transfer target as Airbnb spells it (the Airbnb listing id). Present alongside `newListingId`; it is also the only one of the two that is set when the destination listing has not been imported into this workspace.
+             * @example 18871326
+             */
+            newAirbnbListingId?: string | null;
+            /**
              * Format: date-time
              * @description When the alteration was first mirrored locally.
              */
@@ -5010,10 +5548,27 @@ export interface components {
             /** @description Optional host-supplied instruction for the amenity. */
             instruction?: string | null;
         };
+        /** @description One photo's position in the tour. `sortOrder` is a relative sort key, not an address — lower sorts earlier. */
+        AirbnbPhotoPosition: {
+            /** @description Airbnb-side photo id. */
+            photoId?: string;
+            /** @description Position in the tour, 1 first. */
+            sortOrder?: number;
+        };
         /** @description An Airbnb review (guest → host or host → guest). */
         AirbnbReview: {
             id?: string;
             reservationCode?: string | null;
+            /**
+             * @description Which connected Airbnb account this row belongs to — the Airbnb host id, as a string (they exceed 2^53). The same value `?account_id=` accepts and `GET /v1/connect/airbnb` returns as `accounts[].externalAccountId`.
+             * @example 1772489413932732258
+             */
+            accountId?: string | null;
+            /**
+             * @description Display name of that connected Airbnb account.
+             * @example Pomello
+             */
+            accountName?: string | null;
             rating?: number | null;
             comment?: string | null;
             response?: string | null;
@@ -5252,6 +5807,21 @@ export interface components {
                  */
                 listing_ids?: string[];
                 /**
+                 * @description The single Repull listing the error is about. Present on `code: "listing_not_api_connected"` (HTTP 403).
+                 * @example 23901
+                 */
+                listing_id?: string;
+                /**
+                 * @description Airbnb's own id for that listing, so the host can find it in Airbnb. Present on `code: "listing_not_api_connected"` (HTTP 403).
+                 * @example 22616426
+                 */
+                airbnb_listing_id?: string;
+                /**
+                 * @description The listing's current Airbnb API sync category — why the write was refused. Present on `code: "listing_not_api_connected"` (HTTP 403).
+                 * @example none
+                 */
+                sync_category?: string;
+                /**
                  * @description Seconds the client should wait before retrying. Mirrors the `Retry-After` HTTP header. Present on rate-limit responses and on transient upstream failures that are safe to retry.
                  * @example 60
                  */
@@ -5315,22 +5885,55 @@ export interface components {
         CalendarResponse: {
             data?: components["schemas"]["CalendarDay"][];
         };
-        /** @description Top-level freshness indicator for any DB-backed Airbnb read. Tells consumers WHY a column may be `null` or stale without sprinkling per-row error envelopes through the response. The endpoint always returns 200 + DB data; this field is the single signal for "should I prompt the user to reconnect / wait for sync?". */
-        AirbnbDataFreshness: {
+        /** @description Freshness of ONE connected Airbnb account. Freshness is a property of an account, not of a workspace: one host's token expiring says nothing about another host's data. */
+        AirbnbAccountFreshness: {
+            /**
+             * @description Airbnb host id, as a string (they exceed 2^53). The same value `?account_id=` accepts and `GET /v1/connect/airbnb` returns as `accounts[].externalAccountId`.
+             * @example 1772489413932732258
+             */
+            accountId: string;
+            /**
+             * @description Display name of the connected account.
+             * @example Pomello
+             */
+            accountName?: string | null;
             /**
              * Format: date-time
-             * @description Most recent sync timestamp across the rows in the response. `null` when nothing has ever synced for this customer.
+             * @description When this account last COMPLETED an Airbnb import. `null` when it never has. A run that failed or was rate-limited does not move it.
              */
             lastSyncedAt: string | null;
-            /** @description `true` when any host is disconnected, when the local cache is empty, or when the cache hasn't been refreshed in 24h+. `false` when hosts are healthy and sync is fresh. */
+            /** @description `true` when this account is disconnected, has never synced, or has not refreshed in 24h+. */
             stale: boolean;
-            /** @description Why the data is stale. One of `host_disconnected_since_<iso>`, `sync_lag_>_24h`, `never_synced`. Omitted when `stale` is `false`. */
+            /** @description Why THIS account is stale. Omitted when it is fresh. */
             reason?: string | null;
             /**
              * Format: uri
-             * @description Dashboard URL the consumer can open to resolve the staleness (typically the Airbnb reconnect screen). Omitted when `stale` is `false`.
+             * @description Where to reconnect this account. Omitted when it is fresh.
              */
             fixUrl?: string | null;
+        };
+        /**
+         * @description Top-level freshness indicator for any DB-backed Airbnb read. Tells consumers WHY a column may be `null` or stale without sprinkling per-row error envelopes through the response. The endpoint always returns 200 + DB data; this field is the single signal for "should I prompt the user to reconnect / wait for sync?".
+         *
+         *     A workspace can connect several Airbnb accounts, so the answer has two levels. `accounts[]` carries the verdict per account; the top-level fields aggregate it. Scope a request with `?account_id=` and `accounts[]` holds exactly that account, with the top-level fields mirroring it.
+         */
+        AirbnbDataFreshness: {
+            /**
+             * Format: date-time
+             * @description The most recent Airbnb import COMPLETED by any account in scope. `null` when none of them ever has. A run that failed or was rate-limited does not move it.
+             */
+            lastSyncedAt: string | null;
+            /** @description `true` only when EVERY connected Airbnb account is stale — nothing in this response can be trusted to be current. With one account (the common case) that is the same as it has always been. With several, one disconnected host no longer condemns the other's rows: `stale` stays `false` and `reason` becomes `partial_account_staleness`. Read `accounts[]` for which is which. */
+            stale: boolean;
+            /** @description Why the data is stale. One of `host_disconnected_since_<iso>`, `host_not_activated`, `sync_lag_>_24h`, `never_synced`, `host_disconnected`, or `partial_account_staleness`. The last one appears WITH `stale: false`: the response is usable, but at least one connected account needs attention — deliberately surfaced so a consumer reading only the aggregate is never told everything is fine while an account is down. */
+            reason?: string | null;
+            /**
+             * Format: uri
+             * @description Dashboard URL the consumer can open to resolve the staleness (the Airbnb connections screen). Present whenever `reason` is, including on `partial_account_staleness`.
+             */
+            fixUrl?: string | null;
+            /** @description Per-account freshness, sorted by `accountId`. Omitted on responses that have no connected account to attribute (e.g. a workspace that has never connected Airbnb). */
+            accounts?: components["schemas"]["AirbnbAccountFreshness"][];
         };
         AirbnbListingListResponse: {
             data: components["schemas"]["AirbnbListing"][];
@@ -5356,6 +5959,16 @@ export interface components {
             confirmation_code?: string | null;
             /** @description Resolved Vanio reservation id when the confirmation code matched a reservation in this workspace; null otherwise. */
             reservation_id?: number | null;
+            /**
+             * @description Which connected Airbnb account this transaction belongs to — the Airbnb host id, as a string (they exceed 2^53). `null` on rows that name no listing (payouts).
+             * @example 1772489413932732258
+             */
+            account_id?: string | null;
+            /**
+             * @description Display name of that connected Airbnb account.
+             * @example Pomello
+             */
+            account_name?: string | null;
             /** @description Airbnb listing id. */
             listing_id?: string | null;
             thread_id?: string | null;
@@ -5438,7 +6051,7 @@ export interface components {
             isConnected: boolean;
             /**
              * Format: date-time
-             * @description When the host record was last touched (token refresh / activation / restriction). Closest available proxy for "last successful sync".
+             * @description When this account last COMPLETED an Airbnb import. `null` when it never has. A run that failed or was rate-limited does not move it, and neither does anything other than a sync.
              */
             lastSyncedAt: string | null;
             /**
@@ -5465,7 +6078,7 @@ export interface components {
             /**
              * Format: uri
              * @description Self-serve recovery URL. Set whenever `status` is anything other than `connected`. Points at the dashboard surface where the host re-authorizes (or initiates the first OAuth flow for `never_connected` workspaces).
-             * @example https://repull.dev/dashboard/connections/airbnb
+             * @example https://repull.dev/dashboard/connections
              */
             fixUrl?: string | null;
         };
@@ -5476,14 +6089,17 @@ export interface components {
         AirbnbReservationListResponse: {
             data?: components["schemas"]["AirbnbReservation"][];
             pagination?: components["schemas"]["CursorPagination"];
+            dataFreshness?: components["schemas"]["AirbnbDataFreshness"];
         };
         AirbnbThreadListResponse: {
             data?: components["schemas"]["AirbnbThread"][];
             pagination?: components["schemas"]["Pagination"];
+            dataFreshness?: components["schemas"]["AirbnbDataFreshness"];
         };
         AirbnbReviewListResponse: {
             data?: components["schemas"]["AirbnbReview"][];
             pagination?: components["schemas"]["Pagination"];
+            dataFreshness?: components["schemas"]["AirbnbDataFreshness"];
         };
         BookingPropertyListResponse: components["schemas"]["BookingProperty"][];
         BookingConversationListResponse: components["schemas"]["BookingConversation"][];
@@ -5570,7 +6186,12 @@ export interface components {
         };
         /** @description Canonical PMS-owned listing content. Every field is optional — this is a partial update, only the fields you send are written; absent fields are left untouched. This is a LOCAL write only: it does NOT push to Airbnb/Booking.com. Distribution is a separate explicit publish step. `photos` are ingested by URL and attached to the listing in order (full-replace by default, or append via `photosMode`). */
         ListingContentUpdateRequest: {
-            /** @description Guest-facing title. Written to the listing name and the `en` description. */
+            /**
+             * @description Which language the `title` / `description` / `summary` / `policies.houseRules` in THIS request are written in. Defaults to `en`. Canonical content is stored per locale — one row per (listing, locale) — so sending Italian copy with `locale: "it"` creates or updates the Italian row instead of overwriting the English one. Distribution of a non-primary locale to Airbnb is a separate call: `PUT /v1/channels/airbnb/listings/{id}/descriptions`.
+             * @example it
+             */
+            locale?: string;
+            /** @description Guest-facing title. Written to the listing name and the description row for `locale`. */
             title?: string | null;
             /** @description Alias for `title`. */
             name?: string | null;
@@ -5594,6 +6215,21 @@ export interface components {
                 countryCode?: string | null;
                 lat?: number | null;
                 lng?: number | null;
+            };
+            /** @description What KIND of property this is. The publish path reads all three on every push, so setting them here is the update path for a listing that already exists — `POST /v1/listings` could only set the type at creation. Airbnb may lock these on an established listing; the publish response reports that in `lockedFields`. */
+            details?: {
+                /**
+                 * @description Free-form property type; mapped to Airbnb's property-type group at publish time.
+                 * @example apartment
+                 */
+                propertyType?: string | null;
+                /** @description Airbnb's `property_type_category`, e.g. `apartment`, `condominium`, `townhouse`. */
+                propertyTypeCategory?: string | null;
+                /**
+                 * @description What the guest gets of the property.
+                 * @enum {string|null}
+                 */
+                roomTypeCategory?: "entire_home" | "private_room" | "shared_room" | "hotel_room" | null;
             };
             occupancy?: {
                 maxGuests?: number | null;
@@ -5619,6 +6255,22 @@ export interface components {
                 allowsPets?: boolean | null;
                 allowsSmoking?: boolean | null;
                 allowsEvents?: boolean | null;
+                /**
+                 * @description Quiet-hours window start, e.g. "22:00". Distributed to Airbnb by the publish path.
+                 * @example 22:00
+                 */
+                quietHoursStart?: string | null;
+                /** @example 07:00 */
+                quietHoursEnd?: string | null;
+                /**
+                 * @description How the guest lets themselves in. Canonical storage only — distributing it to Airbnb is `PUT /v1/channels/airbnb/listings/{id}/details` with `check_in_option`.
+                 * @enum {string|null}
+                 */
+                checkInMethod?: "lockbox" | "smartlock" | "keypad" | "host_checkin" | "doorman_entry" | "other_checkin" | null;
+                /** @description Instruction shown with the check-in method. */
+                checkInInstruction?: string | null;
+                /** @description Guest-safety disclosures — exterior cameras, noise monitors, stairs, pets, an unfenced pool. FULL replacement of the canonical set: omit to leave untouched, send `[]` to clear. Canonical storage only — distributing them to Airbnb is `PUT /v1/channels/airbnb/listings/{id}/safety-disclosures`, which merges rather than replaces. */
+                guestSafetyDisclosures?: components["schemas"]["AirbnbSafetyDisclosure"][] | null;
             };
             /** @description Photo set — full replacement by default (pass `photosMode: "append"` to add after existing photos, or `[]` to clear; omit to leave untouched). Each entry is a hosted image URL (string) or a structured ref. URL-ingest only: the URL is persisted and attached to the listing in order — the OTA push downloads it at publish time. Binary/multipart upload is a follow-up. A non-empty array with no valid http(s) URL is reported in `deferred` (existing photos left untouched). */
             photos?: (string | {
@@ -5652,7 +6304,7 @@ export interface components {
         ListingContentUpdateResponse: {
             /** @description The listing id (serialized as a string to preserve precision). */
             id?: string;
-            /** @description Content slabs that were actually written, e.g. ["title","occupancy","amenities"]. */
+            /** @description Content slabs that were actually written, e.g. ["title","occupancy","amenities"]. A non-English write also reports `locale:<tag>` so you can see which row was written. */
             changed?: string[];
             /** @description Provided-but-not-applied fields — e.g. "photos" when a non-empty photos array carried no valid http(s) URL. */
             deferred?: string[];
@@ -5673,8 +6325,10 @@ export interface components {
         };
         /** @description Rich multilingual content slab for a listing — guest-facing copy sourced from `listings_descriptions` (the `en` row when surfaced via `?include=content`). Also returned as the AI-generated payload from `POST /v1/listings/{id}/generate-content` (where `title` and `amenities` are populated). All fields are individually nullable. */
         ListingContent: {
-            /** @description Public listing title. Populated only by `generate-content`; not stored on `listings_descriptions`. */
+            /** @description Public listing title as proposed by `POST /v1/listings/{id}/generate-content`. The STORED title is `name` — read that one. */
             title?: string | null;
+            /** @description The listing's stored public title, and the one a channel pull writes — after `POST /v1/listings/{id}/pull/airbnb` this is the title as it stands on Airbnb. */
+            name?: string | null;
             summary?: string | null;
             description?: string | null;
             space?: string | null;
@@ -5815,6 +6469,48 @@ export interface components {
             /** @description Channel-specific push result (sections pushed, errors, etc.) */
             result?: Record<string, never>;
         };
+        /** @description Optional. Omit the body entirely to pull through the listing's primary Airbnb connection. */
+        ListingPullAirbnbRequest: {
+            /** @description Pull through this specific Airbnb connection instead of the listing's primary one. Use when a listing carries several connections (merged properties, host migrations) — the ids come from `GET /v1/listings/{id}/publish-status`. */
+            airbnbConnectionId?: string;
+        };
+        /** @description What the pull refreshed, and when. `pulledAt` is the same timestamp `GET /v1/listings/{id}/publish-status` reports as the channel's `lastPulledAt`. */
+        ListingPullResponse: {
+            listingId?: string;
+            /** @enum {string} */
+            channel?: "airbnb";
+            /** @description The channel connection the values came from. */
+            connectionId?: string | null;
+            /** @description The listing id on the channel (the Airbnb listing id). */
+            externalId?: string | null;
+            /** @description True when Airbnb itself answered and our stored copy was rewritten from that answer. False means Airbnb could not be read this time (expired grant, read-only host, upstream error) and the projection ran off the copy we already held — nothing is wrong with your data, it simply is not newer than it was. Check `GET /v1/listings/{id}/publish-status` when this is false. */
+            refreshedFromChannel?: boolean;
+            /**
+             * @description Slabs that changed, e.g. `["details","description","photos","rooms","amenities","policies","pricing"]`. An empty array means Airbnb agreed with everything we already held.
+             * @example [
+             *       "details",
+             *       "description",
+             *       "photos",
+             *       "amenities"
+             *     ]
+             */
+            sections?: string[];
+            /**
+             * Format: date-time
+             * @description When this refresh completed.
+             */
+            pulledAt?: string;
+            /**
+             * Format: date-time
+             * @description Earliest time another pull of this listing is accepted. Calling before then returns `429`.
+             */
+            nextPullAvailableAt?: string;
+            /**
+             * @description Minimum seconds between pulls of one listing.
+             * @example 900
+             */
+            minIntervalSeconds?: number;
+        };
         ListingPublishStatusChannel: {
             /** @example airbnb */
             platform?: string;
@@ -5877,7 +6573,7 @@ export interface components {
         /**
          * @description A vacation rental listing in your Repull workspace.
          *
-         *     An **inactive** listing appears only in `GET /v1/listings`, and only when `?status=` asks for it. Such a row carries identity fields only — `id`, `name`, `status`, `channels` — so `address`, `thumbnailUrl`, `content`, `details`, `createdAt` and `updatedAt` are absent until the listing is activated. `GET /v1/listings/{id}` and every other listing endpoint answer `403 listing_inactive` for it.
+         *     An **inactive** listing appears only in `GET /v1/listings`, and only when `?status=` asks for it. Such a row carries identity fields only — `id`, `name`, `status`, `channels` — so `address`, `content`, `details`, `createdAt` and `updatedAt` are absent until the listing is activated. `GET /v1/listings/{id}` and every other listing endpoint answer `403 listing_inactive` for it. The one field you can add back is `thumbnailUrl`, by passing `?include=thumbnail` — enough to render an activate/deactivate picker with pictures from a single request.
          */
         Listing: {
             /** @description Repull listing id */
@@ -5888,7 +6584,10 @@ export interface components {
                 street?: string | null;
                 city?: string | null;
             };
-            /** Format: uri */
+            /**
+             * Format: uri
+             * @description Cover photo URL. Always present on an active listing. On an **inactive** one it is present only when the caller passes `?include=thumbnail`; `null` means the listing has no cover photo stored, absent means the expansion was not requested.
+             */
             thumbnailUrl?: string | null;
             /** @enum {string} */
             status?: "active" | "inactive" | "archived";
@@ -7032,11 +7731,11 @@ export interface components {
         /** @description Body for `POST /v1/channels/airbnb/listings/{id}`. */
         AirbnbListingActionRequest: {
             /**
-             * @description `delete` deactivates the Repull record. `push`/`publish` push content to Airbnb.
+             * @description `delete` deactivates the REPULL RECORD — billing and API visibility — and never calls Airbnb. `push`/`publish` push content to Airbnb. `unlist` takes the LIVE AIRBNB LISTING down so it stops taking bookings; `relist` puts it back up. Deactivating and unlisting are different operations with different blast radii and are deliberately different action names.
              * @enum {string}
              */
-            action: "delete" | "push" | "publish";
-            /** @description For `push`/`publish`: the Airbnb connection to update (from `GET /v1/channels/airbnb/listings/{id}`). Pass this OR `hostId`. */
+            action: "delete" | "push" | "publish" | "unlist" | "relist";
+            /** @description For `push`/`publish`: the Airbnb connection to update (from `GET /v1/channels/airbnb/listings/{id}`). Pass this OR `hostId`. REQUIRED for `unlist`/`relist`: a listing can be connected to more than one Airbnb listing and the wrong one cannot be un-taken-down through this API. */
             airbnbConnectionId?: string;
             /** @description For `push`/`publish`: create + publish a new Airbnb listing under this host. Pass this OR `airbnbConnectionId`. */
             hostId?: string;
@@ -7045,6 +7744,209 @@ export interface components {
              * @default false
              */
             force: boolean;
+        };
+        /** @description Result of `unlist` / `relist`. Reports the state of the LIVE Airbnb listing. The Repull record's own `active` flag is untouched by both and is deliberately not echoed here, so the two ideas cannot be read as one field. */
+        AirbnbListingLifecycleResponse: {
+            /** @description Repull listing id. */
+            id?: string;
+            /** @enum {string} */
+            action?: "unlist" | "relist";
+            /** @enum {string} */
+            channel?: "airbnb";
+            airbnbConnectionId?: string;
+            /** @description Whether the Airbnb listing is taking bookings after this call. `false` after `unlist`, `true` after `relist`. */
+            live?: boolean;
+            /** @description True when the result was confirmed by reading the listing back from Airbnb (done on `unlist`: Airbnb accepting the call is not proof the listing came down). */
+            verified?: boolean;
+        };
+        /** @description One section of a publish that did not reach Airbnb. */
+        PublishSectionError: {
+            /**
+             * @description Which part of the listing this failure is about.
+             * @enum {string}
+             */
+            section: "details" | "description" | "amenities" | "rooms" | "policies" | "photos" | "pricing" | "checkout_tasks";
+            /** @description Airbnb's own reason, verbatim, or ours when we refused to send an empty section. */
+            message: string;
+            /**
+             * @description `locked` — Airbnb refuses to change these fields on this listing; retrying cannot succeed and `lockedFields` names them. `no_content` — there was nothing canonical to send; write the content, then publish again. `rejected` — Airbnb refused the section as sent; fix the content and publish again.
+             * @enum {string}
+             */
+            code: "locked" | "no_content" | "rejected";
+            /** @description For `code: locked` — the fields Airbnb dropped. */
+            lockedFields?: string[];
+        };
+        /** @description A publish is not one call to Airbnb: it is up to eight independent ones (details, description, amenities, rooms, policies, photos, pricing, checkout_tasks), each of which can fail on its own. A PARTIAL publish is normal — what succeeded stays applied; there is no rollback. */
+        AirbnbPublishResult: {
+            /** @description True only when EVERY attempted section reached Airbnb. */
+            published: boolean;
+            /**
+             * @description Sections that landed on Airbnb.
+             * @example [
+             *       "details",
+             *       "pricing",
+             *       "photos"
+             *     ]
+             */
+            sections: string[];
+            /** @description Per-section failures. Empty when `published` is true. */
+            errors: components["schemas"]["PublishSectionError"][];
+            /** @description Set when the publish never started at all (no connection, address missing, subscription gate). */
+            reason?: string;
+            /** @description Fields Airbnb will not let this listing change — collected from the failures above and from the `locked_attributes` Airbnb recorded for the listing. Sending them again returns success and changes nothing. */
+            lockedFields: string[];
+        };
+        ListingPublishAirbnbResponse: {
+            listingId?: string;
+            /** @enum {string} */
+            channel?: "airbnb";
+            result?: components["schemas"]["AirbnbPublishResult"];
+        };
+        /** @description Write one locale's copy. Airbnb keeps a separate description per locale, which is why the locale is explicit: writing Italian copy into the English row is how a translation gets lost. Only the fields you send are written. */
+        AirbnbDescriptionWriteRequest: {
+            /**
+             * @description Language tag — `en`, `it`, `pt-BR`. `GET /v1/channels/airbnb/listings/{id}/settings?type=locales` lists the locales already synced for this listing.
+             * @example it
+             */
+            locale: string;
+            /** @description At least one field required. `description` itself is NOT accepted: Airbnb composes the public description from these sections and ignores a directly-supplied one, so accepting it would be taking a value and discarding it. An unknown field is refused by name rather than dropped. */
+            description: {
+                name?: string | null;
+                /** @description Airbnb hard-caps this at 500 characters and refuses the whole write if it is longer. */
+                summary?: string | null;
+                space?: string | null;
+                access?: string | null;
+                interaction?: string | null;
+                neighborhood_overview?: string | null;
+                transit?: string | null;
+                notes?: string | null;
+                house_rules?: string | null;
+            };
+        };
+        /** @description Result of a content write. **A 200 does not by itself mean the change was applied**: Airbnb locks host-managed fields on established listings and answers 200 while applying nothing for them. `blockedFields` is the list of fields YOU sent that Airbnb dropped; `blockedFields: []` is what a landed write looks like. */
+        AirbnbContentWriteResponse: {
+            listingId: string;
+            /** @description The Airbnb-side listing id the write went to. */
+            airbnbListingId?: string;
+            /** @description Descriptions only — the locale written. */
+            locale?: string;
+            /** @description Fields that were applied. */
+            written: string[];
+            /** @description Fields you sent that Airbnb refused to change. Not retryable — the content is managed on Airbnb. */
+            blockedFields: string[];
+            /** @description Present only when `blockedFields` is non-empty: what was not applied. */
+            message?: string;
+            /** @description Present only when `blockedFields` is non-empty: what to do about it. */
+            fix?: string;
+            /** @description Airbnb's raw response. */
+            result?: {
+                [key: string]: unknown;
+            };
+        };
+        AirbnbPermitsResponse: {
+            /** @description The live permit flows from Airbnb — present only with `?source=live`, `null` otherwise. Each flow names its `regulatory_body`, `regulation_type`, `status`, and the `question_key` / `answer_type` / `options` of every question you have to answer, plus the answers already on file. */
+            permits?: {
+                [key: string]: unknown;
+            }[] | null;
+            /** @description Permits as last mirrored by the sync worker: body, type, status, number. The RESULT of a permit, not the questions. */
+            cached?: {
+                regulatoryBody?: string | null;
+                regulationType?: string | null;
+                status?: string | null;
+                permitNumber?: string | null;
+                permitData?: {
+                    [key: string]: unknown;
+                } | null;
+                /** Format: date-time */
+                updatedAt?: string | null;
+            }[];
+        };
+        /** @description Answer the regulatory permit questions Airbnb asks for this listing. Read them first with `?source=live` on the GET — Airbnb refuses a `question_key` it did not ask for on this listing. */
+        AirbnbPermitsWriteRequest: {
+            permits: {
+                /** @description As named by the GET, e.g. the city or registry asking. */
+                regulatory_body: string;
+                regulation_type: string;
+                answers: {
+                    question_key: string;
+                    text_value?: string | null;
+                    /** @description ISO date, YYYY-MM-DD. */
+                    date_value?: string | null;
+                    selected_options_value?: string[] | null;
+                }[];
+            }[];
+        };
+        AirbnbSafetyDisclosure: {
+            /**
+             * @description What is being disclosed. `surveillance` = exterior security cameras or recording devices. `noise_monitor` = a decibel monitor is installed. `requires_stairs`, `potential_noise`, `animals` (farm or wild animals nearby), `has_pets` (the host's pets), `limited_parking`, `limited_amenities`, `shared_spaces`, `pool_or_jacuzzi_with_no_fence`, `heights_with_no_fence`, `climbing_or_play_structure`, `lake_or_river_or_water_body`, `weapons`.
+             * @enum {string}
+             */
+            type: "surveillance" | "requires_stairs" | "potential_noise" | "animals" | "noise_monitor" | "has_pets" | "limited_parking" | "lake_or_river_or_water_body" | "pool_or_jacuzzi_with_no_fence" | "shared_spaces" | "limited_amenities" | "climbing_or_play_structure" | "heights_with_no_fence" | "weapons";
+            /** @description Whether it applies to this property. */
+            value: boolean;
+            /** @description Read only: whether Airbnb holds an explicit answer for this type on this listing (as opposed to it simply not being declared). */
+            declared?: boolean;
+        };
+        AirbnbSafetyDisclosuresResponse: {
+            /** @description Every supported disclosure type, including the ones this listing has not declared (`value: false`), so "does this property have cameras?" has an answer rather than a missing key. Types Airbnb returns that are not in the documented set are passed through, never dropped. */
+            disclosures?: components["schemas"]["AirbnbSafetyDisclosure"][];
+            /** @description Just the types that are true of this property. */
+            declared?: string[];
+        };
+        /** @description A MERGE, not a replacement: Airbnb keeps one value per disclosure type, a type you leave out keeps the value it has, and to retract a disclosure you send it with `value: false`. A full replacement would let a partial request silently un-declare a security camera — which is a guest-safety statement, not a preference. */
+        AirbnbSafetyDisclosuresWriteRequest: {
+            disclosures: components["schemas"]["AirbnbSafetyDisclosure"][];
+        };
+        /** @description Update what kind of property this is, when the quiet hours are, or how the guest gets in. At least one field required. These are among the attributes Airbnb locks on established listings — see `blockedFields` on the response. */
+        AirbnbListingDetailsWriteRequest: {
+            /**
+             * @description The coarse building family.
+             * @enum {string}
+             */
+            property_type_group?: "apartments" | "houses" | "secondary_units" | "unique_homes" | "bnb" | "boutique_hotels_and_more";
+            /** @description The specific type inside the group, e.g. `apartment`, `condominium`, `townhouse`, `guesthouse`. Airbnb validates it against the group, so send both when you are changing the kind of property. */
+            property_type_category?: string;
+            /**
+             * @description What the guest gets of the property.
+             * @enum {string}
+             */
+            room_type_category?: "entire_home" | "private_room" | "shared_room" | "hotel_room";
+            /** @description Whole hours on a 24h clock, as strings. */
+            quiet_hours?: {
+                /** @example 22 */
+                start_time: string;
+                /** @example 7 */
+                end_time: string;
+            }[];
+            /** @description How the guest lets themselves in — Airbnb's `check_in_option`. */
+            check_in_option?: {
+                /** @enum {string} */
+                category: "lockbox" | "smartlock" | "keypad" | "host_checkin" | "doorman_entry" | "other_checkin";
+                instruction?: string | null;
+            };
+        };
+        /** @description The Airbnb-side detail row(s) for the listing, from the local mirror. One entry per Airbnb connection. */
+        AirbnbListingDetailsResponse: {
+            listingAirbnbId?: string;
+            name?: string | null;
+            propertyTypeGroup?: string | null;
+            propertyTypeCategory?: string | null;
+            roomTypeCategory?: string | null;
+            personCapacity?: number | null;
+            bedrooms?: number | null;
+            beds?: number | null;
+            bathrooms?: string | null;
+            /** @description Whether the Airbnb listing is live. `false` means unlisted on Airbnb — unrelated to the Repull record being active. */
+            hasAvailability?: boolean | null;
+            /** @description `{ category, instruction }` — how the guest gets in. */
+            checkInOption?: {
+                [key: string]: unknown;
+            } | null;
+            listingNickname?: string | null;
+            /** @description Attributes Airbnb refuses to change on this listing. */
+            lockedFields?: string[];
+            /** Format: date-time */
+            updatedAt?: string | null;
         };
     };
     responses: {
@@ -7088,6 +7990,15 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
+        /** @description The `account_id` query parameter names an Airbnb account that is not connected to this workspace. `valid_values` lists the ids that ARE — copy one of those, or drop the parameter to read every account. */
+        AirbnbAccountNotFound: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
         /** @description The resource id is well-formed but no matching row exists in this workspace. */
         NotFound: {
             headers: {
@@ -7116,9 +8027,10 @@ export interface components {
             };
         };
         /**
-         * @description The write cannot be made through the API, and retrying will not change that. Two cases:
+         * @description The write cannot be made through the API, and retrying will not change that. Three cases:
          *
-         *     - `connection_reauth_required` — Airbnb no longer accepts this connection for this listing: the host's authorization expired or was revoked, a token refresh was refused, or the listing was not selected when the host connected (Airbnb authorizes writes per listing). Reconnect Airbnb at https://repull.dev/dashboard/connections (or `POST /v1/connect/airbnb`), select the listing, then retry.
+         *     - `listing_not_api_connected` — Airbnb authorises API sync one listing at a time, and this listing was never switched on: its Airbnb sync category is `none`. Airbnb refuses every write to it, so nothing was sent. **Reconnecting the Airbnb account does not fix this** — the host must open the listing in Airbnb and connect it there. `GET /v1/channels/airbnb/listings` reports `syncCategory` and `writable` for every listing, so this is checkable before a bulk push. The error carries `listing_id`, `airbnb_listing_id` and `sync_category`.
+         *     - `connection_reauth_required` — Airbnb no longer accepts this connection at all: the host's authorization expired or was revoked, or a token refresh was refused. Reconnect Airbnb at https://repull.dev/dashboard/connections (or `POST /v1/connect/airbnb`), then retry.
          *     - `listing_inactive` — the listing is inactive. It keeps syncing, but cannot be read or changed through the API until it is activated with `PATCH /v1/listings/{id}` `{"active": true}`.
          */
         AirbnbWriteForbidden: {
@@ -7222,6 +8134,16 @@ export interface components {
         IdempotencyKey: string;
         /** @description Apply a custom or built-in schema to transform the response. Built-in: `native` (default), `calry`, `calry-v1`. Custom: any schema name created via `POST /v1/schema/custom`. Unknown / inactive schema names fall back to `native`. */
         XSchemaHeader: string;
+        /**
+         * @description Scope the response to ONE connected Airbnb account. The value is the Airbnb host id — the same `accounts[].externalAccountId` that `GET /v1/connect/airbnb` returns and `DELETE /v1/connect/airbnb?accountId=` accepts.
+         *
+         *     A workspace can connect several Airbnb accounts. Omit this and you get every account's rows (the default, unchanged). Every row carries `accountId` + `accountName` either way, so you can group without a second call.
+         *
+         *     An id that is not connected to THIS workspace returns `404 not_found` with your own ids in `valid_values` — we do not distinguish "no such host" from "someone else's host", because confirming the latter would leak another workspace's account.
+         *
+         *     Note this is NOT the `X-Account-Id` header, which carries a connection id and cannot tell two Airbnb hosts apart.
+         */
+        AirbnbAccountId: string;
         /** @description When `true` (default), the response's `pagination.total` carries the count of rows matching the current filter, across all pages. Pass `false` to skip the count for very large workspaces where the per-page COUNT(*) cost matters. */
         IncludeTotal: boolean;
         /**
@@ -9450,7 +10372,17 @@ export interface operations {
     list_airbnb_listings: {
         parameters: {
             query?: {
-                /** @description Comma-separated expansions. Currently supported: `amenities` (adds `amenities` and `accessibility_amenities` arrays to each connection, sourced from the local `listings_airbnb_amenities` cache). */
+                /**
+                 * @description Scope the response to ONE connected Airbnb account. The value is the Airbnb host id — the same `accounts[].externalAccountId` that `GET /v1/connect/airbnb` returns and `DELETE /v1/connect/airbnb?accountId=` accepts.
+                 *
+                 *     A workspace can connect several Airbnb accounts. Omit this and you get every account's rows (the default, unchanged). Every row carries `accountId` + `accountName` either way, so you can group without a second call.
+                 *
+                 *     An id that is not connected to THIS workspace returns `404 not_found` with your own ids in `valid_values` — we do not distinguish "no such host" from "someone else's host", because confirming the latter would leak another workspace's account.
+                 *
+                 *     Note this is NOT the `X-Account-Id` header, which carries a connection id and cannot tell two Airbnb hosts apart.
+                 */
+                account_id?: components["parameters"]["AirbnbAccountId"];
+                /** @description Comma-separated expansions. Currently supported: `amenities` (adds `amenities` and `accessibility_amenities` arrays to each connection, sourced from the local `listings_airbnb_amenities` cache) and `thumbnail` (adds `thumbnailUrl` to each listing). Unknown values return 422 with a `valid_values` envelope. */
                 include?: string;
             };
             header?: never;
@@ -9468,6 +10400,8 @@ export interface operations {
                     "application/json": components["schemas"]["AirbnbListingListResponse"];
                 };
             };
+            404: components["responses"]["AirbnbAccountNotFound"];
+            422: components["responses"]["UnprocessableEntity"];
         };
     };
     get_airbnb_listing: {
@@ -9499,7 +10433,16 @@ export interface operations {
     airbnb_listing_action: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /**
+                 * @description Makes a retry of this request safe. Send a unique string (a UUID generated at the point you build the request) and the response is stored for 24 hours: a repeat with the SAME key replays that stored response — tagged `Idempotency-Status: cached` — without running the operation again, so no duplicate reservation, guest or guest message is created.
+                 *
+                 *     - Same key while the first request is still in flight → `409 idempotency_key_in_use`.
+                 *     - Same key with a DIFFERENT payload → `422 idempotency_key_reused`. Generate a new key per distinct request; reuse one only when retrying that exact request.
+                 *     - Responses with status >= 500 are deliberately not stored, so a server error stays retryable.
+                 */
+                "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+            };
             path: {
                 id: string;
             };
@@ -9516,10 +10459,23 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        id?: string;
+                        active?: boolean;
+                    } | {
+                        id?: string;
+                        action?: string;
+                        channel?: string;
+                        result?: components["schemas"]["AirbnbPublishResult"];
+                    } | components["schemas"]["AirbnbListingLifecycleResponse"];
+                };
             };
-            403: components["responses"]["ListingInactive"];
-            422: components["responses"]["UnprocessableEntity"];
+            403: components["responses"]["AirbnbWriteForbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["AirbnbWriteRejected"];
+            429: components["responses"]["AirbnbRateLimited"];
+            502: components["responses"]["AirbnbUpstreamError"];
         };
     };
     map_airbnb_listing: {
@@ -9680,7 +10636,33 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    photos: {
+                        /** @description Base64 image data. A `data:image/jpeg;base64,` prefix is accepted and stripped. Maximum 25 MB decoded. */
+                        image: string;
+                        /**
+                         * @deprecated
+                         * @description Accepted and ignored — the listing comes from the path.
+                         */
+                        listing_id?: string | number;
+                        /** @description Airbnb room id to file this photo under (`roomId` from `GET /rooms`). */
+                        room_id?: string;
+                        /** @enum {string} */
+                        category?: "listing" | "room" | "listing_amenity" | "room_amenity";
+                        /** @description Amenity id, when `category` is `listing_amenity` or `room_amenity`. */
+                        amenity?: string;
+                        caption?: string;
+                        sort_order?: number;
+                        /** @description At most 10 pairs; keys 40 characters or fewer. */
+                        metadata?: {
+                            [key: string]: string;
+                        };
+                    }[];
+                };
+            };
+        };
         responses: {
             /** @description Uploaded */
             201: {
@@ -9689,7 +10671,11 @@ export interface operations {
                 };
                 content?: never;
             };
+            401: components["responses"]["Unauthorized"];
             403: components["responses"]["ListingInactive"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["UnprocessableEntity"];
+            500: components["responses"]["InternalError"];
         };
     };
     delete_airbnb_listing_photo: {
@@ -9715,6 +10701,8 @@ export interface operations {
                     "application/json": {
                         /** @example true */
                         deleted?: boolean;
+                        /** @description Whether our own copy dropped the photo too. */
+                        stored?: boolean;
                     };
                 };
             };
@@ -9724,9 +10712,72 @@ export interface operations {
             500: components["responses"]["InternalError"];
         };
     };
-    list_airbnb_threads: {
+    update_airbnb_listing_photo: {
         parameters: {
             query?: never;
+            header?: never;
+            path: {
+                /** @description Repull listing id (numeric string). */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Airbnb-side photo id — the `photoAirbnbId` from `GET /photos`. */
+                    photo_id: string;
+                    /** @description New caption, or `null` to clear it. */
+                    caption?: string | null;
+                    /** @description Position in the tour. Relative, not absolute — lower sorts earlier. */
+                    sort_order?: number | null;
+                    /** @description Airbnb room id to file the photo under (`roomId` from `GET /rooms`), or `null` to detach it. */
+                    room_id?: string | null;
+                    /** @description At most 10 pairs; keys 40 characters or fewer. */
+                    metadata?: {
+                        [key: string]: string;
+                    } | null;
+                };
+            };
+        };
+        responses: {
+            /** @description Updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @description The photo as Airbnb returned it. */
+                        data: {
+                            [key: string]: unknown;
+                        };
+                        /** @description Whether our own copy was brought in line with the change. */
+                        stored: boolean;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["UnprocessableEntity"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    list_airbnb_threads: {
+        parameters: {
+            query?: {
+                /**
+                 * @description Scope the response to ONE connected Airbnb account. The value is the Airbnb host id — the same `accounts[].externalAccountId` that `GET /v1/connect/airbnb` returns and `DELETE /v1/connect/airbnb?accountId=` accepts.
+                 *
+                 *     A workspace can connect several Airbnb accounts. Omit this and you get every account's rows (the default, unchanged). Every row carries `accountId` + `accountName` either way, so you can group without a second call.
+                 *
+                 *     An id that is not connected to THIS workspace returns `404 not_found` with your own ids in `valid_values` — we do not distinguish "no such host" from "someone else's host", because confirming the latter would leak another workspace's account.
+                 *
+                 *     Note this is NOT the `X-Account-Id` header, which carries a connection id and cannot tell two Airbnb hosts apart.
+                 */
+                account_id?: components["parameters"]["AirbnbAccountId"];
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -9743,6 +10794,7 @@ export interface operations {
                 };
             };
             403: components["responses"]["ListingInactive"];
+            404: components["responses"]["AirbnbAccountNotFound"];
         };
     };
     list_airbnb_thread_messages: {
@@ -9810,6 +10862,16 @@ export interface operations {
     list_airbnb_reservations: {
         parameters: {
             query?: {
+                /**
+                 * @description Scope the response to ONE connected Airbnb account. The value is the Airbnb host id — the same `accounts[].externalAccountId` that `GET /v1/connect/airbnb` returns and `DELETE /v1/connect/airbnb?accountId=` accepts.
+                 *
+                 *     A workspace can connect several Airbnb accounts. Omit this and you get every account's rows (the default, unchanged). Every row carries `accountId` + `accountName` either way, so you can group without a second call.
+                 *
+                 *     An id that is not connected to THIS workspace returns `404 not_found` with your own ids in `valid_values` — we do not distinguish "no such host" from "someone else's host", because confirming the latter would leak another workspace's account.
+                 *
+                 *     Note this is NOT the `X-Account-Id` header, which carries a connection id and cannot tell two Airbnb hosts apart.
+                 */
+                account_id?: components["parameters"]["AirbnbAccountId"];
                 /** @description Opaque cursor returned by the previous response's `pagination.nextCursor`. Omit to fetch the first page. */
                 cursor?: string;
                 /** @description First-class alias for cursor-based pagination. Mutually exclusive with `cursor` — passing both returns 422. Accepts integers in `[0, 10000]`; deeper walks must use `cursor` (constant per-page cost). The response always includes `pagination.nextCursor` so consumers can switch from offset → cursor mid-walk for deep pagination without re-keying. */
@@ -9843,6 +10905,7 @@ export interface operations {
                 };
             };
             403: components["responses"]["ListingInactive"];
+            404: components["responses"]["AirbnbAccountNotFound"];
         };
     };
     get_airbnb_reservation: {
@@ -9891,7 +10954,18 @@ export interface operations {
     };
     list_airbnb_reviews: {
         parameters: {
-            query?: never;
+            query?: {
+                /**
+                 * @description Scope the response to ONE connected Airbnb account. The value is the Airbnb host id — the same `accounts[].externalAccountId` that `GET /v1/connect/airbnb` returns and `DELETE /v1/connect/airbnb?accountId=` accepts.
+                 *
+                 *     A workspace can connect several Airbnb accounts. Omit this and you get every account's rows (the default, unchanged). Every row carries `accountId` + `accountName` either way, so you can group without a second call.
+                 *
+                 *     An id that is not connected to THIS workspace returns `404 not_found` with your own ids in `valid_values` — we do not distinguish "no such host" from "someone else's host", because confirming the latter would leak another workspace's account.
+                 *
+                 *     Note this is NOT the `X-Account-Id` header, which carries a connection id and cannot tell two Airbnb hosts apart.
+                 */
+                account_id?: components["parameters"]["AirbnbAccountId"];
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -9908,6 +10982,7 @@ export interface operations {
                 };
             };
             403: components["responses"]["ListingInactive"];
+            404: components["responses"]["AirbnbAccountNotFound"];
         };
     };
     respond_airbnb_review_legacy: {
@@ -10006,6 +11081,16 @@ export interface operations {
     list_airbnb_alterations: {
         parameters: {
             query?: {
+                /**
+                 * @description Scope the response to ONE connected Airbnb account. The value is the Airbnb host id — the same `accounts[].externalAccountId` that `GET /v1/connect/airbnb` returns and `DELETE /v1/connect/airbnb?accountId=` accepts.
+                 *
+                 *     A workspace can connect several Airbnb accounts. Omit this and you get every account's rows (the default, unchanged). Every row carries `accountId` + `accountName` either way, so you can group without a second call.
+                 *
+                 *     An id that is not connected to THIS workspace returns `404 not_found` with your own ids in `valid_values` — we do not distinguish "no such host" from "someone else's host", because confirming the latter would leak another workspace's account.
+                 *
+                 *     Note this is NOT the `X-Account-Id` header, which carries a connection id and cannot tell two Airbnb hosts apart.
+                 */
+                account_id?: components["parameters"]["AirbnbAccountId"];
                 /** @description Scope: `pending` (default) returns only alterations awaiting a decision; `all` returns every alteration. */
                 type?: "pending" | "all";
                 /** @description Airbnb confirmation code — restricts results to a single reservation. Returns an empty array when no reservation matches within your workspace. */
@@ -10031,6 +11116,7 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["ListingInactive"];
+            404: components["responses"]["AirbnbAccountNotFound"];
             500: components["responses"]["InternalError"];
         };
     };
@@ -10043,38 +11129,26 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": {
-                    /** @description Airbnb confirmation code of the reservation to alter. */
-                    confirmation_code: string;
-                    /**
-                     * Format: date
-                     * @description New check-in date (YYYY-MM-DD).
-                     */
-                    check_in?: string;
-                    /**
-                     * Format: date
-                     * @description New check-out date (YYYY-MM-DD).
-                     */
-                    check_out?: string;
-                    /** @description New guest count. */
-                    number_of_guests?: number;
-                } & {
-                    [key: string]: unknown;
-                };
+                "application/json": components["schemas"]["AirbnbAlterationCreateRequest"];
             };
         };
         responses: {
-            /** @description Alteration created */
+            /** @description Alteration created — Airbnb’s alteration object. When the request asked for a listing transfer, `newListingId` (Repull) and `newAirbnbListingId` (Airbnb) echo the destination back. */
             201: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["AirbnbAlteration"];
+                };
             };
             401: components["responses"]["Unauthorized"];
-            403: components["responses"]["ListingInactive"];
+            403: components["responses"]["AirbnbWriteForbidden"];
             404: components["responses"]["NotFound"];
+            422: components["responses"]["AirbnbWriteRejected"];
+            429: components["responses"]["AirbnbRateLimited"];
             500: components["responses"]["InternalError"];
+            502: components["responses"]["AirbnbUpstreamError"];
         };
     };
     get_airbnb_alteration: {
@@ -10167,7 +11241,18 @@ export interface operations {
     };
     list_airbnb_transactions: {
         parameters: {
-            query?: never;
+            query?: {
+                /**
+                 * @description Scope the response to ONE connected Airbnb account. The value is the Airbnb host id — the same `accounts[].externalAccountId` that `GET /v1/connect/airbnb` returns and `DELETE /v1/connect/airbnb?accountId=` accepts.
+                 *
+                 *     A workspace can connect several Airbnb accounts. Omit this and you get every account's rows (the default, unchanged). Every row carries `accountId` + `accountName` either way, so you can group without a second call.
+                 *
+                 *     An id that is not connected to THIS workspace returns `404 not_found` with your own ids in `valid_values` — we do not distinguish "no such host" from "someone else's host", because confirming the latter would leak another workspace's account.
+                 *
+                 *     Note this is NOT the `X-Account-Id` header, which carries a connection id and cannot tell two Airbnb hosts apart.
+                 */
+                account_id?: components["parameters"]["AirbnbAccountId"];
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -10187,6 +11272,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            404: components["responses"]["AirbnbAccountNotFound"];
             500: components["responses"]["InternalError"];
         };
     };
@@ -10348,6 +11434,64 @@ export interface operations {
             500: components["responses"]["InternalError"];
         };
     };
+    update_airbnb_listing_amenities: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Repull listing id (numeric string). */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    amenities?: {
+                        /** @description Airbnb amenity id, e.g. `wireless_internet`. Case is ignored. */
+                        id: string;
+                        /** @description `true` claims the amenity, `false` removes it. Required — an amenity with no `is_present` would be a silent no-op. */
+                        is_present: boolean;
+                        /** @description Optional host note shown with the amenity. */
+                        instruction?: string | null;
+                    }[];
+                    accessibility_amenities?: {
+                        id: string;
+                        is_present: boolean;
+                        instruction?: string | null;
+                        /** @description Airbnb photo ids evidencing the accessibility claim (`photoAirbnbId` from `GET /photos`). */
+                        photo_ids?: string[];
+                    }[];
+                };
+            };
+        };
+        responses: {
+            /** @description Amenities updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            /** @description How many regular amenities were written. */
+                            amenities?: number;
+                            /** @description How many accessibility amenities were written. */
+                            accessibilityAmenities?: number;
+                        };
+                        /** @description Whether our own copy was brought in line with the change. */
+                        stored: boolean;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["UnprocessableEntity"];
+            429: components["responses"]["AirbnbRateLimited"];
+            500: components["responses"]["InternalError"];
+        };
+    };
     get_airbnb_checkin_guide: {
         parameters: {
             query?: {
@@ -10407,7 +11551,7 @@ export interface operations {
                 content?: never;
             };
             401: components["responses"]["Unauthorized"];
-            403: components["responses"]["ListingInactive"];
+            403: components["responses"]["AirbnbWriteForbidden"];
             404: components["responses"]["NotFound"];
             500: components["responses"]["InternalError"];
         };
@@ -10483,6 +11627,49 @@ export interface operations {
             500: components["responses"]["InternalError"];
         };
     };
+    updateAirbnbListingDescription: {
+        parameters: {
+            query?: never;
+            header?: {
+                /**
+                 * @description Makes a retry of this request safe. Send a unique string (a UUID generated at the point you build the request) and the response is stored for 24 hours: a repeat with the SAME key replays that stored response — tagged `Idempotency-Status: cached` — without running the operation again, so no duplicate reservation, guest or guest message is created.
+                 *
+                 *     - Same key while the first request is still in flight → `409 idempotency_key_in_use`.
+                 *     - Same key with a DIFFERENT payload → `422 idempotency_key_reused`. Generate a new key per distinct request; reuse one only when retrying that exact request.
+                 *     - Responses with status >= 500 are deliberately not stored, so a server error stays retryable.
+                 */
+                "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                /** @description Repull listing id (numeric string). */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AirbnbDescriptionWriteRequest"];
+            };
+        };
+        responses: {
+            /** @description Written — check `blockedFields` */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AirbnbContentWriteResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["AirbnbWriteForbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["AirbnbWriteRejected"];
+            429: components["responses"]["AirbnbRateLimited"];
+            500: components["responses"]["InternalError"];
+            502: components["responses"]["AirbnbUpstreamError"];
+        };
+    };
     get_airbnb_listing_quality: {
         parameters: {
             query?: {
@@ -10551,6 +11738,70 @@ export interface operations {
             500: components["responses"]["InternalError"];
         };
     };
+    update_airbnb_listing_room: {
+        parameters: {
+            query: {
+                /** @description Airbnb-side room id to update. */
+                roomId: string;
+            };
+            header?: never;
+            path: {
+                /** @description Repull listing id (numeric string). */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description The room's position among the listing's rooms. Airbnb keys rooms of the same type by this number, so two bedrooms are 1 and 2. */
+                    room_number?: number;
+                    /** @enum {string} */
+                    room_type?: "bedroom" | "bathroom" | "living_room" | "kitchen" | "studio" | "dining_room" | "family_room" | "office" | "garage" | "laundry_room" | "entrance_to_home" | "recreation_area" | "outdoor_space";
+                    /** @description The room's whole sleeping arrangement. Replaces what is there — send every bed, not just the changed one. */
+                    beds?: {
+                        /** @description Airbnb bed type, lowercase snake_case. Seen on live listings: king_bed, queen_bed, double_bed, small_double_bed, single_bed, bunk_bed, sofa_bed, couch, air_mattress, floor_mattress, toddler_bed, crib, hammock. Not a closed enum here — Airbnb's vocabulary drifts, so an unknown type is refused by Airbnb with its own message rather than by us. */
+                        type: string;
+                        quantity: number;
+                    }[];
+                    /** @description Amenities attached to this room, not to the listing. */
+                    room_amenities?: {
+                        id: string;
+                        name?: string;
+                        value?: string | number | boolean;
+                    }[];
+                    is_private?: boolean;
+                    metadata?: {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+        responses: {
+            /** @description Room updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @description The room as Airbnb returned it. */
+                        data: {
+                            [key: string]: unknown;
+                        };
+                        /** @description Whether our own copy was brought in line with the change. */
+                        stored: boolean;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["UnprocessableEntity"];
+            429: components["responses"]["AirbnbRateLimited"];
+            500: components["responses"]["InternalError"];
+        };
+    };
     create_airbnb_listing_room: {
         parameters: {
             query?: never;
@@ -10564,7 +11815,31 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    [key: string]: unknown;
+                    /** @description The room's position among the listing's rooms. Airbnb keys rooms of the same type by this number, so two bedrooms are 1 and 2. */
+                    room_number: number;
+                    /** @enum {string} */
+                    room_type: "bedroom" | "bathroom" | "living_room" | "kitchen" | "studio" | "dining_room" | "family_room" | "office" | "garage" | "laundry_room" | "entrance_to_home" | "recreation_area" | "outdoor_space";
+                    /** @description The room's whole sleeping arrangement. Replaces what is there — send every bed, not just the changed one. */
+                    beds?: {
+                        /** @description Airbnb bed type, lowercase snake_case. Seen on live listings: king_bed, queen_bed, double_bed, small_double_bed, single_bed, bunk_bed, sofa_bed, couch, air_mattress, floor_mattress, toddler_bed, crib, hammock. Not a closed enum here — Airbnb's vocabulary drifts, so an unknown type is refused by Airbnb with its own message rather than by us. */
+                        type: string;
+                        quantity: number;
+                    }[];
+                    /** @description Amenities attached to this room, not to the listing. */
+                    room_amenities?: {
+                        id: string;
+                        name?: string;
+                        value?: string | number | boolean;
+                    }[];
+                    is_private?: boolean;
+                    metadata?: {
+                        [key: string]: unknown;
+                    };
+                    /**
+                     * @deprecated
+                     * @description Accepted and ignored — the listing comes from the path.
+                     */
+                    listing_id?: string | number;
                 };
             };
         };
@@ -10577,7 +11852,7 @@ export interface operations {
                 content?: never;
             };
             401: components["responses"]["Unauthorized"];
-            403: components["responses"]["ListingInactive"];
+            403: components["responses"]["AirbnbWriteForbidden"];
             404: components["responses"]["NotFound"];
             500: components["responses"]["InternalError"];
         };
@@ -10606,11 +11881,13 @@ export interface operations {
                     "application/json": {
                         /** @example true */
                         deleted?: boolean;
+                        /** @description Whether our own copy dropped the room too. */
+                        stored?: boolean;
                     };
                 };
             };
             401: components["responses"]["Unauthorized"];
-            403: components["responses"]["ListingInactive"];
+            403: components["responses"]["AirbnbWriteForbidden"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["UnprocessableEntity"];
             500: components["responses"]["InternalError"];
@@ -10729,11 +12006,11 @@ export interface operations {
                 limit?: number;
                 /** @description Case-insensitive substring search on name, street, or city. */
                 q?: string;
-                /** @description Filter by listing status. Defaults to `active`. Pass `inactive` to list the listings you can activate, `archived` for archived ones, or `all` for every status. Inactive listings are returned with identity fields only — `id`, `name`, `status` and `channels` — and never with `address`, `thumbnailUrl`, `content` or `details`; activate one to see the rest. */
+                /** @description Filter by listing status. Defaults to `active`. Pass `inactive` to list the listings you can activate, `archived` for archived ones, or `all` for every status. Inactive listings are returned with identity fields only — `id`, `name`, `status` and `channels` — and never with `address`, `content` or `details`; activate one to see the rest. The only field you can add to an inactive row is `thumbnailUrl`, via `?include=thumbnail`. */
                 status?: "active" | "inactive" | "archived" | "all";
                 /** @description Restrict to listings published on the given channel (`airbnb`, `booking`, `vrbo`, etc.). Joins through `listing_platform_links` and matches active links only. */
                 channel?: string;
-                /** @description Comma-separated optional expansions. Currently supported: `content`, `details`. Unknown values return 422 with a `valid_values` envelope. (Note: `amenities` is not yet supported on the list endpoint — use the detail endpoint to fetch amenity rows for a single listing.) */
+                /** @description Comma-separated optional expansions. Currently supported: `content`, `details`, `thumbnail`. `thumbnail` guarantees `thumbnailUrl` on every row and is the only expansion that applies to inactive listings. Unknown values return 422 with a `valid_values` envelope. (Note: `amenities` is not yet supported on the list endpoint — use the detail endpoint to fetch amenity rows for a single listing.) */
                 include?: string;
             };
             header?: {
@@ -10877,7 +12154,16 @@ export interface operations {
     updateListingContent: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /**
+                 * @description Makes a retry of this request safe. Send a unique string (a UUID generated at the point you build the request) and the response is stored for 24 hours: a repeat with the SAME key replays that stored response — tagged `Idempotency-Status: cached` — without running the operation again, so no duplicate reservation, guest or guest message is created.
+                 *
+                 *     - Same key while the first request is still in flight → `409 idempotency_key_in_use`.
+                 *     - Same key with a DIFFERENT payload → `422 idempotency_key_reused`. Generate a new key per distinct request; reuse one only when retrying that exact request.
+                 *     - Responses with status >= 500 are deliberately not stored, so a server error stays retryable.
+                 */
+                "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+            };
             path: {
                 /** @description Repull listing id */
                 id: number;
@@ -10943,7 +12229,16 @@ export interface operations {
     publishListingToAirbnb: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /**
+                 * @description Makes a retry of this request safe. Send a unique string (a UUID generated at the point you build the request) and the response is stored for 24 hours: a repeat with the SAME key replays that stored response — tagged `Idempotency-Status: cached` — without running the operation again, so no duplicate reservation, guest or guest message is created.
+                 *
+                 *     - Same key while the first request is still in flight → `409 idempotency_key_in_use`.
+                 *     - Same key with a DIFFERENT payload → `422 idempotency_key_reused`. Generate a new key per distinct request; reuse one only when retrying that exact request.
+                 *     - Responses with status >= 500 are deliberately not stored, so a server error stays retryable.
+                 */
+                "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+            };
             path: {
                 id: number;
             };
@@ -10955,17 +12250,18 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Pushed */
+            /** @description Publish attempted — read `result.published` and `result.errors` */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ListingPublishResponse"];
+                    "application/json": components["schemas"]["ListingPublishAirbnbResponse"];
                 };
             };
             400: components["responses"]["BadRequest"];
             403: components["responses"]["ListingInactive"];
+            404: components["responses"]["NotFound"];
         };
     };
     publishListingToBooking: {
@@ -12900,6 +14196,632 @@ export interface operations {
             402: components["responses"]["PaymentRequired"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["UnprocessableEntity"];
+        };
+    };
+    cancel_airbnb_alteration: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Airbnb alteration id (the `alterationId` from a `GET /v1/channels/airbnb/alterations` row). */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
+        responses: {
+            /** @description Alteration cancelled */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    pullListingFromAirbnb: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ListingPullAirbnbRequest"];
+            };
+        };
+        responses: {
+            /** @description Refreshed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListingPullResponse"];
+                };
+            };
+            403: components["responses"]["ListingInactive"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["UnprocessableEntity"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    get_airbnb_booking_settings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Repull listing id (numeric string), not the Airbnb listing id. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Booking settings */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            /**
+                             * @description Derived from `instantBook`. `request_to_book` means every booking needs the host to approve it.
+                             * @enum {string|null}
+                             */
+                            bookingMode?: "instant_book" | "request_to_book" | null;
+                            /** @description Instant Book state. All three fields describe ONE Airbnb value, `instant_booking_allowed_category`. */
+                            instantBook?: {
+                                /** @description `false` when the category is `off` — the listing is request-to-book. */
+                                enabled?: boolean | null;
+                                /**
+                                 * @description Which guests may Instant Book.
+                                 * @enum {string|null}
+                                 */
+                                guestCategory?: "everyone" | "experienced_guests_only" | "recommended_guests_only" | "off" | null;
+                                /** @description `true` for `experienced_guests_only` / `recommended_guests_only` — Airbnb calls this a good track record. */
+                                requiresGoodTrackRecord?: boolean | null;
+                            };
+                            /** @description Check-in window as hours of the day, or `FLEXIBLE`. */
+                            checkIn?: {
+                                start?: (number | "FLEXIBLE") | null;
+                                end?: (number | "FLEXIBLE") | null;
+                            };
+                            checkOut?: {
+                                time?: number | null;
+                            };
+                            /** @description How much notice a booking needs. */
+                            advanceNotice?: {
+                                /** @description Whole hours of notice. `0` allows same-day bookings. */
+                                hours?: number | null;
+                                /** @description Derived: `hours === 0`. */
+                                sameDayBookingsAllowed?: boolean | null;
+                                /** @description Whether a guest may still REQUEST to book inside the notice window. */
+                                allowRequestToBook?: boolean | null;
+                            };
+                            /** @description Airbnb's `turnover_days` — nights blocked between two stays. */
+                            preparationTime?: {
+                                nights?: number | null;
+                            };
+                            /** @description How far ahead guests may book. */
+                            bookingWindow?: {
+                                /** @description `null` when unlimited. */
+                                days?: number | null;
+                                unlimited?: boolean | null;
+                            };
+                            cancellation?: {
+                                /**
+                                 * @description Policy for stays under 28 nights.
+                                 * @enum {string|null}
+                                 */
+                                shortStayPolicy?: "flexible" | "moderate" | "firm" | "strict" | "super_strict" | null;
+                                /** @description Airbnb's long-term-stay policy id, for stays of 28+ nights. Opaque. */
+                                longStayPolicy?: string | null;
+                                nonRefundable?: {
+                                    enabled?: boolean | null;
+                                    /** @description Whole-percent discount a guest gets for giving up refundability. */
+                                    discountPercent?: number | null;
+                                    /** @description Airbnb's own representation: `1 - discountPercent/100`. */
+                                    priceFactor?: number | null;
+                                };
+                            };
+                        };
+                        dataFreshness: components["schemas"]["AirbnbDataFreshness"];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["UnprocessableEntity"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    update_airbnb_booking_settings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Repull listing id (numeric string), not the Airbnb listing id. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Send `enabled`, `guestCategory`, or `enabled` + `requiresGoodTrackRecord`. `requiresGoodTrackRecord` alone is refused — it selects WHICH guests may Instant Book, so it needs `enabled: true` (or an explicit category) with it. Contradictory combinations are refused. */
+                    instantBook?: {
+                        enabled?: boolean | null;
+                        /** @enum {string|null} */
+                        guestCategory?: "everyone" | "experienced_guests_only" | "recommended_guests_only" | "off" | null;
+                        requiresGoodTrackRecord?: boolean | null;
+                    };
+                    /** @description `start` must be earlier than `end` unless either is `FLEXIBLE`. */
+                    checkIn?: {
+                        start?: (number | "FLEXIBLE") | null;
+                        end?: (number | "FLEXIBLE") | null;
+                    };
+                    checkOut?: {
+                        time: number;
+                    };
+                    cancellation?: {
+                        /** @enum {string|null} */
+                        shortStayPolicy?: "flexible" | "moderate" | "firm" | "strict" | "super_strict" | null;
+                        longStayPolicy?: string | null;
+                        /** @description `enabled: true` requires `discountPercent`; `enabled: false` sets the price factor to 1.0 (no discount). Repull converts the percentage to the factor Airbnb stores — 10% becomes 0.9 — and refuses anything over 30%, which is Airbnb's 0.7 floor. */
+                        nonRefundable?: {
+                            enabled?: boolean | null;
+                            discountPercent?: number | null;
+                        };
+                    };
+                    /** @description Send `hours`, `allowRequestToBook`, or both. The half you omit keeps the value Airbnb currently holds. */
+                    advanceNotice?: {
+                        hours?: number | null;
+                        allowRequestToBook?: boolean | null;
+                    };
+                    preparationTime?: {
+                        nights: number;
+                    };
+                    /** @description Send `days`, or `unlimited: true`. Sending both is refused. */
+                    bookingWindow?: {
+                        days?: number | null;
+                        unlimited?: boolean | null;
+                    };
+                };
+            };
+        };
+        responses: {
+            /** @description Updated — the effective settings as Airbnb echoed them back. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            /** @description Which upstream groups this request wrote. */
+                            applied: ("bookingSettings" | "availabilityRules")[];
+                            settings: {
+                                /**
+                                 * @description Derived from `instantBook`. `request_to_book` means every booking needs the host to approve it.
+                                 * @enum {string|null}
+                                 */
+                                bookingMode?: "instant_book" | "request_to_book" | null;
+                                /** @description Instant Book state. All three fields describe ONE Airbnb value, `instant_booking_allowed_category`. */
+                                instantBook?: {
+                                    /** @description `false` when the category is `off` — the listing is request-to-book. */
+                                    enabled?: boolean | null;
+                                    /**
+                                     * @description Which guests may Instant Book.
+                                     * @enum {string|null}
+                                     */
+                                    guestCategory?: "everyone" | "experienced_guests_only" | "recommended_guests_only" | "off" | null;
+                                    /** @description `true` for `experienced_guests_only` / `recommended_guests_only` — Airbnb calls this a good track record. */
+                                    requiresGoodTrackRecord?: boolean | null;
+                                };
+                                /** @description Check-in window as hours of the day, or `FLEXIBLE`. */
+                                checkIn?: {
+                                    start?: (number | "FLEXIBLE") | null;
+                                    end?: (number | "FLEXIBLE") | null;
+                                };
+                                checkOut?: {
+                                    time?: number | null;
+                                };
+                                /** @description How much notice a booking needs. */
+                                advanceNotice?: {
+                                    /** @description Whole hours of notice. `0` allows same-day bookings. */
+                                    hours?: number | null;
+                                    /** @description Derived: `hours === 0`. */
+                                    sameDayBookingsAllowed?: boolean | null;
+                                    /** @description Whether a guest may still REQUEST to book inside the notice window. */
+                                    allowRequestToBook?: boolean | null;
+                                };
+                                /** @description Airbnb's `turnover_days` — nights blocked between two stays. */
+                                preparationTime?: {
+                                    nights?: number | null;
+                                };
+                                /** @description How far ahead guests may book. */
+                                bookingWindow?: {
+                                    /** @description `null` when unlimited. */
+                                    days?: number | null;
+                                    unlimited?: boolean | null;
+                                };
+                                cancellation?: {
+                                    /**
+                                     * @description Policy for stays under 28 nights.
+                                     * @enum {string|null}
+                                     */
+                                    shortStayPolicy?: "flexible" | "moderate" | "firm" | "strict" | "super_strict" | null;
+                                    /** @description Airbnb's long-term-stay policy id, for stays of 28+ nights. Opaque. */
+                                    longStayPolicy?: string | null;
+                                    nonRefundable?: {
+                                        enabled?: boolean | null;
+                                        /** @description Whole-percent discount a guest gets for giving up refundability. */
+                                        discountPercent?: number | null;
+                                        /** @description Airbnb's own representation: `1 - discountPercent/100`. */
+                                        priceFactor?: number | null;
+                                    };
+                                };
+                            };
+                        };
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["AirbnbWriteForbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["AirbnbWriteRejected"];
+            429: components["responses"]["AirbnbRateLimited"];
+            502: components["responses"]["AirbnbUpstreamError"];
+        };
+    };
+    set_airbnb_listing_cover_photo: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Repull listing id (numeric string). */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Airbnb photo id (`photoAirbnbId` from `GET /photos`) to lead the tour. */
+                    photo_id: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Cover set */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            coverPhotoId?: string;
+                            /** @description The photos this call actually moved. Empty when the photo was already the cover. */
+                            applied?: components["schemas"]["AirbnbPhotoPosition"][];
+                            /** @description Present only when the whole tour had to be renumbered. */
+                            order?: components["schemas"]["AirbnbPhotoPosition"][];
+                        };
+                        /** @description Whether our own copy (tour order and listing thumbnail) was brought in line. */
+                        stored: boolean;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["UnprocessableEntity"];
+            429: components["responses"]["AirbnbRateLimited"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    reorder_airbnb_listing_photos: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Repull listing id (numeric string). */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Airbnb photo ids (`photoAirbnbId` from `GET /photos`) in display order, first photo first. No duplicates; every id must be on this listing. */
+                    photo_ids: string[];
+                };
+            };
+        };
+        responses: {
+            /** @description Reordered */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            /** @description The resulting tour order, including photos you did not name. */
+                            order?: components["schemas"]["AirbnbPhotoPosition"][];
+                            /** @description The photos this call actually moved. */
+                            applied?: components["schemas"]["AirbnbPhotoPosition"][];
+                            /** @description Photos that were already in the right position. */
+                            unchanged?: number;
+                        };
+                        /** @description Whether our own copy was brought in line with what landed. */
+                        stored: boolean;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["UnprocessableEntity"];
+            429: components["responses"]["AirbnbRateLimited"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    getAirbnbListingDetails: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Repull listing id (numeric string). */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Listing details */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["AirbnbListingDetailsResponse"][];
+                        dataFreshness: components["schemas"]["AirbnbDataFreshness"];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["UnprocessableEntity"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    updateAirbnbListingDetails: {
+        parameters: {
+            query?: never;
+            header?: {
+                /**
+                 * @description Makes a retry of this request safe. Send a unique string (a UUID generated at the point you build the request) and the response is stored for 24 hours: a repeat with the SAME key replays that stored response — tagged `Idempotency-Status: cached` — without running the operation again, so no duplicate reservation, guest or guest message is created.
+                 *
+                 *     - Same key while the first request is still in flight → `409 idempotency_key_in_use`.
+                 *     - Same key with a DIFFERENT payload → `422 idempotency_key_reused`. Generate a new key per distinct request; reuse one only when retrying that exact request.
+                 *     - Responses with status >= 500 are deliberately not stored, so a server error stays retryable.
+                 */
+                "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                /** @description Repull listing id (numeric string). */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AirbnbListingDetailsWriteRequest"];
+            };
+        };
+        responses: {
+            /** @description Written — check `blockedFields` */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AirbnbContentWriteResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["AirbnbWriteForbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["AirbnbWriteRejected"];
+            429: components["responses"]["AirbnbRateLimited"];
+            500: components["responses"]["InternalError"];
+            502: components["responses"]["AirbnbUpstreamError"];
+        };
+    };
+    listAirbnbListingPermits: {
+        parameters: {
+            query?: {
+                /** @description `cache` (default) reads the local mirror only. `live` additionally asks Airbnb for the permit questions. */
+                source?: "cache" | "live";
+            };
+            header?: never;
+            path: {
+                /** @description Repull listing id (numeric string). */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Permits */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["AirbnbPermitsResponse"];
+                        dataFreshness: components["schemas"]["AirbnbDataFreshness"];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["UnprocessableEntity"];
+            500: components["responses"]["InternalError"];
+            502: components["responses"]["AirbnbUpstreamError"];
+        };
+    };
+    updateAirbnbListingPermits: {
+        parameters: {
+            query?: never;
+            header?: {
+                /**
+                 * @description Makes a retry of this request safe. Send a unique string (a UUID generated at the point you build the request) and the response is stored for 24 hours: a repeat with the SAME key replays that stored response — tagged `Idempotency-Status: cached` — without running the operation again, so no duplicate reservation, guest or guest message is created.
+                 *
+                 *     - Same key while the first request is still in flight → `409 idempotency_key_in_use`.
+                 *     - Same key with a DIFFERENT payload → `422 idempotency_key_reused`. Generate a new key per distinct request; reuse one only when retrying that exact request.
+                 *     - Responses with status >= 500 are deliberately not stored, so a server error stays retryable.
+                 */
+                "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                /** @description Repull listing id (numeric string). */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AirbnbPermitsWriteRequest"];
+            };
+        };
+        responses: {
+            /** @description Permits updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        listingId?: string;
+                        airbnbListingId?: string;
+                        /** @description The permit flows as Airbnb reports them after the write, including each flow's new `status`. */
+                        permits?: {
+                            [key: string]: unknown;
+                        }[];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["AirbnbWriteForbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["AirbnbWriteRejected"];
+            429: components["responses"]["AirbnbRateLimited"];
+            500: components["responses"]["InternalError"];
+            502: components["responses"]["AirbnbUpstreamError"];
+        };
+    };
+    listAirbnbListingSafetyDisclosures: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Repull listing id (numeric string). */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Disclosures */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["AirbnbSafetyDisclosuresResponse"];
+                        dataFreshness: components["schemas"]["AirbnbDataFreshness"];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["UnprocessableEntity"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    updateAirbnbListingSafetyDisclosures: {
+        parameters: {
+            query?: never;
+            header?: {
+                /**
+                 * @description Makes a retry of this request safe. Send a unique string (a UUID generated at the point you build the request) and the response is stored for 24 hours: a repeat with the SAME key replays that stored response — tagged `Idempotency-Status: cached` — without running the operation again, so no duplicate reservation, guest or guest message is created.
+                 *
+                 *     - Same key while the first request is still in flight → `409 idempotency_key_in_use`.
+                 *     - Same key with a DIFFERENT payload → `422 idempotency_key_reused`. Generate a new key per distinct request; reuse one only when retrying that exact request.
+                 *     - Responses with status >= 500 are deliberately not stored, so a server error stays retryable.
+                 */
+                "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                /** @description Repull listing id (numeric string). */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AirbnbSafetyDisclosuresWriteRequest"];
+            };
+        };
+        responses: {
+            /** @description Disclosures updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        listingId?: string;
+                        airbnbListingId?: string;
+                        /** @description The set as Airbnb reports it after the write. */
+                        disclosures?: components["schemas"]["AirbnbSafetyDisclosure"][];
+                        /** @description Airbnb's raw booking-settings response. */
+                        result?: {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["AirbnbWriteForbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["AirbnbWriteRejected"];
+            429: components["responses"]["AirbnbRateLimited"];
+            500: components["responses"]["InternalError"];
+            502: components["responses"]["AirbnbUpstreamError"];
         };
     };
 }

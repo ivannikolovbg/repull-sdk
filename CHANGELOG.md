@@ -3,6 +3,98 @@
 All notable changes to `@repull/sdk` and `@repull/types` are recorded here.
 This project follows [Semantic Versioning](https://semver.org/).
 
+## v0.2.15 — 2026-09-18
+
+Regenerated `@repull/types` against the live spec (175 → 191 operations, none
+removed) and extended the hand-written facade to cover the new Airbnb listing
+content surface. Purely additive — nothing was renamed or removed.
+
+### Added
+
+- **`repull.listings.pullFromAirbnb(id, { airbnbConnectionId? })`** —
+  `POST /v1/listings/{id}/pull/airbnb`. Reads the listing back off Airbnb and
+  rewrites our stored copy from that answer. Read `refreshedFromChannel`:
+  `false` means Airbnb could not be read this time and the projection ran off
+  the copy we already held. `sections` lists what changed; rate-limited per
+  listing, so calling again before `nextPullAvailableAt` throws a 429.
+- **`repull.channels.airbnb.listings.bookingSettings.get / update`** —
+  `GET`/`PUT .../booking-settings`. Instant Book, check-in/check-out windows,
+  advance notice, and the cancellation policy including the non-refundable
+  option. The update is partial; an unknown field is refused with `422` rather
+  than silently dropped. The response's `applied` names the upstream groups
+  actually written.
+- **`repull.channels.airbnb.listings.details.get / update`** —
+  `GET`/`PUT .../details`. Property type, room type, quiet hours, check-in
+  method. The read carries `lockedFields`: the attributes Airbnb manages on an
+  established listing and will not let you change.
+- **`repull.channels.airbnb.listings.descriptions.list / update`** —
+  `GET`/`PUT .../descriptions`. Airbnb keeps a separate description per locale,
+  so `locale` is required on the write.
+- **`repull.channels.airbnb.listings.photos.update / order / setCover`** —
+  `PATCH .../photos`, `PUT .../photos/order`, `PUT .../photos/cover`, plus
+  `photos.list`. `sortOrder` is a relative sort key, not an address, so a
+  reorder response includes photos you did not name.
+- **`repull.channels.airbnb.listings.rooms.list / update`** —
+  `GET`/`PUT .../rooms`. `roomId` goes on the query string, as the API declares
+  it; `beds` REPLACES the room's whole sleeping arrangement.
+- **`repull.channels.airbnb.listings.amenities.list / update`** —
+  `GET`/`PUT .../amenities`. Every entry needs `is_present`, so an amenity can
+  never be a silent no-op.
+- **`repull.channels.airbnb.listings.permits.list / update`** —
+  `GET`/`PUT .../permits`. Pass `{ source: 'live' }` on the read: Airbnb
+  refuses a `question_key` it did not ask for on this listing.
+- **`repull.channels.airbnb.listings.safetyDisclosures.list / update`** —
+  `GET`/`PUT .../safety-disclosures`. The write is a MERGE: a type you leave
+  out keeps its value, and you retract a disclosure by sending `value: false`.
+- **`repull.channels.airbnb.alterations.cancel(id)`** —
+  `POST /v1/channels/airbnb/alterations/{id}/cancel`, to withdraw an alteration
+  you raised yourself.
+- New `@repull/types` aliases for all of the above, plus `AirbnbPhotoPosition`,
+  `AirbnbSafetyDisclosure`, `AirbnbContentWriteResponse`, `AirbnbListingDetails`,
+  `ListingPullAirbnbRequest` and `ListingPullResponse`. `operations` is now
+  re-exported from `@repull/types` alongside `components` and `paths` — the
+  Airbnb content surface is declared inline in the spec, so these aliases are
+  derived from the generated `operations` map rather than hand-written.
+
+### Changed
+
+- **`listings.list` and `channels.airbnb.listings.list` now take `include`** —
+  the facade never exposed the parameter before. `thumbnail` is newly supported
+  by the API on both (it guarantees `thumbnailUrl` on every row, and on
+  `/v1/listings` it is the only expansion that applies to inactive listings);
+  `content` / `details` and `amenities` respectively were already there.
+- **`channels.airbnb.listings.list` now takes `account_id`** — scope the read to
+  one connected Airbnb account (the host id from
+  `connect.airbnb.status().accounts[].externalAccountId`). With it,
+  `dataFreshness.accounts[]` holds exactly that account. Again an existing API
+  parameter the facade did not surface.
+- `AirbnbConnection` gains `syncCategory` (`sync_all` /
+  `sync_rates_and_availability` / `none`), `writable`, `lockedFields`,
+  `accountId`, `accountName` and `hostName`. Airbnb authorises sync one listing
+  at a time, so a connected account can still hold listings it will not accept
+  writes for — `none` means every write is refused with
+  `403 listing_not_api_connected`.
+- `AirbnbDataFreshness` gains `accounts[]`, a per-account verdict. With several
+  connected accounts, one disconnected host no longer condemns the other's rows:
+  `stale` stays `false` and `reason` becomes `partial_account_staleness`.
+- `Reservation` gains stay terms — `checkInTime` / `checkOutTime`, local `HH:MM`
+  in the property's own timezone, on both the REST reads and the webhook
+  payloads.
+- New error code `listing_not_api_connected` (403), declared on the Airbnb write
+  routes and carried through the existing `RepullError.code`. The Airbnb
+  failure codes `airbnb_rejected`, `connection_reauth_required` and
+  `airbnb_rate_limited` now cover the content routes too.
+- `AirbnbPublishResult` is now a typed result carrying `published`, `sections`,
+  `lockedFields`, `errors` and `reason`.
+
+### Note on content writes
+
+A `200` from the content endpoints is **not** proof the change landed: Airbnb
+locks host-managed fields on established listings and answers 200 while applying
+nothing for them. `details` and `descriptions` return `blockedFields` (`[]` is
+what a landed write looks like); the others return `stored`, which says whether
+our own copy was brought in line.
+
 ## v0.2.14 — 2026-09-15
 
 Regenerated `@repull/types` against the live spec (174 → 175 operations) and

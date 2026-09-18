@@ -10,9 +10,9 @@
 //     shapes (`/v1/markets` no longer returns `markets`, /v1/reviews/{id}
 //     no longer wraps in `{ data }`, etc.).
 
-import type { components, paths } from './openapi.js';
+import type { components, operations, paths } from './openapi.js';
 
-export type { components, paths } from './openapi.js';
+export type { components, operations, paths } from './openapi.js';
 
 /** Convenience aliases over the generated `components.schemas`. */
 export type Property = components['schemas']['Property'];
@@ -64,6 +64,119 @@ export type AirbnbDataFreshness = components['schemas']['AirbnbDataFreshness'];
  * freshness signal is part of the response contract rather than an extra.
  */
 export type AirbnbListingListResponse = components['schemas']['AirbnbListingListResponse'];
+
+// --- Airbnb listing content (v0.2.15) -------------------------------------
+//
+// The Airbnb content surface is largely declared inline in the spec rather
+// than as named `components.schemas`, so these aliases are derived from the
+// generated `operations` map. That keeps them exactly what the API declares
+// — nothing here is hand-written.
+//
+// Every write answers with a `stored` flag (was our own copy brought in line)
+// or, for the two `AirbnbContentWriteResponse` routes, with `blockedFields`.
+// A 200 is NOT proof the change landed: Airbnb locks host-managed fields on
+// established listings and answers 200 while applying nothing for them.
+
+/** `GET /v1/channels/airbnb/listings/{id}/booking-settings`. */
+export type AirbnbBookingSettingsResult =
+  operations['get_airbnb_booking_settings']['responses'][200]['content']['application/json'];
+/** Request body for `PUT .../booking-settings`. Partial — unknown fields are refused with 422. */
+export type AirbnbBookingSettingsUpdateRequest =
+  NonNullable<operations['update_airbnb_booking_settings']['requestBody']>['content']['application/json'];
+/** Returned by `PUT .../booking-settings`. `applied` names the upstream groups written. */
+export type AirbnbBookingSettingsUpdateResult =
+  operations['update_airbnb_booking_settings']['responses'][200]['content']['application/json'];
+
+/** `GET /v1/channels/airbnb/listings/{id}/details`. */
+export type AirbnbListingDetailsResult =
+  operations['getAirbnbListingDetails']['responses'][200]['content']['application/json'];
+/** The details payload itself — carries `lockedFields`, the attributes Airbnb will not let you change. */
+export type AirbnbListingDetails = components['schemas']['AirbnbListingDetailsResponse'];
+/** Request body for `PUT .../details`. */
+export type AirbnbListingDetailsWriteRequest =
+  components['schemas']['AirbnbListingDetailsWriteRequest'];
+/**
+ * Result of a content write (`PUT .../details`, `PUT .../descriptions`).
+ * Read `blockedFields`: `[]` is what a landed write looks like.
+ */
+export type AirbnbContentWriteResponse = components['schemas']['AirbnbContentWriteResponse'];
+
+/** `GET /v1/channels/airbnb/listings/{id}/permits`. */
+export type AirbnbPermitsResult =
+  operations['listAirbnbListingPermits']['responses'][200]['content']['application/json'];
+/** Request body for `PUT .../permits`. */
+export type AirbnbPermitsWriteRequest = components['schemas']['AirbnbPermitsWriteRequest'];
+/** Returned by `PUT .../permits`. */
+export type AirbnbPermitsWriteResult =
+  operations['updateAirbnbListingPermits']['responses'][200]['content']['application/json'];
+
+/** `GET /v1/channels/airbnb/listings/{id}/safety-disclosures`. */
+export type AirbnbSafetyDisclosuresResult =
+  operations['listAirbnbListingSafetyDisclosures']['responses'][200]['content']['application/json'];
+/** One guest-safety disclosure. */
+export type AirbnbSafetyDisclosure = components['schemas']['AirbnbSafetyDisclosure'];
+/** Request body for `PUT .../safety-disclosures`. A MERGE — omit a type to leave it alone. */
+export type AirbnbSafetyDisclosuresWriteRequest =
+  components['schemas']['AirbnbSafetyDisclosuresWriteRequest'];
+/** Returned by `PUT .../safety-disclosures`. */
+export type AirbnbSafetyDisclosuresWriteResult =
+  operations['updateAirbnbListingSafetyDisclosures']['responses'][200]['content']['application/json'];
+
+/** `GET /v1/channels/airbnb/listings/{id}/descriptions`. */
+export type AirbnbDescriptionsResult =
+  operations['list_airbnb_listing_descriptions']['responses'][200]['content']['application/json'];
+/** Request body for `PUT .../descriptions` — one locale's copy. */
+export type AirbnbDescriptionWriteRequest = components['schemas']['AirbnbDescriptionWriteRequest'];
+
+/** Request body for `PATCH /v1/channels/airbnb/listings/{id}/photos`. */
+export type AirbnbPhotoUpdateRequest =
+  NonNullable<operations['update_airbnb_listing_photo']['requestBody']>['content']['application/json'];
+/** Returned by `PATCH .../photos`. */
+export type AirbnbPhotoUpdateResult =
+  operations['update_airbnb_listing_photo']['responses'][200]['content']['application/json'];
+/** Request body for `PUT .../photos/order` — every id in display order. */
+export type AirbnbPhotoOrderRequest =
+  NonNullable<operations['reorder_airbnb_listing_photos']['requestBody']>['content']['application/json'];
+/** Returned by `PUT .../photos/order`. */
+export type AirbnbPhotoOrderResult =
+  operations['reorder_airbnb_listing_photos']['responses'][200]['content']['application/json'];
+/** Request body for `PUT .../photos/cover`. */
+export type AirbnbPhotoCoverRequest =
+  NonNullable<operations['set_airbnb_listing_cover_photo']['requestBody']>['content']['application/json'];
+/** Returned by `PUT .../photos/cover`. */
+export type AirbnbPhotoCoverResult =
+  operations['set_airbnb_listing_cover_photo']['responses'][200]['content']['application/json'];
+/** One photo's position in the tour. `sortOrder` is a relative sort key, not an address. */
+export type AirbnbPhotoPosition = components['schemas']['AirbnbPhotoPosition'];
+
+/** `GET /v1/channels/airbnb/listings/{id}/rooms`. */
+export type AirbnbRoomsResult =
+  operations['list_airbnb_listing_rooms']['responses'][200]['content']['application/json'];
+/** Request body for `PUT .../rooms` — `beds` REPLACES the room's arrangement. */
+export type AirbnbRoomUpdateRequest =
+  NonNullable<operations['update_airbnb_listing_room']['requestBody']>['content']['application/json'];
+/** Returned by `PUT .../rooms`. */
+export type AirbnbRoomUpdateResult =
+  operations['update_airbnb_listing_room']['responses'][200]['content']['application/json'];
+
+/** `GET /v1/channels/airbnb/listings/{id}/amenities`. */
+export type AirbnbAmenitiesResult =
+  operations['list_airbnb_listing_amenities']['responses'][200]['content']['application/json'];
+/** Request body for `PUT .../amenities`. */
+export type AirbnbAmenitiesUpdateRequest =
+  NonNullable<operations['update_airbnb_listing_amenities']['requestBody']>['content']['application/json'];
+/** Returned by `PUT .../amenities` — counts of what was written. */
+export type AirbnbAmenitiesUpdateResult =
+  operations['update_airbnb_listing_amenities']['responses'][200]['content']['application/json'];
+
+/** Optional body for `POST /v1/listings/{id}/pull/airbnb`. */
+export type ListingPullAirbnbRequest = components['schemas']['ListingPullAirbnbRequest'];
+/**
+ * Returned by `POST /v1/listings/{id}/pull/airbnb`. Read `refreshedFromChannel`:
+ * `false` means Airbnb could not be read and the projection ran off the copy we
+ * already held.
+ */
+export type ListingPullResponse = components['schemas']['ListingPullResponse'];
 
 /** Request body for `POST /v1/guests`. */
 export type GuestCreateRequest = components['schemas']['GuestCreateRequest'];

@@ -102,6 +102,209 @@ describe('list status filters', () => {
   });
 });
 
+describe('listings.pullFromAirbnb', () => {
+  it('POSTs an empty body to /v1/listings/{id}/pull/airbnb', async () => {
+    const { repull, calls } = client({
+      listingId: '4118',
+      channel: 'airbnb',
+      refreshedFromChannel: true,
+      sections: ['details', 'photos'],
+    });
+    const res = await repull.listings.pullFromAirbnb(4118);
+    expect(calls[0].method).toBe('POST');
+    expect(calls[0].url.pathname).toBe('/v1/listings/4118/pull/airbnb');
+    expect(calls[0].body).toEqual({});
+    expect(res.sections).toEqual(['details', 'photos']);
+  });
+
+  it('forwards airbnbConnectionId when the listing has several connections', async () => {
+    const { repull, calls } = client({ listingId: '4118', channel: 'airbnb' });
+    await repull.listings.pullFromAirbnb('4118', { airbnbConnectionId: 'c-99' });
+    expect(calls[0].body).toEqual({ airbnbConnectionId: 'c-99' });
+  });
+});
+
+describe('listing list expansions', () => {
+  it('listings.list forwards include=thumbnail', async () => {
+    const { repull, calls } = client({ data: [], pagination: { nextCursor: null, hasMore: false } });
+    await repull.listings.list({ include: 'thumbnail' });
+    expect(calls[0].url.searchParams.get('include')).toBe('thumbnail');
+  });
+
+  it('channels.airbnb.listings.list forwards include and account_id', async () => {
+    const { repull, calls } = client({
+      data: [],
+      pagination: { nextCursor: null, hasMore: false },
+      dataFreshness: { lastSyncedAt: null, stale: false },
+    });
+    await repull.channels.airbnb.listings.list({
+      include: 'amenities,thumbnail',
+      account_id: '1772489413932732258',
+    });
+    expect(calls[0].url.pathname).toBe('/v1/channels/airbnb/listings');
+    expect(calls[0].url.searchParams.get('include')).toBe('amenities,thumbnail');
+    expect(calls[0].url.searchParams.get('account_id')).toBe('1772489413932732258');
+  });
+});
+
+describe('airbnb booking settings', () => {
+  it('GETs the settings for a listing', async () => {
+    const { repull, calls } = client({
+      data: { bookingMode: 'instant_book' },
+      dataFreshness: { lastSyncedAt: null, stale: false },
+    });
+    const res = await repull.channels.airbnb.listings.bookingSettings.get('4118');
+    expect(calls[0].method).toBe('GET');
+    expect(calls[0].url.pathname).toBe('/v1/channels/airbnb/listings/4118/booking-settings');
+    expect(res.data.bookingMode).toBe('instant_book');
+  });
+
+  it('PUTs a partial update and returns which groups were applied', async () => {
+    const { repull, calls } = client({ data: { applied: ['bookingSettings'], settings: {} } });
+    const res = await repull.channels.airbnb.listings.bookingSettings.update(4118, {
+      instantBook: { enabled: true },
+      cancellation: { nonRefundable: { enabled: true, discountPercent: 10 } },
+    });
+    expect(calls[0].method).toBe('PUT');
+    expect(calls[0].url.pathname).toBe('/v1/channels/airbnb/listings/4118/booking-settings');
+    expect(calls[0].body).toEqual({
+      instantBook: { enabled: true },
+      cancellation: { nonRefundable: { enabled: true, discountPercent: 10 } },
+    });
+    expect(res.data.applied).toEqual(['bookingSettings']);
+  });
+});
+
+describe('airbnb content writes', () => {
+  it('details.update PUTs to /details and surfaces blockedFields', async () => {
+    const { repull, calls } = client({
+      listingId: '4118',
+      written: ['quiet_hours'],
+      blockedFields: ['room_type_category'],
+    });
+    const res = await repull.channels.airbnb.listings.details.update('4118', {
+      quiet_hours: [{ start_time: '22', end_time: '7' }],
+      room_type_category: 'entire_home',
+    });
+    expect(calls[0].method).toBe('PUT');
+    expect(calls[0].url.pathname).toBe('/v1/channels/airbnb/listings/4118/details');
+    expect(res.blockedFields).toEqual(['room_type_category']);
+  });
+
+  it('descriptions.update writes one locale', async () => {
+    const { repull, calls } = client({ listingId: '4118', written: ['summary'], blockedFields: [] });
+    await repull.channels.airbnb.listings.descriptions.update('4118', {
+      locale: 'it',
+      description: { summary: 'Un appartamento luminoso.' },
+    });
+    expect(calls[0].url.pathname).toBe('/v1/channels/airbnb/listings/4118/descriptions');
+    expect(calls[0].body).toEqual({
+      locale: 'it',
+      description: { summary: 'Un appartamento luminoso.' },
+    });
+  });
+
+  it('descriptions.list forwards locale + country', async () => {
+    const { repull, calls } = client({ data: [] });
+    await repull.channels.airbnb.listings.descriptions.list('4118', { locale: 'it', country: 'IT' });
+    expect(calls[0].method).toBe('GET');
+    expect(calls[0].url.searchParams.get('locale')).toBe('it');
+    expect(calls[0].url.searchParams.get('country')).toBe('IT');
+  });
+
+  it('permits.list forwards ?source=live', async () => {
+    const { repull, calls } = client({ data: [] });
+    await repull.channels.airbnb.listings.permits.list('4118', { source: 'live' });
+    expect(calls[0].url.pathname).toBe('/v1/channels/airbnb/listings/4118/permits');
+    expect(calls[0].url.searchParams.get('source')).toBe('live');
+  });
+
+  it('permits.update PUTs the answers', async () => {
+    const { repull, calls } = client({ data: {} });
+    await repull.channels.airbnb.listings.permits.update('4118', {
+      permits: [
+        {
+          regulatory_body: 'City of Radium Hot Springs',
+          regulation_type: 'short_term_rental',
+          answers: [{ question_key: 'permit_number', text_value: 'STR-123' }],
+        },
+      ],
+    });
+    expect(calls[0].method).toBe('PUT');
+    expect(calls[0].url.pathname).toBe('/v1/channels/airbnb/listings/4118/permits');
+  });
+
+  it('safetyDisclosures.update merges rather than replaces', async () => {
+    const { repull, calls } = client({ data: {} });
+    await repull.channels.airbnb.listings.safetyDisclosures.update('4118', {
+      disclosures: [{ type: 'security_camera', value: false }],
+    });
+    expect(calls[0].method).toBe('PUT');
+    expect(calls[0].url.pathname).toBe('/v1/channels/airbnb/listings/4118/safety-disclosures');
+    expect(calls[0].body).toEqual({ disclosures: [{ type: 'security_camera', value: false }] });
+  });
+
+  it('amenities.update PUTs is_present verdicts', async () => {
+    const { repull, calls } = client({ data: { amenities: 1 }, stored: true });
+    const res = await repull.channels.airbnb.listings.amenities.update(4118, {
+      amenities: [{ id: 'wireless_internet', is_present: true }],
+    });
+    expect(calls[0].url.pathname).toBe('/v1/channels/airbnb/listings/4118/amenities');
+    expect(res.stored).toBe(true);
+  });
+});
+
+describe('airbnb photos', () => {
+  it('update PATCHes one photo', async () => {
+    const { repull, calls } = client({ data: {}, stored: true });
+    await repull.channels.airbnb.listings.photos.update('4118', {
+      photo_id: 'p1',
+      caption: 'Living room',
+    });
+    expect(calls[0].method).toBe('PATCH');
+    expect(calls[0].url.pathname).toBe('/v1/channels/airbnb/listings/4118/photos');
+    expect(calls[0].body).toEqual({ photo_id: 'p1', caption: 'Living room' });
+  });
+
+  it('order PUTs the full id list to /photos/order', async () => {
+    const { repull, calls } = client({ data: { order: [], applied: [], unchanged: 0 }, stored: true });
+    await repull.channels.airbnb.listings.photos.order('4118', { photo_ids: ['p2', 'p1'] });
+    expect(calls[0].method).toBe('PUT');
+    expect(calls[0].url.pathname).toBe('/v1/channels/airbnb/listings/4118/photos/order');
+    expect(calls[0].body).toEqual({ photo_ids: ['p2', 'p1'] });
+  });
+
+  it('setCover PUTs to /photos/cover', async () => {
+    const { repull, calls } = client({ data: { coverPhotoId: 'p2' }, stored: true });
+    const res = await repull.channels.airbnb.listings.photos.setCover(4118, { photo_id: 'p2' });
+    expect(calls[0].url.pathname).toBe('/v1/channels/airbnb/listings/4118/photos/cover');
+    expect(res.data?.coverPhotoId).toBe('p2');
+  });
+});
+
+describe('airbnb rooms', () => {
+  it('update sends roomId on the query string, not the body', async () => {
+    const { repull, calls } = client({ data: {}, stored: true });
+    await repull.channels.airbnb.listings.rooms.update('4118', 'r-7', {
+      beds: [{ type: 'king_bed', quantity: 1 }],
+    });
+    expect(calls[0].method).toBe('PUT');
+    expect(calls[0].url.pathname).toBe('/v1/channels/airbnb/listings/4118/rooms');
+    expect(calls[0].url.searchParams.get('roomId')).toBe('r-7');
+    expect(calls[0].body).toEqual({ beds: [{ type: 'king_bed', quantity: 1 }] });
+  });
+});
+
+describe('airbnb alterations', () => {
+  it('cancel POSTs an empty body', async () => {
+    const { repull, calls } = client({});
+    await repull.channels.airbnb.alterations.cancel('alt-1');
+    expect(calls[0].method).toBe('POST');
+    expect(calls[0].url.pathname).toBe('/v1/channels/airbnb/alterations/alt-1/cancel');
+    expect(calls[0].body).toEqual({});
+  });
+});
+
 describe('listing_inactive errors', () => {
   it('surfaces code and listingIds on the thrown error', async () => {
     const { repull } = client(

@@ -15,8 +15,36 @@
 
 import type {
   AirbnbAccessType,
+  AirbnbAmenitiesResult,
+  AirbnbAmenitiesUpdateRequest,
+  AirbnbAmenitiesUpdateResult,
+  AirbnbBookingSettingsResult,
+  AirbnbBookingSettingsUpdateRequest,
+  AirbnbBookingSettingsUpdateResult,
+  AirbnbContentWriteResponse,
+  AirbnbDescriptionWriteRequest,
+  AirbnbDescriptionsResult,
   AirbnbListing,
+  AirbnbListingDetailsResult,
+  AirbnbListingDetailsWriteRequest,
   AirbnbListingListResponse,
+  AirbnbPermitsResult,
+  AirbnbPermitsWriteRequest,
+  AirbnbPermitsWriteResult,
+  AirbnbPhotoCoverRequest,
+  AirbnbPhotoCoverResult,
+  AirbnbPhotoOrderRequest,
+  AirbnbPhotoOrderResult,
+  AirbnbPhotoUpdateRequest,
+  AirbnbPhotoUpdateResult,
+  AirbnbRoomUpdateRequest,
+  AirbnbRoomUpdateResult,
+  AirbnbRoomsResult,
+  AirbnbSafetyDisclosuresResult,
+  AirbnbSafetyDisclosuresWriteRequest,
+  AirbnbSafetyDisclosuresWriteResult,
+  ListingPullAirbnbRequest,
+  ListingPullResponse,
   ConnectPickerSession,
   ConnectProvider,
   ConnectSession,
@@ -57,7 +85,7 @@ import { RepullError } from './errors.js';
 import { KvNamespace } from './kv.js';
 
 const DEFAULT_BASE_URL = 'https://api.repull.dev';
-const DEFAULT_USER_AGENT = '@repull/sdk/0.2.14';
+const DEFAULT_USER_AGENT = '@repull/sdk/0.2.15';
 
 export type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
@@ -708,14 +736,55 @@ class ChannelsNamespace {
 
 class AirbnbChannelNamespace {
   readonly listings: AirbnbListingsNamespace;
+  readonly alterations: AirbnbAlterationsNamespace;
 
   constructor(client: Repull) {
     this.listings = new AirbnbListingsNamespace(client);
+    this.alterations = new AirbnbAlterationsNamespace(client);
+  }
+}
+
+/** Airbnb reservation alterations. New in v0.2.15. */
+class AirbnbAlterationsNamespace {
+  constructor(private readonly client: Repull) {}
+
+  /**
+   * POST /v1/channels/airbnb/alterations/{id}/cancel — withdraw an alteration
+   * request you raised, before the other side has responded to it. New in
+   * v0.2.15.
+   *
+   * Takes no fields. Use `accept` / `decline` on Airbnb for a request raised
+   * by the guest; `cancel` is for one you raised yourself.
+   */
+  cancel(id: string | number): Promise<void> {
+    return this.client.request<void>(
+      'POST',
+      `/v1/channels/airbnb/alterations/${encodeURIComponent(String(id))}/cancel`,
+      { body: {} },
+    );
   }
 }
 
 class AirbnbListingsNamespace {
-  constructor(private readonly client: Repull) {}
+  readonly bookingSettings: AirbnbBookingSettingsNamespace;
+  readonly details: AirbnbListingDetailsNamespace;
+  readonly descriptions: AirbnbDescriptionsNamespace;
+  readonly photos: AirbnbPhotosNamespace;
+  readonly rooms: AirbnbRoomsNamespace;
+  readonly amenities: AirbnbAmenitiesNamespace;
+  readonly permits: AirbnbPermitsNamespace;
+  readonly safetyDisclosures: AirbnbSafetyDisclosuresNamespace;
+
+  constructor(private readonly client: Repull) {
+    this.bookingSettings = new AirbnbBookingSettingsNamespace(client);
+    this.details = new AirbnbListingDetailsNamespace(client);
+    this.descriptions = new AirbnbDescriptionsNamespace(client);
+    this.photos = new AirbnbPhotosNamespace(client);
+    this.rooms = new AirbnbRoomsNamespace(client);
+    this.amenities = new AirbnbAmenitiesNamespace(client);
+    this.permits = new AirbnbPermitsNamespace(client);
+    this.safetyDisclosures = new AirbnbSafetyDisclosuresNamespace(client);
+  }
 
   /**
    * GET /v1/channels/airbnb/listings — read-only Airbnb listing index with
@@ -729,7 +798,22 @@ class AirbnbListingsNamespace {
    * dashboard screen that resolves it.
    */
   list(
-    query: { limit?: number; cursor?: string; include_total?: boolean } = {},
+    query: {
+      limit?: number;
+      cursor?: string;
+      include_total?: boolean;
+      /**
+       * Comma-separated expansions. `amenities` adds the amenity arrays;
+       * `thumbnail` guarantees `thumbnailUrl` is populated. New in v0.2.15.
+       */
+      include?: string;
+      /**
+       * Scope the read to ONE connected Airbnb account — the host id from
+       * `connect.airbnb.status().accounts[].externalAccountId`. With it,
+       * `dataFreshness.accounts[]` holds exactly that account. New in v0.2.15.
+       */
+      account_id?: string | number;
+    } = {},
   ): Promise<AirbnbListingListResponse> {
     return this.client.request<AirbnbListingListResponse>('GET', '/v1/channels/airbnb/listings', {
       query,
@@ -741,6 +825,292 @@ class AirbnbListingsNamespace {
     return this.client.request<AirbnbListing>(
       'GET',
       `/v1/channels/airbnb/listings/${encodeURIComponent(String(id))}`,
+    );
+  }
+}
+
+/** Path prefix for the per-listing Airbnb content routes. */
+function airbnbListingPath(id: string | number, suffix: string): string {
+  return `/v1/channels/airbnb/listings/${encodeURIComponent(String(id))}${suffix}`;
+}
+
+/**
+ * Airbnb booking settings — Instant Book, check-in/check-out windows,
+ * advance notice, and the cancellation policy. New in v0.2.15.
+ */
+class AirbnbBookingSettingsNamespace {
+  constructor(private readonly client: Repull) {}
+
+  /** GET /v1/channels/airbnb/listings/{id}/booking-settings. */
+  get(id: string | number): Promise<AirbnbBookingSettingsResult> {
+    return this.client.request<AirbnbBookingSettingsResult>(
+      'GET',
+      airbnbListingPath(id, '/booking-settings'),
+    );
+  }
+
+  /**
+   * PUT /v1/channels/airbnb/listings/{id}/booking-settings — partial update.
+   *
+   * A field you do not send is left alone; an unknown field is refused with
+   * `422` rather than silently dropped, so a typo can never look like a
+   * successful write. `cancellation.nonRefundable.enabled: true` requires a
+   * `discountPercent` (capped at 30%, Airbnb's floor). The response's
+   * `applied` names which upstream groups were written.
+   */
+  update(
+    id: string | number,
+    body: AirbnbBookingSettingsUpdateRequest,
+  ): Promise<AirbnbBookingSettingsUpdateResult> {
+    return this.client.request<AirbnbBookingSettingsUpdateResult>(
+      'PUT',
+      airbnbListingPath(id, '/booking-settings'),
+      { body },
+    );
+  }
+}
+
+/**
+ * Airbnb listing details — property type, room type, quiet hours, check-in
+ * method. New in v0.2.15.
+ */
+class AirbnbListingDetailsNamespace {
+  constructor(private readonly client: Repull) {}
+
+  /**
+   * GET /v1/channels/airbnb/listings/{id}/details.
+   *
+   * Read `data.lockedFields` before writing: those are the attributes Airbnb
+   * manages on an established listing and will not let you change.
+   */
+  get(id: string | number): Promise<AirbnbListingDetailsResult> {
+    return this.client.request<AirbnbListingDetailsResult>('GET', airbnbListingPath(id, '/details'));
+  }
+
+  /**
+   * PUT /v1/channels/airbnb/listings/{id}/details — at least one field.
+   *
+   * A 200 is not by itself proof the change landed: Airbnb answers 200 while
+   * applying nothing for fields it locks. Read `blockedFields` on the
+   * response — `[]` is what a landed write looks like. Airbnb validates
+   * `property_type_category` against `property_type_group`, so send both when
+   * changing the kind of property.
+   */
+  update(
+    id: string | number,
+    body: AirbnbListingDetailsWriteRequest,
+  ): Promise<AirbnbContentWriteResponse> {
+    return this.client.request<AirbnbContentWriteResponse>(
+      'PUT',
+      airbnbListingPath(id, '/details'),
+      { body },
+    );
+  }
+}
+
+/** Airbnb per-locale listing copy. New in v0.2.15. */
+class AirbnbDescriptionsNamespace {
+  constructor(private readonly client: Repull) {}
+
+  /** GET /v1/channels/airbnb/listings/{id}/descriptions. */
+  list(
+    id: string | number,
+    query: { locale?: string; country?: string } = {},
+  ): Promise<AirbnbDescriptionsResult> {
+    return this.client.request<AirbnbDescriptionsResult>(
+      'GET',
+      airbnbListingPath(id, '/descriptions'),
+      { query },
+    );
+  }
+
+  /**
+   * PUT /v1/channels/airbnb/listings/{id}/descriptions — write ONE locale.
+   *
+   * Airbnb keeps a separate description per locale, which is why `locale` is
+   * required: writing Italian copy into the English row is how a translation
+   * gets lost. `description` itself is not accepted — Airbnb composes the
+   * public description from the sections. Read `blockedFields` on the
+   * response.
+   */
+  update(
+    id: string | number,
+    body: AirbnbDescriptionWriteRequest,
+  ): Promise<AirbnbContentWriteResponse> {
+    return this.client.request<AirbnbContentWriteResponse>(
+      'PUT',
+      airbnbListingPath(id, '/descriptions'),
+      { body },
+    );
+  }
+}
+
+/** The Airbnb photo tour. New in v0.2.15. */
+class AirbnbPhotosNamespace {
+  constructor(private readonly client: Repull) {}
+
+  /** GET /v1/channels/airbnb/listings/{id}/photos. */
+  list(id: string | number): Promise<unknown> {
+    return this.client.request('GET', airbnbListingPath(id, '/photos'));
+  }
+
+  /**
+   * PATCH /v1/channels/airbnb/listings/{id}/photos — change one photo's
+   * caption, position, room, or metadata.
+   *
+   * `photo_id` is the Airbnb-side id (`photoAirbnbId` from the list), plus at
+   * least one of `caption`, `sort_order`, `room_id`, `metadata`. `null`
+   * clears a caption or detaches the photo from its room.
+   */
+  update(id: string | number, body: AirbnbPhotoUpdateRequest): Promise<AirbnbPhotoUpdateResult> {
+    return this.client.request<AirbnbPhotoUpdateResult>('PATCH', airbnbListingPath(id, '/photos'), {
+      body,
+    });
+  }
+
+  /**
+   * PUT /v1/channels/airbnb/listings/{id}/photos/order — reorder the tour.
+   *
+   * Send every id you want ordered, first photo first. `sortOrder` is a
+   * relative sort key, not an address, so the response's `order` includes
+   * photos you did not name.
+   */
+  order(id: string | number, body: AirbnbPhotoOrderRequest): Promise<AirbnbPhotoOrderResult> {
+    return this.client.request<AirbnbPhotoOrderResult>(
+      'PUT',
+      airbnbListingPath(id, '/photos/order'),
+      { body },
+    );
+  }
+
+  /**
+   * PUT /v1/channels/airbnb/listings/{id}/photos/cover — lead the tour with
+   * one photo. `applied` comes back empty when it was already the cover.
+   */
+  setCover(id: string | number, body: AirbnbPhotoCoverRequest): Promise<AirbnbPhotoCoverResult> {
+    return this.client.request<AirbnbPhotoCoverResult>(
+      'PUT',
+      airbnbListingPath(id, '/photos/cover'),
+      { body },
+    );
+  }
+}
+
+/** Airbnb rooms and their sleeping arrangements. New in v0.2.15. */
+class AirbnbRoomsNamespace {
+  constructor(private readonly client: Repull) {}
+
+  /** GET /v1/channels/airbnb/listings/{id}/rooms. */
+  list(id: string | number): Promise<AirbnbRoomsResult> {
+    return this.client.request<AirbnbRoomsResult>('GET', airbnbListingPath(id, '/rooms'));
+  }
+
+  /**
+   * PUT /v1/channels/airbnb/listings/{id}/rooms — update one room. `roomId`
+   * goes on the query string, as the API declares it.
+   *
+   * `beds` REPLACES the room's whole arrangement, so send every bed, not just
+   * the changed one. A body that changes nothing is refused rather than
+   * reported as a successful write.
+   */
+  update(
+    id: string | number,
+    roomId: string | number,
+    body: AirbnbRoomUpdateRequest,
+  ): Promise<AirbnbRoomUpdateResult> {
+    return this.client.request<AirbnbRoomUpdateResult>('PUT', airbnbListingPath(id, '/rooms'), {
+      query: { roomId: String(roomId) },
+      body,
+    });
+  }
+}
+
+/** Airbnb amenities, including accessibility amenities. New in v0.2.15. */
+class AirbnbAmenitiesNamespace {
+  constructor(private readonly client: Repull) {}
+
+  /** GET /v1/channels/airbnb/listings/{id}/amenities. */
+  list(id: string | number): Promise<AirbnbAmenitiesResult> {
+    return this.client.request<AirbnbAmenitiesResult>('GET', airbnbListingPath(id, '/amenities'));
+  }
+
+  /**
+   * PUT /v1/channels/airbnb/listings/{id}/amenities.
+   *
+   * Every entry needs `is_present` — `true` claims the amenity, `false`
+   * removes it — because an amenity with no verdict would be a silent no-op.
+   * At least one amenity across `amenities` and `accessibility_amenities`.
+   */
+  update(
+    id: string | number,
+    body: AirbnbAmenitiesUpdateRequest,
+  ): Promise<AirbnbAmenitiesUpdateResult> {
+    return this.client.request<AirbnbAmenitiesUpdateResult>(
+      'PUT',
+      airbnbListingPath(id, '/amenities'),
+      { body },
+    );
+  }
+}
+
+/** Airbnb regulatory permits and licences. New in v0.2.15. */
+class AirbnbPermitsNamespace {
+  constructor(private readonly client: Repull) {}
+
+  /**
+   * GET /v1/channels/airbnb/listings/{id}/permits — the permit questions
+   * Airbnb asks for this listing. Pass `source: 'live'` to read them from
+   * Airbnb: it refuses a `question_key` it did not ask for on this listing,
+   * so read before you write.
+   */
+  list(id: string | number, query: { source?: string } = {}): Promise<AirbnbPermitsResult> {
+    return this.client.request<AirbnbPermitsResult>('GET', airbnbListingPath(id, '/permits'), {
+      query,
+    });
+  }
+
+  /** PUT /v1/channels/airbnb/listings/{id}/permits — answer those questions. */
+  update(
+    id: string | number,
+    body: AirbnbPermitsWriteRequest,
+  ): Promise<AirbnbPermitsWriteResult> {
+    return this.client.request<AirbnbPermitsWriteResult>(
+      'PUT',
+      airbnbListingPath(id, '/permits'),
+      { body },
+    );
+  }
+}
+
+/** Guest-safety disclosures (cameras, weapons, hazards). New in v0.2.15. */
+class AirbnbSafetyDisclosuresNamespace {
+  constructor(private readonly client: Repull) {}
+
+  /** GET /v1/channels/airbnb/listings/{id}/safety-disclosures. */
+  list(id: string | number): Promise<AirbnbSafetyDisclosuresResult> {
+    return this.client.request<AirbnbSafetyDisclosuresResult>(
+      'GET',
+      airbnbListingPath(id, '/safety-disclosures'),
+    );
+  }
+
+  /**
+   * PUT /v1/channels/airbnb/listings/{id}/safety-disclosures — a MERGE, not a
+   * replacement.
+   *
+   * A disclosure type you leave out keeps the value it has; to retract one,
+   * send it with `value: false`. Full replacement would let a partial request
+   * silently un-declare a security camera, which is a guest-safety statement
+   * rather than a preference.
+   */
+  update(
+    id: string | number,
+    body: AirbnbSafetyDisclosuresWriteRequest,
+  ): Promise<AirbnbSafetyDisclosuresWriteResult> {
+    return this.client.request<AirbnbSafetyDisclosuresWriteResult>(
+      'PUT',
+      airbnbListingPath(id, '/safety-disclosures'),
+      { body },
     );
   }
 }
@@ -814,6 +1184,12 @@ class ListingsNamespace {
       status?: 'active' | 'inactive' | 'archived' | 'all';
       channel?: string;
       include_total?: boolean;
+      /**
+       * Comma-separated optional expansions: `content`, `details`,
+       * `thumbnail`. `thumbnail` guarantees `thumbnailUrl` is populated.
+       * New in v0.2.15.
+       */
+      include?: string;
     } = {},
     opts: { xSchema?: string } = {},
   ): Promise<ListResponse<Listing>> {
@@ -891,6 +1267,33 @@ class ListingsNamespace {
     return this.client.request<ListingStatusBatchResponse>('POST', '/v1/listings/status', {
       body: payload,
     });
+  }
+
+  /**
+   * POST /v1/listings/{id}/pull/airbnb — refresh a listing from Airbnb. New
+   * in v0.2.15.
+   *
+   * Reads the listing back off Airbnb and rewrites our stored copy from that
+   * answer. Read `refreshedFromChannel`: `false` means Airbnb could not be
+   * read this time (expired grant, read-only host, upstream error) and the
+   * projection ran off the copy we already held — nothing is wrong with the
+   * data, it simply is not newer than it was. `sections` lists what changed;
+   * an empty array means Airbnb agreed with everything we held.
+   *
+   * Rate-limited per listing: calling again before `nextPullAvailableAt`
+   * throws a 429. Pass `airbnbConnectionId` when a listing carries several
+   * connections (merged properties, host migrations) — the ids come from
+   * `GET /v1/listings/{id}/publish-status`.
+   */
+  pullFromAirbnb(
+    id: string | number,
+    body: ListingPullAirbnbRequest = {},
+  ): Promise<ListingPullResponse> {
+    return this.client.request<ListingPullResponse>(
+      'POST',
+      `/v1/listings/${encodeURIComponent(String(id))}/pull/airbnb`,
+      { body },
+    );
   }
 }
 
