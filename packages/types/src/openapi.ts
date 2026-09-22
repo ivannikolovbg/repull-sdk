@@ -4541,7 +4541,7 @@ export interface components {
          * @description Canonical event type identifier. Every webhook delivery declares one of these in its `type` field; SDKs key the discriminated `WebhookEvent` union on this value.
          * @enum {string}
          */
-        WebhookEventType: "reservation.created" | "reservation.updated" | "reservation.cancelled" | "reservation.message.received" | "reservation.alteration.created" | "reservation.alteration.responded" | "listing.created" | "listing.updated" | "listing.deleted" | "calendar.updated" | "account.created" | "account.disconnected" | "review.created" | "review.responded" | "ai.operation.completed" | "ai.operation.failed" | "payment.completed" | "payment.refunded" | "repull.ping" | "usage.quota.warning";
+        WebhookEventType: "reservation.created" | "reservation.updated" | "reservation.cancelled" | "reservation.message.received" | "reservation.alteration.created" | "reservation.alteration.responded" | "listing.created" | "listing.updated" | "listing.deleted" | "listing.suspended" | "listing.reactivated" | "calendar.updated" | "account.created" | "account.disconnected" | "review.created" | "review.responded" | "ai.operation.completed" | "ai.operation.failed" | "payment.completed" | "payment.refunded" | "repull.ping" | "usage.quota.warning";
         /**
          * @description Lightweight reservation snapshot delivered as `data.object` on every reservation webhook event. Stable across `reservation.created`, `reservation.updated`, and `reservation.cancelled`. Fetch the full reservation via `GET /v1/reservations/{id}` if you need pricing, guest contact info, or audit history — those are deliberately omitted to keep deliveries small.
          *
@@ -4778,39 +4778,124 @@ export interface components {
              */
             createdAt?: string;
         };
-        /** @description Payload for `listing.updated`. Listing content, amenities, photos, or status changed. */
-        ListingUpdatedPayload: {
+        /** @description The listing, in the shape `GET /v1/listings/{id}` returns. Hydrated at delivery, so a receiver gets the listing rather than a reason to fetch one. */
+        ListingWebhookObject: {
             /** @example 6250 */
-            id?: number;
+            id: string;
+            /** @example 1 */
+            customerId: number;
+            /** @example airbnb */
+            channel?: string | null;
             /**
-             * @description Map of `field` → `{ from, to }` pairs describing what changed.
-             * @example {
-             *       "title": {
-             *         "from": "R-Sable 1302",
-             *         "to": "R-Sable 1302 — Radium Hot Springs"
-             *       }
-             *     }
+             * @description The channel's own listing id. Airbnb's exceed 2^53, so always a string.
+             * @example 1234567890123456789
              */
-            changes?: {
+            externalListingId?: string | null;
+            /** @example R-Sable 1302 — Radium Hot Springs */
+            name?: string | null;
+            /** @example true */
+            active?: boolean;
+            /** @example active */
+            status?: string;
+            address?: {
+                street?: string | null;
+                city?: string | null;
+                region?: string | null;
+            };
+            thumbnailUrl?: string | null;
+            /** @description Which channels this listing is on and whether each still accepts writes. `syncEnabled: false` means the channel refuses every write for this listing — the difference between a failing integration and a suspended listing. */
+            channels?: {
+                /** @example airbnb */
+                platform?: string;
+                /** @example 21466093 */
+                externalId?: string;
+                active?: boolean;
+                syncEnabled?: boolean;
+                /** @example sync_all */
+                syncCategory?: string | null;
+            }[];
+            /** Format: date-time */
+            createdAt?: string | null;
+            /** Format: date-time */
+            updatedAt?: string | null;
+        };
+        /** @description A money movement: a guest charge, a host payout, a refund, a tourist-tax pass-through, a resolution payout, or an adjustment that claws money back. */
+        PaymentWebhookObject: {
+            /** @example 277919 */
+            id: number;
+            /** @example 1 */
+            customerId: number;
+            /**
+             * @description Repull's normalised vocabulary for what this movement is.
+             * @example payout
+             * @enum {string}
+             */
+            transactionType: "reservation" | "payout" | "refund" | "adjustment" | "pass_through_tax" | "resolution_payout" | "charge" | "other";
+            /**
+             * @description The source system's own type string, unmapped, for reconciling against the dashboard.
+             * @example Payout
+             */
+            sourceType?: string | null;
+            /** @example completed */
+            status?: string | null;
+            /**
+             * @description Gross amount. Negative on adjustments and clawbacks — the sign is preserved so the direction never has to be inferred.
+             * @example 1792.17
+             */
+            amount: string;
+            /** @example CAD */
+            currency?: string | null;
+            /** @description Present when the movement belongs to one reservation. Absent on batched payouts, which genuinely arrive without a reservation reference. */
+            reservationId?: number | null;
+            /** @description The channel's confirmation code, when resolved. */
+            confirmationCode?: string | null;
+            listingId?: number | null;
+            /** @example airbnb */
+            platform?: string | null;
+            /**
+             * @description The platform's own id. Airbnb payout ids look like `G-FRSLYC3ZKAJDQ`.
+             * @example G-FRSLYC3ZKAJDQ
+             */
+            platformPaymentId?: string | null;
+            /** @description Emitted only where the source carries it. */
+            processingFee?: string | null;
+            /** @description Emitted only where the source carries it. */
+            netAmount?: string | null;
+        };
+        /** @description Payload for `listing.updated`. Something about the listing changed on the channel — content, pricing, booking settings, house rules, availability or sync settings. */
+        ListingUpdatedPayload: {
+            object: components["schemas"]["ListingWebhookObject"];
+            /**
+             * @description Which part moved. Airbnb sends one notification per area rather than a diff, so this is the signal for what to re-read.
+             * @example content
+             * @enum {string}
+             */
+            area?: "content" | "pricing" | "booking_settings" | "rules" | "availability" | "sync_settings";
+            /** @description Fields that changed and their prior values, when the source reports them. */
+            previousAttributes?: {
                 [key: string]: unknown;
             };
-            /**
-             * Format: date-time
-             * @example 2026-05-01T12:30:00.000Z
-             */
-            updatedAt?: string;
+            /** Format: date-time */
+            revision?: string | null;
         };
-        /** @description Payload for `listing.deleted`. A property was removed from Repull or the upstream PMS. */
+        /** @description Payload for `listing.deleted`. The listing is no longer reachable on the channel — usually because the host unlinked it. */
         ListingDeletedPayload: {
-            /** @example 6250 */
-            id?: number;
-            /**
-             * Format: date-time
-             * @example 2026-05-01T16:00:00.000Z
-             */
-            deletedAt?: string;
-            /** @example deactivated_by_owner */
+            object: components["schemas"]["ListingWebhookObject"];
+            /** @example unlinked */
             reason?: string | null;
+            /** Format: date-time */
+            deletedAt: string;
+        };
+        /** @description Payload for `listing.suspended` and `listing.reactivated`. A suspended listing keeps accepting calendar and pricing writes and silently applies none of them, which is indistinguishable from an API fault unless you are told. It is also the one listing change a host cannot reverse alone. */
+        ListingSuspensionPayload: {
+            object: components["schemas"]["ListingWebhookObject"];
+            /**
+             * @description The channel's stated reason, verbatim, when it gives one.
+             * @example quality_standards
+             */
+            reason?: string | null;
+            /** Format: date-time */
+            occurredAt: string;
         };
         /** @description Payload for `calendar.updated`. Availability or pricing for a listing was updated. */
         CalendarUpdatedPayload: {
@@ -4987,41 +5072,24 @@ export interface components {
              */
             failedAt?: string;
         };
-        /** @description Payload for `payment.completed`. A guest payment was successfully captured. */
+        /** @description Payload for `payment.completed`. Money moved and settled — a guest charge, a host payout, a tourist-tax pass-through or a resolution payout. Fires only on a completed movement; scheduled intent is not an event. */
         PaymentCompletedPayload: {
-            /** @example pay_01HX5XPQ2K */
-            id?: string;
-            /** @example 215906 */
-            reservationId?: number;
-            /** @example 1320.00 */
-            amount?: string;
-            /** @example USD */
-            currency?: string;
-            /** @example card */
-            method?: string;
-            /**
-             * Format: date-time
-             * @example 2026-05-01T12:35:00.000Z
-             */
-            capturedAt?: string;
+            object: components["schemas"]["PaymentWebhookObject"];
+            /** Format: date-time */
+            completedAt?: string | null;
+            reason?: string | null;
+            /** Format: date-time */
+            revision?: string | null;
         };
-        /** @description Payload for `payment.refunded`. A previous payment was refunded in part or in full. */
+        /** @description Payload for `payment.refunded`. Money went back. Covers both a refund-typed movement and any adjustment with a negative amount — the sign on `object.amount` is preserved so the direction never has to be inferred. */
         PaymentRefundedPayload: {
-            /** @example pay_01HX5XPQ2K */
-            id?: string;
-            /** @example rfn_01HX5XPQ2K */
-            refundId?: string;
-            /** @example 215906 */
-            reservationId?: number;
-            /** @example 1320.00 */
-            amount?: string;
-            /** @example USD */
-            currency?: string;
-            /**
-             * Format: date-time
-             * @example 2026-05-01T19:00:00.000Z
-             */
-            refundedAt?: string;
+            object: components["schemas"]["PaymentWebhookObject"];
+            /** Format: date-time */
+            refundedAt?: string | null;
+            /** @example Resolution centre adjustment */
+            reason?: string | null;
+            /** Format: date-time */
+            revision?: string | null;
         };
         /** @description Payload for `repull.ping`. A diagnostic delivery used by the dashboard to verify endpoint reachability. */
         RepullPingPayload: {
@@ -5271,6 +5339,48 @@ export interface components {
             account?: components["schemas"]["WebhookEventAccount"];
             data: components["schemas"]["ListingDeletedPayload"];
         };
+        ListingSuspendedEvent: {
+            /**
+             * @description The event name. This field is `event`, not `type`. (enum property replaced by openapi-typescript)
+             * @enum {string}
+             */
+            event: "listing.suspended";
+            /**
+             * Format: uuid
+             * @description Stable across every delivery and replay of this logical event — dedupe on it.
+             */
+            eventId: string;
+            /** @example 2026-04 */
+            apiVersion: string;
+            /**
+             * Format: date-time
+             * @description When this delivery was built.
+             */
+            timestamp: string;
+            account?: components["schemas"]["WebhookEventAccount"];
+            data: components["schemas"]["ListingSuspensionPayload"];
+        };
+        ListingReactivatedEvent: {
+            /**
+             * @description The event name. This field is `event`, not `type`. (enum property replaced by openapi-typescript)
+             * @enum {string}
+             */
+            event: "listing.reactivated";
+            /**
+             * Format: uuid
+             * @description Stable across every delivery and replay of this logical event — dedupe on it.
+             */
+            eventId: string;
+            /** @example 2026-04 */
+            apiVersion: string;
+            /**
+             * Format: date-time
+             * @description When this delivery was built.
+             */
+            timestamp: string;
+            account?: components["schemas"]["WebhookEventAccount"];
+            data: components["schemas"]["ListingSuspensionPayload"];
+        };
         CalendarUpdatedEvent: {
             /**
              * @description The event name. This field is `event`, not `type`. (enum property replaced by openapi-typescript)
@@ -5503,7 +5613,7 @@ export interface components {
             data: components["schemas"]["UsageQuotaWarningPayload"];
         };
         /** @description The full event envelope POSTed to your webhook URL. Discriminated on `type` — narrow `event.data` by switching on `event.type`. Use the matching `*Event` variant directly if your SDK lacks discriminator support. Events about an inactive listing (reservations, messages, alterations, reviews, payments, calendar and listing events) are not delivered. The data keeps syncing while the listing is inactive, but its events are never sent — including after you reactivate it; webhooks resume for events that happen from reactivation on. Account-level events are always delivered. */
-        WebhookEvent: components["schemas"]["ReservationCreatedEvent"] | components["schemas"]["ReservationUpdatedEvent"] | components["schemas"]["ReservationCancelledEvent"] | components["schemas"]["ReservationMessageReceivedEvent"] | components["schemas"]["ReservationAlterationCreatedEvent"] | components["schemas"]["ReservationAlterationRespondedEvent"] | components["schemas"]["ListingCreatedEvent"] | components["schemas"]["ListingUpdatedEvent"] | components["schemas"]["ListingDeletedEvent"] | components["schemas"]["CalendarUpdatedEvent"] | components["schemas"]["AccountCreatedEvent"] | components["schemas"]["AccountDisconnectedEvent"] | components["schemas"]["ReviewCreatedEvent"] | components["schemas"]["ReviewRespondedEvent"] | components["schemas"]["AiOperationCompletedEvent"] | components["schemas"]["AiOperationFailedEvent"] | components["schemas"]["PaymentCompletedEvent"] | components["schemas"]["PaymentRefundedEvent"] | components["schemas"]["RepullPingEvent"] | components["schemas"]["UsageQuotaWarningEvent"];
+        WebhookEvent: components["schemas"]["ReservationCreatedEvent"] | components["schemas"]["ReservationUpdatedEvent"] | components["schemas"]["ReservationCancelledEvent"] | components["schemas"]["ReservationMessageReceivedEvent"] | components["schemas"]["ReservationAlterationCreatedEvent"] | components["schemas"]["ReservationAlterationRespondedEvent"] | components["schemas"]["ListingCreatedEvent"] | components["schemas"]["ListingUpdatedEvent"] | components["schemas"]["ListingDeletedEvent"] | components["schemas"]["ListingSuspendedEvent"] | components["schemas"]["ListingReactivatedEvent"] | components["schemas"]["CalendarUpdatedEvent"] | components["schemas"]["AccountCreatedEvent"] | components["schemas"]["AccountDisconnectedEvent"] | components["schemas"]["ReviewCreatedEvent"] | components["schemas"]["ReviewRespondedEvent"] | components["schemas"]["AiOperationCompletedEvent"] | components["schemas"]["AiOperationFailedEvent"] | components["schemas"]["PaymentCompletedEvent"] | components["schemas"]["PaymentRefundedEvent"] | components["schemas"]["RepullPingEvent"] | components["schemas"]["UsageQuotaWarningEvent"];
         /** @description A Vanio listing paired with its Airbnb connection rows. The list endpoint groups every `listings_airbnb` row that points at the same Vanio `listingId` under a single `connections[]` array. */
         AirbnbListing: {
             /**
