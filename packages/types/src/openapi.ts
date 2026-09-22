@@ -339,6 +339,20 @@ export interface paths {
          *
          *     Send `Idempotency-Key` — without it, retrying after a network timeout sends the guest the same message twice.
          *
+         *     ### Attachments
+         *
+         *     Send files with `attachments: [{ url, contentType?, filename? }]` — public `https://` URLs, up to 5 per request, 10 MB each. `message` may be omitted when there are attachments (except on Booking.com). Repull downloads each file, reads its real type from the bytes, keeps a durable copy and delivers it through the channel's own file flow. **Every file is checked before anything is sent**: if one is unreachable, too large or of a type the channel refuses, the call returns 422 naming the file (`index`) and the guest receives nothing.
+         *
+         *     | Channel | Accepted types | Text | How it arrives |
+         *     |---|---|---|---|
+         *     | Airbnb | JPEG, PNG, GIF, WebP (converted to JPEG), MP4, QuickTime | optional | each file as its own message, then the text as a separate message |
+         *     | Booking.com | JPEG, PNG | **required** | one message carrying the text and every file |
+         *     | SMS, email, direct-booking site chat | — | — | `422 attachments_not_supported`, nothing sent |
+         *
+         *     Airbnb does not allow files in pre-booking (inquiry) conversations; that refusal comes back as `422 message_not_sent`. Because Airbnb delivers files one message at a time, a later file can be refused after earlier ones arrived — that returns `422 message_partially_sent` with `parts` saying exactly which messages reached the guest; resend only the rest.
+         *
+         *     The response's `attachments` lists each file's durable `url`, and `parts` lists every channel message the send produced. Read-back (`GET /v1/conversations/{id}/messages`) shows the same files in each message's `attachments`.
+         *
          *     **Inactive listings:** a conversation that belongs to an inactive listing returns `403 listing_inactive` and no message is sent. Activate the listing first.
          */
         post: operations["send_conversation_message"];
@@ -1503,7 +1517,9 @@ export interface paths {
         };
         /**
          * Get Airbnb messages
-         * @description Fetch the full message log for an Airbnb thread, ordered oldest-to-newest. Walk pages with `?cursor=` until `pagination.hasMore` is `false`.
+         * @description Messages stored for an Airbnb thread, as recorded rows (not the unified `Message` shape — use `GET /v1/conversations/{id}/messages` for that). By default returns 50 per page, newest first; walk older pages with `?cursor=` (the `pagination.nextCursor` of the previous page) until `pagination.hasMore` is `false`. `?all=true` returns up to 1000 rows oldest-first in one response, with no `pagination`.
+         *
+         *     Each row carries `attachments` — photos and other files on that message, inbound or outbound — in the same shape as the unified endpoint.
          *
          *     Returns `403 listing_inactive` when the listing this resolves to is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
@@ -1512,6 +1528,12 @@ export interface paths {
         /**
          * Send Airbnb message
          * @description Send a message in an Airbnb thread as the host. Airbnb enforces content rules (no off-platform contact info, no external URLs) — violating messages are rejected upstream and surface as `airbnb_error`.
+         *
+         *     ### Sending a photo or video (`mediaUrl`)
+         *
+         *     Airbnb only accepts media uploaded to a signed URL it issues, one file per message and no text on the same message. With `mediaUrl`, Repull downloads the file (public `https://` only, 10 MB max), reads its real type from the bytes (JPEG, PNG, GIF, WebP — converted to JPEG — or MP4/QuickTime), uploads it to Airbnb and sends it; `message`, if given, follows as a separate message. This is the same flow as `POST /v1/conversations/{id}/messages` with `attachments` — prefer that endpoint, which also takes several files per request. The response is a `SendMessageResponse`, the send is recorded in the conversation, and failures are the 422 codes documented there (`attachment_type_not_supported`, `attachment_too_large`, `message_not_sent` for a pre-booking thread, …). The thread must already be synced to Repull (`GET /v1/conversations` lists them), otherwise `404`.
+         *
+         *     Text-only sends (no `mediaUrl`) go straight to Airbnb and return Airbnb's message object.
          *
          *     The `{threadId}` is the Airbnb thread id — the `externalThreadId` field on a unified `Conversation` (`GET /v1/conversations`).
          *
@@ -1570,10 +1592,20 @@ export interface paths {
         get: operations["get_airbnb_reservation"];
         put?: never;
         /**
-         * Accept/decline/cancel Airbnb reservation
-         * @description Apply a state action to an Airbnb reservation — `accept` / `decline` (for inquiries and reservation requests), `cancel` (host cancellation, carries penalties), `pre-approve` (for inquiries).
+         * Accept, decline or cancel an Airbnb reservation
+         * @description Act on an Airbnb reservation by its Airbnb confirmation code. **Write-side** — calls Airbnb upstream, as the Airbnb account that owns the booking.
+         *
+         *     - `accept` — accept a pending booking request.
+         *     - `decline` — decline a pending booking request. Requires `reason` (one of Airbnb's decline reasons) and `message` (sent to the guest, at most 500 characters).
+         *     - `cancel` — cancel a confirmed booking as the host. Requires `reason` (one of Airbnb's host-cancellation reasons). **Host cancellations carry Airbnb penalties.**
+         *
+         *     The body is validated before anything reaches Airbnb; unknown fields are refused. There is no `pre-approve` action: a pre-approval answers an inquiry, which has no confirmation code — use `POST /v1/conversations/{id}/pre-approval`. For accept/decline, `POST /v1/reservations/{id}/accept` and `/decline` do the same by Repull id and also update Vanio.
+         *
+         *     Airbnb refusals are mapped rather than returned as a 500: a request that already moved on is `409 request_no_longer_pending` (do not retry), an expired one `409 request_expired`, any other refusal `422 airbnb_rejected` with Airbnb's reason.
          *
          *     Returns `403 listing_inactive` when the listing this resolves to is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
+         *
+         *     Send `Idempotency-Key` to make a retry safe.
          */
         post: operations["airbnb_reservation_action"];
         delete?: never;
@@ -2065,23 +2097,31 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * Get Airbnb special offer
+         * @description Read a pre-approval or special offer from Airbnb by its Airbnb id. **Live read** — calls Airbnb upstream. Pass the id as `?offerId=`. The Repull-id equivalent is `GET /v1/conversations/{id}/special-offers/{offerId}`, which also confirms the offer belongs to that conversation.
+         */
+        get: operations["get_airbnb_offer"];
         put?: never;
         /**
          * Create Airbnb special offer or pre-approval
-         * @description Create a special offer or a pre-approval on Airbnb. **Write-side** — calls Airbnb upstream. The `type` discriminator selects the flavour:
+         * @description Create a pre-approval or a special offer on an Airbnb thread, addressed by **Airbnb** ids. **Write-side** — calls Airbnb upstream. The Repull-id equivalents, which also update the inquiry in Vanio, are `POST /v1/conversations/{id}/pre-approval` and `POST /v1/conversations/{id}/special-offers` — prefer those unless you only hold Airbnb ids.
          *
-         *     - `offer` — a special offer with custom terms (the remaining body fields are the offer params).
-         *     - `preapproval` — pre-approve an inquiry thread (requires `threadId`; optional `blockInstantBooking`).
+         *     - `type: "preapproval"` — let the guest book the dates and price they asked about. Requires `thread_id`; optional `block_instant_booking`.
+         *     - `type: "offer"` — your own terms. Requires `thread_id`, `listing_id` (the **Airbnb** listing id, as a string), `start_date`, `nights`, `total_price` (whole stay, listing currency) and `guest_details` with `number_of_guests` (or `number_of_adults`; Airbnb counts adults + children).
          *
-         *     Requires a connected Airbnb host, else `404 no_connection`.
+         *     The body is validated before anything reaches Airbnb (a `422 invalid_params` names the field), and unknown fields are refused. The legacy spellings `threadId` and `blockInstantBooking` still work. The request is sent as the Airbnb account that owns the thread or listing.
+         *
+         *     Airbnb refusals are mapped rather than returned as a 500: `409 inquiry_no_longer_open` / `inquiry_expired` when the inquiry moved on, `422 airbnb_rejected` with Airbnb’s reason otherwise, `403 connection_reauth_required` when the grant does not allow it.
          *
          *     Returns `403 listing_inactive` when the listing this resolves to is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
+         *
+         *     Send `Idempotency-Key`: a repeat with the same key replays the first response instead of acting twice (a `409 idempotency_key_in_use` while the first is still running). A 5xx, a `429 airbnb_rate_limited` or a `403 connection_reauth_required` is not stored — nothing was done — so retrying with the same key reaches Airbnb again.
          */
         post: operations["create_airbnb_offer"];
         /**
          * Withdraw Airbnb special offer
-         * @description Withdraw a previously-created Airbnb special offer. **Write-side** — calls Airbnb upstream. Pass the offer id as `?offerId=`. Requires a connected Airbnb host, else `404 no_connection`.
+         * @description Withdraw a special offer the guest has not booked. **Write-side** — calls Airbnb upstream. Pass the Airbnb offer id as `?offerId=`. The Repull-id equivalent is `DELETE /v1/conversations/{id}/special-offers/{offerId}`.
          */
         delete: operations["withdraw_airbnb_offer"];
         options?: never;
@@ -2472,7 +2512,9 @@ export interface paths {
         put?: never;
         /**
          * Send Booking.com message
-         * @description Send a message in a Booking.com conversation as the host. Booking enforces content rules similar to Airbnb.
+         * @description Send a text message in a Booking.com conversation as the host. Booking enforces content rules similar to Airbnb.
+         *
+         *     **Text only.** To send photos, use `POST /v1/conversations/{id}/messages` with `attachments` (JPEG or PNG, up to 10 MB each, with message text) — it uploads the files to Booking.com and records them in the conversation. Passing `attachments`, `attachment_ids` or `mediaUrl` here returns `422 attachments_not_supported` and sends nothing.
          *
          *     `property_id` must be a Booking.com property connected to this workspace (`GET /v1/channels/booking/properties` lists them). Any other id — including one connected to a different workspace — returns `404 not_found`, the same answer as an id that does not exist.
          *
@@ -3649,6 +3691,172 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/conversations/{id}/pre-approval": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Pre-approve an inquiry
+         * @description Pre-approve the Airbnb inquiry on this conversation: the guest who asked about dates may now book them at the listed price, without waiting on you. To change the dates, guests or price, send a special offer instead (`POST /v1/conversations/{id}/special-offers`).
+         *
+         *     Find inquiries that need an answer with `GET /v1/inquiries` (default `status=open`); each carries the `conversationId` to use here.
+         *
+         *     **Airbnb only**, and only for listings connected to Airbnb directly. A Booking.com, VRBO or direct-booking conversation, or an Airbnb one relayed through a PMS (Hostaway, Guesty), returns `422 channel_not_supported` and nothing is sent.
+         *
+         *     Runs the same action as the Vanio dashboard’s Pre-approve button, so the inquiry is marked `pre_approved` everywhere.
+         *
+         *     An Airbnb refusal is never reported as a success: an inquiry that already moved on is `409 inquiry_no_longer_open`, an expired one `409 inquiry_expired`, a conversation that already has a booking `409 conversation_already_booked`.
+         *
+         *     Send `Idempotency-Key`: a repeat with the same key replays the first response instead of acting twice (a `409 idempotency_key_in_use` while the first is still running). A 5xx, a `429 airbnb_rate_limited` or a `403 connection_reauth_required` is not stored — nothing was done — so retrying with the same key reaches Airbnb again.
+         */
+        post: operations["preapprove_conversation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/conversations/{id}/special-offers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send a special offer
+         * @description Send the guest on this conversation an Airbnb special offer: your own dates, guest count and total price. The guest has 24 hours to book it. Use it to answer an inquiry with different terms, or to make a returning guest a custom price. To accept the guest’s own dates and price as they asked, pre-approve instead (`POST /v1/conversations/{id}/pre-approval`).
+         *
+         *     `listingId` is optional: omit it to offer the listing the guest asked about. It is a **Repull** listing id; Repull sends Airbnb its own listing id, using the link that belongs to this conversation’s Airbnb account.
+         *
+         *     `totalPrice` is the whole stay, in the listing’s Airbnb currency — Airbnb does not take a currency on an offer.
+         *
+         *     **Airbnb only**, and only for listings connected to Airbnb directly; anything else is `422 channel_not_supported` and nothing is sent. Runs the same action as the Vanio dashboard, so the inquiry is marked `special_offer_sent`.
+         *
+         *     An offer Airbnb refuses is never a `201`: dates that are taken, a price below Airbnb’s minimum, too many guests and the like are `422 airbnb_rejected` with Airbnb’s own reason in `message`.
+         *
+         *     Send `Idempotency-Key`: a repeat with the same key replays the first response instead of acting twice (a `409 idempotency_key_in_use` while the first is still running). A 5xx, a `429 airbnb_rate_limited` or a `403 connection_reauth_required` is not stored — nothing was done — so retrying with the same key reaches Airbnb again. Without it, a retry after a timeout can send the guest two offers.
+         *
+         *     Read or withdraw the offer with `GET` / `DELETE /v1/conversations/{id}/special-offers/{offerId}`.
+         */
+        post: operations["create_conversation_special_offer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/conversations/{id}/special-offers/{offerId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get a special offer
+         * @description Read a special offer on this conversation back from Airbnb — typically to check its `status` (`active` until the guest books it, it expires, or you withdraw it). Read live from Airbnb with the conversation’s own Airbnb account.
+         */
+        get: operations["get_conversation_special_offer"];
+        put?: never;
+        post?: never;
+        /**
+         * Withdraw a special offer
+         * @description Withdraw a special offer the guest has not booked yet, so it can no longer be booked. Runs the same action as the Vanio dashboard’s Withdraw offer. An offer the guest already booked cannot be withdrawn — Airbnb refuses with `409 inquiry_no_longer_open`; cancel the booking instead.
+         */
+        delete: operations["withdraw_conversation_special_offer"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/inquiries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List inquiries
+         * @description Airbnb inquiries — guests asking about dates before booking — newest first. By default only `open` ones: nobody has answered and the stay is still ahead. Answer one with `POST /v1/conversations/{conversationId}/pre-approval` (accept their dates and price) or `POST /v1/conversations/{conversationId}/special-offers` (your own terms).
+         *
+         *     Booking **requests** are not inquiries: they are reservations with status `pending` — list them with `GET /v1/reservations?status=pending` and answer with `POST /v1/reservations/{id}/accept` or `/decline`.
+         *
+         *     **Pagination:** pass `pagination.nextCursor` back as `?cursor=` until `pagination.hasMore` is `false`. `?offset=` also works (0..10000). `limit` defaults to 50, max 100.
+         *
+         *     Inquiries on inactive listings are left out; `?listing_id=` naming an inactive listing returns `403 listing_inactive`. `X-Account-Id` narrows to one connected account.
+         */
+        get: operations["list_inquiries"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/reservations/{id}/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Accept a booking request
+         * @description Accept a pending Airbnb booking request — a reservation with status `pending`, made on a listing without Instant Book. Find them with `GET /v1/reservations?status=pending`. Airbnb expires a request the host has not answered within 24 hours.
+         *
+         *     Runs the same action as the Vanio dashboard’s Accept button. Airbnb confirms asynchronously: the reservation’s status moves to confirmed, and a `reservation.updated` webhook fires, when Airbnb’s notification lands (usually within seconds). The response reports what Airbnb was asked to do.
+         *
+         *     **Airbnb only**, and only for listings connected to Airbnb directly: other channels have no request step (`422 channel_not_supported`). A reservation that is not pending is refused before Airbnb is contacted (`409 reservation_not_pending`); one Airbnb says already moved on is `409 request_no_longer_pending`. Neither is worth retrying.
+         *
+         *     Takes no body.
+         *
+         *     Send `Idempotency-Key`: a repeat with the same key replays the first response instead of acting twice (a `409 idempotency_key_in_use` while the first is still running). A 5xx, a `429 airbnb_rate_limited` or a `403 connection_reauth_required` is not stored — nothing was done — so retrying with the same key reaches Airbnb again.
+         */
+        post: operations["accept_reservation_request"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/reservations/{id}/decline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Decline a booking request
+         * @description Decline a pending Airbnb booking request (a reservation with status `pending`; find them with `GET /v1/reservations?status=pending`).
+         *
+         *     `reason` must be one of Airbnb’s own decline reasons. `message` is required: Airbnb sends it to the guest with the decline (at most 500 characters). It is not defaulted — a canned message would put words in your mouth.
+         *
+         *     Runs the same action as the Vanio dashboard’s Decline button. Airbnb confirms asynchronously; the reservation’s status moves, and `reservation.updated` fires, when its notification lands. Same channel and status rules as `POST /v1/reservations/{id}/accept`.
+         *
+         *     Send `Idempotency-Key`: a repeat with the same key replays the first response instead of acting twice (a `409 idempotency_key_in_use` while the first is still running). A 5xx, a `429 airbnb_rate_limited` or a `403 connection_reauth_required` is not stored — nothing was done — so retrying with the same key reaches Airbnb again.
+         */
+        post: operations["decline_reservation_request"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -3931,11 +4139,23 @@ export interface components {
              */
             checkOutTime?: string | null;
             /**
-             * @description Lifecycle status. The API normalises a multi-decade internal taxonomy down to these four buckets, so the value you receive is always one of the enum constants. `completed` is derived from `checkOut < today`.
+             * @description Lifecycle status. The API normalises a multi-decade internal taxonomy down to these four buckets, so the value you receive is always one of the enum constants. `completed` is derived from `checkOut < today`. A `pending` booking request the channel already let lapse — Airbnb expires an unanswered request 24 hours after the guest asks, and no request can be answered once its check-in has passed — is reported as `cancelled` with `statusDetail: "request_expired"`, even when the channel never told us.
              * @example confirmed
              * @enum {string}
              */
             status: "confirmed" | "pending" | "cancelled" | "completed";
+            /**
+             * @description Present only when `status` was derived rather than reported by the channel. `request_expired` — a booking request nobody answered in time (Airbnb's 24-hour window passed, or the check-in did). Absent otherwise.
+             * @example request_expired
+             * @enum {string}
+             */
+            statusDetail?: "request_expired";
+            /**
+             * Format: date-time
+             * @description On a `pending` Airbnb booking request that can still be answered: when it lapses (24 hours after the guest asked). Accept or decline before then with `POST /v1/reservations/{id}/accept` / `/decline`. Absent on every other reservation.
+             * @example 2026-09-23T09:00:00.000Z
+             */
+            respondBy?: string;
             /**
              * @description Booking source / channel. Lowercase. May be null on legacy rows. Canonical name as of 2026-05; `platform` is kept as an alias.
              * @example airbnb
@@ -4176,14 +4396,29 @@ export interface components {
             host?: components["schemas"]["ConversationHost"] | null;
             guest?: components["schemas"]["ConversationGuest"] | null;
         };
+        /** @description A file on a message — a photo the guest sent, or a file sent to the guest. Files are copied to durable storage, so `url` keeps working after the channel's own link expires. Treat `url` as opaque. */
         ConversationMessageAttachment: {
-            id?: string;
-            /** Format: uri */
-            imageUrl?: string;
+            id?: string | null;
+            /**
+             * Format: uri
+             * @description Where to download the file.
+             */
+            url?: string | null;
+            /**
+             * Format: uri
+             * @deprecated
+             * @description Same value as `url` (kept for older clients; it is not image-only). Use `url`.
+             */
+            imageUrl?: string | null;
+            /**
+             * @description Coarse kind, derived from `contentType`.
+             * @enum {string}
+             */
+            type?: "image" | "video" | "audio" | "file";
             /** @example image/jpeg */
-            contentType?: string;
+            contentType?: string | null;
             /** Format: date-time */
-            createdAt?: string;
+            createdAt?: string | null;
         };
         /** @description A single message inside a conversation thread. Returned by `GET /v1/conversations/{id}/messages`. `direction` is normalized to `inbound` (from the guest) / `outbound` (from the host or an automation). */
         Message: {
@@ -4203,6 +4438,7 @@ export interface components {
             body?: string;
             /** @description English translation when the original language is non-English and a translation has been computed. */
             translatedBody?: string | null;
+            /** @description Files on this message, inbound or outbound. Empty array when there are none. A file-only message has an empty `body`. */
             attachments?: components["schemas"]["ConversationMessageAttachment"][];
             /** @description `true` when the message was sent by a Vanio automation (template, schedule, etc.). */
             isAutomated?: boolean;
@@ -4541,7 +4777,7 @@ export interface components {
          * @description Canonical event type identifier. Every webhook delivery declares one of these in its `type` field; SDKs key the discriminated `WebhookEvent` union on this value.
          * @enum {string}
          */
-        WebhookEventType: "reservation.created" | "reservation.updated" | "reservation.cancelled" | "reservation.message.received" | "reservation.alteration.created" | "reservation.alteration.responded" | "listing.created" | "listing.updated" | "listing.deleted" | "listing.suspended" | "listing.reactivated" | "calendar.updated" | "account.created" | "account.disconnected" | "review.created" | "review.responded" | "ai.operation.completed" | "ai.operation.failed" | "payment.completed" | "payment.refunded" | "repull.ping" | "usage.quota.warning";
+        WebhookEventType: "reservation.created" | "reservation.updated" | "reservation.cancelled" | "reservation.message.received" | "reservation.alteration.created" | "reservation.alteration.responded" | "reservation.request.created" | "reservation.request.updated" | "inquiry.created" | "inquiry.updated" | "listing.created" | "listing.updated" | "listing.deleted" | "listing.suspended" | "listing.reactivated" | "calendar.updated" | "account.created" | "account.disconnected" | "review.created" | "review.responded" | "ai.operation.completed" | "ai.operation.failed" | "payment.completed" | "payment.refunded" | "repull.ping" | "usage.quota.warning";
         /**
          * @description Lightweight reservation snapshot delivered as `data.object` on every reservation webhook event. Stable across `reservation.created`, `reservation.updated`, and `reservation.cancelled`. Fetch the full reservation via `GET /v1/reservations/{id}` if you need pricing, guest contact info, or audit history — those are deliberately omitted to keep deliveries small.
          *
@@ -4667,13 +4903,18 @@ export interface components {
                 /** @example Alex Morgan */
                 name?: string;
             };
-            /** @example Hi! What time can we check in? */
+            /**
+             * @description Empty when the guest sent only a file.
+             * @example Hi! What time can we check in?
+             */
             body?: string;
             /**
              * Format: date-time
              * @example 2026-05-01T15:00:00.000Z
              */
             sentAt?: string;
+            /** @description Files the guest sent (photos, videos, documents), same shape as `GET /v1/conversations/{id}/messages`. Empty array when there are none. */
+            attachments?: components["schemas"]["ConversationMessageAttachment"][];
         };
         /** @description Lightweight alteration snapshot delivered as `data.object` on `reservation.alteration.*` events. Currently Airbnb only. Fetch full state (original vs new dates/guests/price) via `GET /v1/channels/airbnb/alterations` filtered by `reservation_code`. */
         AlterationWebhookObject: {
@@ -4751,6 +4992,147 @@ export interface components {
              * @example 2026-05-01T16:30:00.000Z
              */
             respondedAt?: string;
+        };
+        /** @description Payload for `reservation.request.created`. A guest asked to book and the reservation is waiting on the host. `data.object` is the reservation, filled out to the shape `GET /v1/reservations/{id}` returns (its `status` is `pending`). Answer with `POST /v1/reservations/{id}/accept` or `/decline` before `respondBy`. */
+        ReservationRequestCreatedPayload: {
+            object: components["schemas"]["ReservationWebhookObject"];
+            /**
+             * @description Always `pending` on this event.
+             * @enum {string}
+             */
+            requestStatus: "pending";
+            /**
+             * Format: date-time
+             * @description When the request lapses if nobody answers — Airbnb gives the host 24 hours from the request. `null` on channels without a request clock.
+             * @example 2026-09-23T09:00:00.000Z
+             */
+            respondBy?: string | null;
+            /**
+             * Format: date-time
+             * @description When the request was recorded.
+             * @example 2026-09-22T09:00:05.000Z
+             */
+            occurredAt?: string;
+            /**
+             * Format: date-time
+             * @description The reservation's `updatedAt` — order two deliveries about it without parsing the body.
+             */
+            revision?: string | null;
+        };
+        /** @description Payload for `reservation.request.updated`. A booking request stopped waiting on the host. `requestStatus` says how; `data.object` is the reservation after the change (`status` `confirmed` once accepted, `cancelled` otherwise). An accepted request also fires `reservation.created`. Fires when the channel reports the outcome, whoever acted — the API, the Vanio dashboard or the channel's own app. */
+        ReservationRequestUpdatedPayload: {
+            object: components["schemas"]["ReservationWebhookObject"];
+            /**
+             * @description `accepted` — it is a booking now; `declined` — by the host; `expired` — nobody answered in time; `voided` — withdrawn by the guest, or voided by the channel (for example the guest failed verification).
+             * @example accepted
+             * @enum {string}
+             */
+            requestStatus: "accepted" | "declined" | "expired" | "voided";
+            /**
+             * @description Fields of `object` that moved, with their prior values — always `{ "status": "pending" }` here.
+             * @example {
+             *       "status": "pending"
+             *     }
+             */
+            previousAttributes: {
+                [key: string]: unknown;
+            };
+            /**
+             * @description The channel's own status value, unmapped (Airbnb: `accept`, `deny`, `timeout`, `pending_voided`, …) — for reconciling against the channel.
+             * @example accept
+             */
+            sourceStatus?: string | null;
+            /**
+             * Format: date-time
+             * @example 2026-09-22T11:42:10.000Z
+             */
+            occurredAt?: string;
+            /** Format: date-time */
+            revision?: string | null;
+        };
+        /** @description An inquiry — a guest asking about dates before booking — exactly as `GET /v1/inquiries` returns it. Delivered as `data.object` on `inquiry.*` events. */
+        InquiryWebhookObject: {
+            /**
+             * @description Repull inquiry id.
+             * @example 25173
+             */
+            id: string;
+            /**
+             * @description Pass to `POST /v1/conversations/{id}/pre-approval` or `/special-offers`.
+             * @example 164743
+             */
+            conversationId?: string | null;
+            /** @example 23892 */
+            listingId?: string | null;
+            /** @example airbnb */
+            channel?: string;
+            /**
+             * @description Same vocabulary as `GET /v1/inquiries`: `open` needs an answer; `booked` means the guest booked (`reservationId`).
+             * @example open
+             * @enum {string}
+             */
+            status: "open" | "pre_approved" | "special_offer_sent" | "booked" | "expired" | "declined" | "not_possible";
+            /**
+             * Format: date
+             * @example 2026-10-23
+             */
+            checkIn?: string | null;
+            /**
+             * Format: date
+             * @example 2026-11-11
+             */
+            checkOut?: string | null;
+            guests?: {
+                total?: number | null;
+                adults?: number | null;
+                children?: number | null;
+                infants?: number | null;
+                pets?: number | null;
+            };
+            expectedPayout?: {
+                amount?: number | null;
+                currency?: string | null;
+            };
+            /** @description The reservation the inquiry became, once booked. */
+            reservationId?: string | null;
+            /** @description A PMS that relays this inquiry; when set, answer it in that PMS. */
+            relayedBy?: string | null;
+            /** Format: date-time */
+            respondBy?: string | null;
+            /** Format: date-time */
+            respondedAt?: string | null;
+            /** Format: date-time */
+            createdAt?: string | null;
+            /** Format: date-time */
+            updatedAt?: string | null;
+        };
+        /** @description Payload for `inquiry.created`. A guest asked about dates. */
+        InquiryCreatedPayload: {
+            object: components["schemas"]["InquiryWebhookObject"];
+            /** Format: date-time */
+            occurredAt?: string;
+            /**
+             * Format: date-time
+             * @description The inquiry's `updatedAt`.
+             */
+            revision?: string | null;
+        };
+        /** @description Payload for `inquiry.updated`. The inquiry's status, dates, guest count or the reservation it became changed. `previousAttributes` holds only what moved, with prior values. Fires whether the host acted through the API, the Vanio dashboard or the Airbnb app. An inquiry whose dates simply pass is `expired` in `GET /v1/inquiries` but fires no event unless the channel reports it. */
+        InquiryUpdatedPayload: {
+            object: components["schemas"]["InquiryWebhookObject"];
+            /**
+             * @description Keys of `object` that moved (`status`, `checkIn`, `checkOut`, `guests`, `reservationId`), mapped to their prior values.
+             * @example {
+             *       "status": "open"
+             *     }
+             */
+            previousAttributes: {
+                [key: string]: unknown;
+            };
+            /** Format: date-time */
+            occurredAt?: string;
+            /** Format: date-time */
+            revision?: string | null;
         };
         /** @description Payload for `listing.created`. A new property was synced into Repull from a connected PMS or channel. */
         ListingCreatedPayload: {
@@ -5276,6 +5658,90 @@ export interface components {
             account?: components["schemas"]["WebhookEventAccount"];
             data: components["schemas"]["ReservationAlterationRespondedPayload"];
         };
+        ReservationRequestCreatedEvent: {
+            /**
+             * @description The event name. This field is `event`, not `type`. (enum property replaced by openapi-typescript)
+             * @enum {string}
+             */
+            event: "reservation.request.created";
+            /**
+             * Format: uuid
+             * @description Stable across every delivery and replay of this logical event — dedupe on it.
+             */
+            eventId: string;
+            /** @example 2026-04 */
+            apiVersion: string;
+            /**
+             * Format: date-time
+             * @description When this delivery was built.
+             */
+            timestamp: string;
+            account?: components["schemas"]["WebhookEventAccount"];
+            data: components["schemas"]["ReservationRequestCreatedPayload"];
+        };
+        ReservationRequestUpdatedEvent: {
+            /**
+             * @description The event name. This field is `event`, not `type`. (enum property replaced by openapi-typescript)
+             * @enum {string}
+             */
+            event: "reservation.request.updated";
+            /**
+             * Format: uuid
+             * @description Stable across every delivery and replay of this logical event — dedupe on it.
+             */
+            eventId: string;
+            /** @example 2026-04 */
+            apiVersion: string;
+            /**
+             * Format: date-time
+             * @description When this delivery was built.
+             */
+            timestamp: string;
+            account?: components["schemas"]["WebhookEventAccount"];
+            data: components["schemas"]["ReservationRequestUpdatedPayload"];
+        };
+        InquiryCreatedEvent: {
+            /**
+             * @description The event name. This field is `event`, not `type`. (enum property replaced by openapi-typescript)
+             * @enum {string}
+             */
+            event: "inquiry.created";
+            /**
+             * Format: uuid
+             * @description Stable across every delivery and replay of this logical event — dedupe on it.
+             */
+            eventId: string;
+            /** @example 2026-04 */
+            apiVersion: string;
+            /**
+             * Format: date-time
+             * @description When this delivery was built.
+             */
+            timestamp: string;
+            account?: components["schemas"]["WebhookEventAccount"];
+            data: components["schemas"]["InquiryCreatedPayload"];
+        };
+        InquiryUpdatedEvent: {
+            /**
+             * @description The event name. This field is `event`, not `type`. (enum property replaced by openapi-typescript)
+             * @enum {string}
+             */
+            event: "inquiry.updated";
+            /**
+             * Format: uuid
+             * @description Stable across every delivery and replay of this logical event — dedupe on it.
+             */
+            eventId: string;
+            /** @example 2026-04 */
+            apiVersion: string;
+            /**
+             * Format: date-time
+             * @description When this delivery was built.
+             */
+            timestamp: string;
+            account?: components["schemas"]["WebhookEventAccount"];
+            data: components["schemas"]["InquiryUpdatedPayload"];
+        };
         ListingCreatedEvent: {
             /**
              * @description The event name. This field is `event`, not `type`. (enum property replaced by openapi-typescript)
@@ -5613,7 +6079,7 @@ export interface components {
             data: components["schemas"]["UsageQuotaWarningPayload"];
         };
         /** @description The full event envelope POSTed to your webhook URL. Discriminated on `type` — narrow `event.data` by switching on `event.type`. Use the matching `*Event` variant directly if your SDK lacks discriminator support. Events about an inactive listing (reservations, messages, alterations, reviews, payments, calendar and listing events) are not delivered. The data keeps syncing while the listing is inactive, but its events are never sent — including after you reactivate it; webhooks resume for events that happen from reactivation on. Account-level events are always delivered. */
-        WebhookEvent: components["schemas"]["ReservationCreatedEvent"] | components["schemas"]["ReservationUpdatedEvent"] | components["schemas"]["ReservationCancelledEvent"] | components["schemas"]["ReservationMessageReceivedEvent"] | components["schemas"]["ReservationAlterationCreatedEvent"] | components["schemas"]["ReservationAlterationRespondedEvent"] | components["schemas"]["ListingCreatedEvent"] | components["schemas"]["ListingUpdatedEvent"] | components["schemas"]["ListingDeletedEvent"] | components["schemas"]["ListingSuspendedEvent"] | components["schemas"]["ListingReactivatedEvent"] | components["schemas"]["CalendarUpdatedEvent"] | components["schemas"]["AccountCreatedEvent"] | components["schemas"]["AccountDisconnectedEvent"] | components["schemas"]["ReviewCreatedEvent"] | components["schemas"]["ReviewRespondedEvent"] | components["schemas"]["AiOperationCompletedEvent"] | components["schemas"]["AiOperationFailedEvent"] | components["schemas"]["PaymentCompletedEvent"] | components["schemas"]["PaymentRefundedEvent"] | components["schemas"]["RepullPingEvent"] | components["schemas"]["UsageQuotaWarningEvent"];
+        WebhookEvent: components["schemas"]["ReservationCreatedEvent"] | components["schemas"]["ReservationUpdatedEvent"] | components["schemas"]["ReservationCancelledEvent"] | components["schemas"]["ReservationMessageReceivedEvent"] | components["schemas"]["ReservationAlterationCreatedEvent"] | components["schemas"]["ReservationAlterationRespondedEvent"] | components["schemas"]["ReservationRequestCreatedEvent"] | components["schemas"]["ReservationRequestUpdatedEvent"] | components["schemas"]["InquiryCreatedEvent"] | components["schemas"]["InquiryUpdatedEvent"] | components["schemas"]["ListingCreatedEvent"] | components["schemas"]["ListingUpdatedEvent"] | components["schemas"]["ListingDeletedEvent"] | components["schemas"]["ListingSuspendedEvent"] | components["schemas"]["ListingReactivatedEvent"] | components["schemas"]["CalendarUpdatedEvent"] | components["schemas"]["AccountCreatedEvent"] | components["schemas"]["AccountDisconnectedEvent"] | components["schemas"]["ReviewCreatedEvent"] | components["schemas"]["ReviewRespondedEvent"] | components["schemas"]["AiOperationCompletedEvent"] | components["schemas"]["AiOperationFailedEvent"] | components["schemas"]["PaymentCompletedEvent"] | components["schemas"]["PaymentRefundedEvent"] | components["schemas"]["RepullPingEvent"] | components["schemas"]["UsageQuotaWarningEvent"];
         /** @description A Vanio listing paired with its Airbnb connection rows. The list endpoint groups every `listings_airbnb` row that points at the same Vanio `listingId` under a single `connections[]` array. */
         AirbnbListing: {
             /**
@@ -8137,17 +8603,83 @@ export interface components {
             /** Format: date-time */
             createdAt?: string;
         };
+        /** @description A file to send, by URL. Repull downloads it (public `https://` only — no credentials in the URL, no private or internal addresses; redirects are followed and re-checked; 20 s timeout), reads its real type from the file's bytes, and keeps a durable copy. Nothing is sent to the guest until every file in the request has passed. */
+        SendMessageAttachment: {
+            /**
+             * Format: uri
+             * @description Public https URL of the file. A signed URL valid for a few minutes is fine.
+             * @example https://cdn.example.com/parking-map.jpg
+             */
+            url: string;
+            /**
+             * @description Optional hint, e.g. `image/jpeg`. The type is read from the file itself; this never overrides it.
+             * @example image/jpeg
+             */
+            contentType?: string;
+            /**
+             * @description Optional display name. Defaults to the last segment of the URL.
+             * @example parking-map.jpg
+             */
+            filename?: string;
+        };
+        /**
+         * @description `message`, `attachments`, or both. Per-channel limits for `attachments`:
+         *
+         *     | Channel | Accepted types | Per file | Per request | Text |
+         *     |---|---|---|---|---|
+         *     | Airbnb | JPEG, PNG, GIF, WebP (sent as JPEG), MP4, QuickTime | 10 MB | 5 | optional — each file is sent as its own message, then the text |
+         *     | Booking.com | JPEG, PNG | 10 MB | 5 | **required** — all files ride on the one text message |
+         *     | SMS, email, direct-booking site chat | — | — | — | `422 attachments_not_supported`; nothing is sent |
+         */
         SendMessageRequest: {
             /**
-             * @description The text to send the guest.
-             * @example Your check-in details are ready — the door code is active from 16:00.
+             * @description The text to send the guest. Required unless `attachments` is present.
+             * @example Here is the parking map — the gate code is 4821.
              */
-            message: string;
+            message?: string;
             /**
              * @description Force a channel. Omit to send on whichever channel the conversation already uses, which is the right default.
              * @enum {string}
              */
             channel?: "airbnb" | "booking" | "sms" | "email" | "website";
+            /** @description Files to send. See the per-channel table above. */
+            attachments?: components["schemas"]["SendMessageAttachment"][];
+        };
+        /** @description A file as delivered. */
+        SentAttachment: {
+            /**
+             * Format: uri
+             * @description Durable stored copy — the same `url` the message's `attachments` will show when read back.
+             */
+            url?: string;
+            /** @enum {string} */
+            type?: "image" | "video";
+            /**
+             * @description Type read from the file's bytes.
+             * @example image/jpeg
+             */
+            contentType?: string;
+            /** @example parking-map.jpg */
+            filename?: string;
+            /** @example 184233 */
+            sizeBytes?: number;
+            /**
+             * Format: uri
+             * @description The URL you sent.
+             */
+            sourceUrl?: string;
+        };
+        /** @description One channel message produced by the send. Airbnb carries one file per message and no text beside it, so text + 2 photos is 3 parts (files first, then the text). Booking.com carries every file on the one text message, so it is always 1 part. */
+        SendMessagePart: {
+            /** @description Indexes into the request's `attachments` that this message carried. */
+            attachmentIndexes?: number[];
+            /** @description Whether this message carried the text. */
+            hasText?: boolean;
+            sent?: boolean;
+            messageId?: string | null;
+            externalMessageId?: string | null;
+            /** @description Why this part was not delivered. */
+            error?: string | null;
         };
         SendMessageResponse: {
             /** @description Repull message id for the row that was recorded. */
@@ -8169,6 +8701,10 @@ export interface components {
             deliveredContent?: string | null;
             /** @description The channel's verbatim note, when it gave one — including the refusal that triggered a rewrite. */
             statusReason?: string | null;
+            /** @description The files delivered, in request order. Empty array for a text-only send. */
+            attachments?: components["schemas"]["SentAttachment"][];
+            /** @description Present only when `attachments` were sent: one entry per channel message, in delivery order. `id` is the text message (or the last file message when there is no text). */
+            parts?: components["schemas"]["SendMessagePart"][];
         };
         AvailabilityWriteRequest: components["schemas"]["AvailabilityWriteSettings"] & {
             /** @description ISO dates. Capped at 731 — Airbnb refuses calendar writes spanning more. */
@@ -8769,7 +9305,7 @@ export interface components {
          *
          *     - Same key while the first request is still in flight → `409 idempotency_key_in_use`.
          *     - Same key with a DIFFERENT payload → `422 idempotency_key_reused`. Generate a new key per distinct request; reuse one only when retrying that exact request.
-         *     - Responses with status >= 500 are deliberately not stored, so a server error stays retryable.
+         *     - Retryable outcomes are deliberately not stored, so a retry with the same key runs for real: any status >= 500, `408`, `425` and `429`, and the refusals that happen before anything is done and tell you to fix something outside the request first — `connection_reauth_required`, `listing_inactive`, and the rate/daily limits. Every other answer, including a final refusal such as `422 airbnb_rejected`, is stored and replayed.
          */
         IdempotencyKey: string;
         /** @description Apply a custom or built-in schema to transform the response. Built-in: `native` (default), `calry`, `calry-v1`. Custom: any schema name created via `POST /v1/schema/custom`. Unknown / inactive schema names fall back to `native`. */
@@ -9001,7 +9537,7 @@ export interface operations {
                 offset?: components["parameters"]["Offset"];
                 /** @description Filter by booking platform */
                 platform?: string;
-                /** @description Filter by lifecycle status. **Case-insensitive** — `confirmed`, `Confirmed`, and `CONFIRMED` all match. Each public value expands to the full set of internal sub-states server-side: `confirmed` matches `accept`/`confirmed`/`modified`, `cancelled` matches every cancellation sub-state (`cancelled_by_host`, `declined`, `expired`, etc.), `pending` includes `inquiry`/`awaiting_payment`. `completed` is a derived state — combine `status=confirmed` with `check_out_before=<today>` to filter for past stays. */
+                /** @description Filter by lifecycle status. **Case-insensitive** — `confirmed`, `Confirmed`, and `CONFIRMED` all match. Each public value expands to the full set of internal sub-states server-side: `confirmed` matches `accept`/`confirmed`/`modified`, `cancelled` matches every cancellation sub-state (`cancelled_by_host`, `declined`, `expired`, etc.), `pending` includes `inquiry`/`awaiting_payment`. `completed` is a derived state — combine `status=confirmed` with `check_out_before=<today>` to filter for past stays. `pending` is how an Airbnb booking **request** awaiting the host appears — answer it with `POST /v1/reservations/{id}/accept` or `/decline` before its `respondBy`. `pending` lists only requests that can still be answered: one the channel already let lapse (Airbnb expires a request 24 hours after the guest asks; no request survives its check-in date) is left out and appears under `cancelled` with `statusDetail: "request_expired"` instead. The stored record is not changed — this is derived when you read it. Airbnb **inquiries** (questions before booking) are not reservations: list them with `GET /v1/inquiries`. */
                 status?: "confirmed" | "pending" | "cancelled" | "completed";
                 /** @description Filter to a single listing */
                 listingId?: number;
@@ -9098,7 +9634,7 @@ export interface operations {
                  *
                  *     - Same key while the first request is still in flight → `409 idempotency_key_in_use`.
                  *     - Same key with a DIFFERENT payload → `422 idempotency_key_reused`. Generate a new key per distinct request; reuse one only when retrying that exact request.
-                 *     - Responses with status >= 500 are deliberately not stored, so a server error stays retryable.
+                 *     - Retryable outcomes are deliberately not stored, so a retry with the same key runs for real: any status >= 500, `408`, `425` and `429`, and the refusals that happen before anything is done and tell you to fix something outside the request first — `connection_reauth_required`, `listing_inactive`, and the rate/daily limits. Every other answer, including a final refusal such as `422 airbnb_rejected`, is stored and replayed.
                  */
                 "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
             };
@@ -9175,7 +9711,7 @@ export interface operations {
                  *
                  *     - Same key while the first request is still in flight → `409 idempotency_key_in_use`.
                  *     - Same key with a DIFFERENT payload → `422 idempotency_key_reused`. Generate a new key per distinct request; reuse one only when retrying that exact request.
-                 *     - Responses with status >= 500 are deliberately not stored, so a server error stays retryable.
+                 *     - Retryable outcomes are deliberately not stored, so a retry with the same key runs for real: any status >= 500, `408`, `425` and `429`, and the refusals that happen before anything is done and tell you to fix something outside the request first — `connection_reauth_required`, `listing_inactive`, and the rate/daily limits. Every other answer, including a final refusal such as `422 airbnb_rejected`, is stored and replayed.
                  */
                 "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
             };
@@ -9273,7 +9809,7 @@ export interface operations {
                  *
                  *     - Same key while the first request is still in flight → `409 idempotency_key_in_use`.
                  *     - Same key with a DIFFERENT payload → `422 idempotency_key_reused`. Generate a new key per distinct request; reuse one only when retrying that exact request.
-                 *     - Responses with status >= 500 are deliberately not stored, so a server error stays retryable.
+                 *     - Retryable outcomes are deliberately not stored, so a retry with the same key runs for real: any status >= 500, `408`, `425` and `429`, and the refusals that happen before anything is done and tell you to fix something outside the request first — `connection_reauth_required`, `listing_inactive`, and the rate/daily limits. Every other answer, including a final refusal such as `422 airbnb_rejected`, is stored and replayed.
                  */
                 "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
             };
@@ -9481,7 +10017,7 @@ export interface operations {
                  *
                  *     - Same key while the first request is still in flight → `409 idempotency_key_in_use`.
                  *     - Same key with a DIFFERENT payload → `422 idempotency_key_reused`. Generate a new key per distinct request; reuse one only when retrying that exact request.
-                 *     - Responses with status >= 500 are deliberately not stored, so a server error stays retryable.
+                 *     - Retryable outcomes are deliberately not stored, so a retry with the same key runs for real: any status >= 500, `408`, `425` and `429`, and the refusals that happen before anything is done and tell you to fix something outside the request first — `connection_reauth_required`, `listing_inactive`, and the rate/daily limits. Every other answer, including a final refusal such as `422 airbnb_rejected`, is stored and replayed.
                  */
                 "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
             };
@@ -9525,7 +10061,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description Invalid body, or the channel refused the message (`message_not_sent`). */
+            /** @description Nothing was sent unless the code is `message_partially_sent`. Codes: `invalid_params` (malformed body, field named), `message_not_sent` (the channel refused — `statusReason` has its words), `attachments_not_supported`, `too_many_attachments`, `attachment_requires_message`, `attachment_url_not_allowed`, `attachment_unreachable`, `attachment_too_large`, `attachment_type_not_supported` (each names the file in `index`/`field` and the conversation's `channel`), and `message_partially_sent` (some channel messages were delivered — `parts` says which). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -9534,7 +10070,24 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            500: components["responses"]["InternalError"];
+            /** @description `service_misconfigured` — Repull could not reach the service that sends the message (its route was missing or refused our credentials). Nothing was sent to the guest. A fault on our side, not in the request: `retryable` is `false` and resending will not help until it is fixed. Any other 500 is `internal_error`, which is retryable with the same `Idempotency-Key`. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `attachment_storage_failed` — a file could not be stored for delivery. Nothing was sent; retry with the same `Idempotency-Key` after `retry_after` seconds. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     listReviews: {
@@ -11113,7 +11666,7 @@ export interface operations {
                  *
                  *     - Same key while the first request is still in flight → `409 idempotency_key_in_use`.
                  *     - Same key with a DIFFERENT payload → `422 idempotency_key_reused`. Generate a new key per distinct request; reuse one only when retrying that exact request.
-                 *     - Responses with status >= 500 are deliberately not stored, so a server error stays retryable.
+                 *     - Retryable outcomes are deliberately not stored, so a retry with the same key runs for real: any status >= 500, `408`, `425` and `429`, and the refusals that happen before anything is done and tell you to fix something outside the request first — `connection_reauth_required`, `listing_inactive`, and the rate/daily limits. Every other answer, including a final refusal such as `422 airbnb_rejected`, is stored and replayed.
                  */
                 "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
             };
@@ -11473,7 +12026,12 @@ export interface operations {
     };
     list_airbnb_thread_messages: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description `pagination.nextCursor` from the previous page. */
+                cursor?: string;
+                /** @description `true` returns up to 1000 messages oldest-first in one response, without `pagination`. */
+                all?: boolean;
+            };
             header?: never;
             path: {
                 threadId: string;
@@ -11488,7 +12046,45 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["MessageListResponse"];
+                    "application/json": {
+                        data?: {
+                            /** @description Repull message id. */
+                            id?: string;
+                            /** @description Airbnb's message id. */
+                            externalMessageId?: string | null;
+                            /** @description The Airbnb thread id. */
+                            threadId?: string;
+                            /** @description Airbnb user id of the sender. */
+                            userId?: string | null;
+                            /** @description Message text. Empty for a file-only message. */
+                            message?: string | null;
+                            translatedMessage?: string | null;
+                            /** @example airbnb */
+                            channel?: string | null;
+                            /** @description `guest`, `host`, `user`, `system`, … */
+                            senderType?: string | null;
+                            reservationId?: string | null;
+                            /** Format: date-time */
+                            createdAt?: string | null;
+                            /** Format: date-time */
+                            updatedAt?: string | null;
+                            /**
+                             * Format: date-time
+                             * @description When Airbnb recorded the message.
+                             */
+                            externalCreatedAt?: string | null;
+                            attachments?: components["schemas"]["ConversationMessageAttachment"][];
+                        }[];
+                        /** @description Absent when `?all=true`. */
+                        pagination?: {
+                            nextCursor?: string | null;
+                            hasMore?: boolean;
+                        };
+                        /** @description When this workspace's Airbnb data was last synced. */
+                        dataFreshness?: {
+                            [key: string]: unknown;
+                        };
+                    };
                 };
             };
             403: components["responses"]["ListingInactive"];
@@ -11507,29 +12103,42 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    /** @description Message body to send to the guest. */
-                    message: string;
+                    /** @description Message body to send to the guest. Optional when `mediaUrl` is set (it is then sent as a separate message after the file). */
+                    message?: string;
                     /**
                      * Format: uri
-                     * @description Optional URL of an image/media attachment to send with the message.
+                     * @description Public https URL of one image or video to send (JPEG/PNG/GIF/WebP/MP4/QuickTime, up to 10 MB). Repull uploads it to Airbnb for you.
                      */
                     mediaUrl?: string | null;
-                    /** @description Optional MIME/media type hint for `mediaUrl` (e.g. `image/jpeg`). */
+                    /** @description Optional MIME type hint for `mediaUrl` (e.g. `image/jpeg`). The type is read from the file itself; this never overrides it. */
                     mediaType?: string | null;
                 };
             };
         };
         responses: {
-            /** @description Sent */
+            /** @description Sent. With `mediaUrl`: a `SendMessageResponse` (the file's durable `url` in `attachments`, one entry per Airbnb message in `parts`). Text-only: Airbnb's own message object. */
             201: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["SendMessageResponse"] | {
+                        [key: string]: unknown;
+                    };
+                };
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["ListingInactive"];
             404: components["responses"]["NotFound"];
+            /** @description With `mediaUrl`: nothing was sent unless the code is `message_partially_sent`. `invalid_params` (bad `mediaUrl`), `attachment_url_not_allowed`, `attachment_unreachable`, `attachment_too_large`, `attachment_type_not_supported`, `message_not_sent` (Airbnb refused — e.g. files are not allowed in pre-booking threads), `message_partially_sent` (the file arrived, the text did not). Same codes as `POST /v1/conversations/{id}/messages`. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
             500: components["responses"]["InternalError"];
         };
     };
@@ -11608,22 +12217,105 @@ export interface operations {
     airbnb_reservation_action: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /**
+                 * @description Makes a retry of this request safe. Send a unique string (a UUID generated at the point you build the request) and the response is stored for 24 hours: a repeat with the SAME key replays that stored response — tagged `Idempotency-Status: cached` — without running the operation again, so no duplicate reservation, guest or guest message is created.
+                 *
+                 *     - Same key while the first request is still in flight → `409 idempotency_key_in_use`.
+                 *     - Same key with a DIFFERENT payload → `422 idempotency_key_reused`. Generate a new key per distinct request; reuse one only when retrying that exact request.
+                 *     - Retryable outcomes are deliberately not stored, so a retry with the same key runs for real: any status >= 500, `408`, `425` and `429`, and the refusals that happen before anything is done and tell you to fix something outside the request first — `connection_reauth_required`, `listing_inactive`, and the rate/daily limits. Every other answer, including a final refusal such as `422 airbnb_rejected`, is stored and replayed.
+                 */
+                "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+            };
             path: {
+                /** @description Airbnb confirmation code, e.g. `HM9J2MFR3W`. */
                 code: string;
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @enum {string} */
+                    action: "accept" | "decline" | "cancel";
+                    /**
+                     * @description Required for `decline` and `cancel`; not accepted for `accept`. `decline` takes `dates_not_available`, `not_comfortable`, `listing_not_ready`, `different_dates_needed`, `spam` or `other`. `cancel` takes `calendar_conflict`, `maintenance_issue`, `unable_to_host` or `other`.
+                     * @enum {string}
+                     */
+                    reason?: "dates_not_available" | "not_comfortable" | "listing_not_ready" | "different_dates_needed" | "spam" | "calendar_conflict" | "maintenance_issue" | "unable_to_host" | "other";
+                    /** @description Required for `decline` only: sent to the guest by Airbnb. */
+                    message?: string;
+                };
+            };
+        };
         responses: {
-            /** @description Action completed */
+            /** @description Done. Airbnb's reservation object as Airbnb returns it (keys camelCased). */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        confirmationCode?: string;
+                        statusType?: string;
+                    };
+                };
             };
-            403: components["responses"]["ListingInactive"];
+            401: components["responses"]["Unauthorized"];
+            /** @description `connection_reauth_required` — Airbnb no longer accepts the connection for this action (expired, revoked, or granted without messaging/reservation permissions). Reconnect; retrying cannot succeed. `listing_inactive` — the listing is inactive. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `no_connection` — no Airbnb connection; `not_found` — Airbnb does not know this confirmation code. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The booking moved on: `request_no_longer_pending` (already accepted, declined, withdrawn or cancelled) or `request_expired`. Do not retry. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `invalid_params` — the body is wrong (`field` names it; `pre-approve` is refused with a pointer to the right endpoint); `airbnb_rejected` — Airbnb refused (its reason is in `message`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `airbnb_rate_limited` — back off and retry with the same `Idempotency-Key`. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `airbnb_error` — Airbnb outage or timeout. Nothing about the request needs to change; retry with backoff. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     list_airbnb_reviews: {
@@ -12310,7 +13002,7 @@ export interface operations {
                  *
                  *     - Same key while the first request is still in flight → `409 idempotency_key_in_use`.
                  *     - Same key with a DIFFERENT payload → `422 idempotency_key_reused`. Generate a new key per distinct request; reuse one only when retrying that exact request.
-                 *     - Responses with status >= 500 are deliberately not stored, so a server error stays retryable.
+                 *     - Retryable outcomes are deliberately not stored, so a retry with the same key runs for real: any status >= 500, `408`, `425` and `429`, and the refusals that happen before anything is done and tell you to fix something outside the request first — `connection_reauth_required`, `listing_inactive`, and the rate/daily limits. Every other answer, including a final refusal such as `422 airbnb_rejected`, is stored and replayed.
                  */
                 "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
             };
@@ -12602,52 +13294,10 @@ export interface operations {
             500: components["responses"]["InternalError"];
         };
     };
-    create_airbnb_offer: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    /**
-                     * @description Which kind of offer to create.
-                     * @enum {string}
-                     */
-                    type: "offer" | "preapproval";
-                    /** @description Airbnb thread id. Required when `type` is `preapproval`. */
-                    threadId?: string;
-                    /**
-                     * @description For `preapproval` — whether to block instant booking.
-                     * @default false
-                     */
-                    blockInstantBooking?: boolean;
-                } & {
-                    [key: string]: unknown;
-                };
-            };
-        };
-        responses: {
-            /** @description Offer created */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            401: components["responses"]["Unauthorized"];
-            403: components["responses"]["ListingInactive"];
-            404: components["responses"]["NotFound"];
-            422: components["responses"]["UnprocessableEntity"];
-            500: components["responses"]["InternalError"];
-        };
-    };
-    withdraw_airbnb_offer: {
+    get_airbnb_offer: {
         parameters: {
             query: {
-                /** @description Airbnb special-offer id to withdraw. */
+                /** @description Airbnb special-offer id (the `id` Airbnb returned when the offer was created). */
                 offerId: string;
             };
             header?: never;
@@ -12656,17 +13306,343 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Offer withdrawn */
+            /** @description The offer, as Airbnb returns it. */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** @description Airbnb special-offer id. */
+                        id?: string;
+                        /** @description Airbnb thread id the offer was sent on. */
+                        threadId?: string;
+                        /** @enum {string} */
+                        offerType?: "preapproval" | "special_offer";
+                        /** @enum {string} */
+                        status?: "active" | "pending" | "accepted" | "declined" | "expired" | "voided";
+                        /** @description Airbnb listing id (special offers only). */
+                        listingId?: string;
+                        /** Format: date */
+                        startDate?: string;
+                        nights?: number;
+                        totalPrice?: number;
+                        guestDetails?: {
+                            [key: string]: unknown;
+                        };
+                        /** Format: date-time */
+                        createdAt?: string;
+                        /** Format: date-time */
+                        expiresAt?: string;
+                    };
+                };
             };
             401: components["responses"]["Unauthorized"];
-            404: components["responses"]["NotFound"];
-            422: components["responses"]["UnprocessableEntity"];
-            500: components["responses"]["InternalError"];
+            /** @description `connection_reauth_required` — Airbnb no longer accepts the connection for this action (expired, revoked, or granted without messaging/reservation permissions). Reconnect; retrying cannot succeed. `listing_inactive` — the listing is inactive. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `no_connection` — the workspace has no Airbnb connection. `not_found` — Airbnb does not know this offer or thread. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `offerId` is missing or malformed. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `airbnb_rate_limited` — back off and retry with the same `Idempotency-Key`. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `airbnb_error` — Airbnb outage or timeout. Nothing about the request needs to change; retry with backoff. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    create_airbnb_offer: {
+        parameters: {
+            query?: never;
+            header?: {
+                /**
+                 * @description Makes a retry of this request safe. Send a unique string (a UUID generated at the point you build the request) and the response is stored for 24 hours: a repeat with the SAME key replays that stored response — tagged `Idempotency-Status: cached` — without running the operation again, so no duplicate reservation, guest or guest message is created.
+                 *
+                 *     - Same key while the first request is still in flight → `409 idempotency_key_in_use`.
+                 *     - Same key with a DIFFERENT payload → `422 idempotency_key_reused`. Generate a new key per distinct request; reuse one only when retrying that exact request.
+                 *     - Retryable outcomes are deliberately not stored, so a retry with the same key runs for real: any status >= 500, `408`, `425` and `429`, and the refusals that happen before anything is done and tell you to fix something outside the request first — `connection_reauth_required`, `listing_inactive`, and the rate/daily limits. Every other answer, including a final refusal such as `422 airbnb_rejected`, is stored and replayed.
+                 */
+                "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /**
+                     * @description What to create.
+                     * @enum {string}
+                     */
+                    type: "offer" | "preapproval";
+                    /**
+                     * @description Airbnb message-thread id the offer answers. (`threadId` is accepted too.)
+                     * @example 2675957479
+                     */
+                    thread_id: string;
+                    /**
+                     * @description Pre-approval only: require the guest to book through the pre-approval rather than Instant Book. (`blockInstantBooking` is accepted too.)
+                     * @default false
+                     */
+                    block_instant_booking?: boolean;
+                    /**
+                     * @description Offer only (required): the AIRBNB listing id, as a string.
+                     * @example 955656266214757921
+                     */
+                    listing_id?: string;
+                    /**
+                     * Format: date
+                     * @description Offer only (required): first night.
+                     * @example 2026-10-01
+                     */
+                    start_date?: string;
+                    /**
+                     * @description Offer only (required).
+                     * @example 4
+                     */
+                    nights?: number;
+                    /**
+                     * @description Offer only (required): total for the stay, in the listing’s Airbnb currency.
+                     * @example 880
+                     */
+                    total_price?: number;
+                    /** @description Offer only (required). `number_of_guests` is adults + children; if omitted it is computed from them. */
+                    guest_details?: {
+                        /** @example 3 */
+                        number_of_guests?: number;
+                        /** @example 2 */
+                        number_of_adults?: number;
+                        /** @example 1 */
+                        number_of_children?: number;
+                        /** @example 0 */
+                        number_of_infants?: number;
+                        /** @example 0 */
+                        number_of_pets?: number;
+                    };
+                };
+            };
+        };
+        responses: {
+            /** @description Created. Airbnb’s offer object. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @description Airbnb special-offer id. */
+                        id?: string;
+                        /** @description Airbnb thread id the offer was sent on. */
+                        threadId?: string;
+                        /** @enum {string} */
+                        offerType?: "preapproval" | "special_offer";
+                        /** @enum {string} */
+                        status?: "active" | "pending" | "accepted" | "declined" | "expired" | "voided";
+                        /** @description Airbnb listing id (special offers only). */
+                        listingId?: string;
+                        /** Format: date */
+                        startDate?: string;
+                        nights?: number;
+                        totalPrice?: number;
+                        guestDetails?: {
+                            [key: string]: unknown;
+                        };
+                        /** Format: date-time */
+                        createdAt?: string;
+                        /** Format: date-time */
+                        expiresAt?: string;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description `connection_reauth_required` — Airbnb no longer accepts the connection for this action (expired, revoked, or granted without messaging/reservation permissions). Reconnect; retrying cannot succeed. `listing_inactive` — the listing is inactive. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `no_connection` — the workspace has no Airbnb connection. `not_found` — Airbnb does not know this offer or thread. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The inquiry moved on: `inquiry_no_longer_open` (booked, declined or closed) or `inquiry_expired`. Do not retry. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `invalid_params` — the body is wrong and `field` names it; `airbnb_rejected` — Airbnb refused (its reason is in `message`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `airbnb_rate_limited` — back off and retry with the same `Idempotency-Key`. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `airbnb_error` — Airbnb outage or timeout. Nothing about the request needs to change; retry with backoff. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    withdraw_airbnb_offer: {
+        parameters: {
+            query: {
+                /** @description Airbnb special-offer id (the `id` Airbnb returned when the offer was created). */
+                offerId: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Withdrawn. Airbnb’s offer object, now `voided`. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @description Airbnb special-offer id. */
+                        id?: string;
+                        /** @description Airbnb thread id the offer was sent on. */
+                        threadId?: string;
+                        /** @enum {string} */
+                        offerType?: "preapproval" | "special_offer";
+                        /** @enum {string} */
+                        status?: "active" | "pending" | "accepted" | "declined" | "expired" | "voided";
+                        /** @description Airbnb listing id (special offers only). */
+                        listingId?: string;
+                        /** Format: date */
+                        startDate?: string;
+                        nights?: number;
+                        totalPrice?: number;
+                        guestDetails?: {
+                            [key: string]: unknown;
+                        };
+                        /** Format: date-time */
+                        createdAt?: string;
+                        /** Format: date-time */
+                        expiresAt?: string;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description `connection_reauth_required` — Airbnb no longer accepts the connection for this action (expired, revoked, or granted without messaging/reservation permissions). Reconnect; retrying cannot succeed. `listing_inactive` — the listing is inactive. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `no_connection` — the workspace has no Airbnb connection. `not_found` — Airbnb does not know this offer or thread. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The offer can no longer be withdrawn (booked or expired). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `offerId` is missing or malformed. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `airbnb_rate_limited` — back off and retry with the same `Idempotency-Key`. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `airbnb_error` — Airbnb outage or timeout. Nothing about the request needs to change; retry with backoff. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     listListings: {
@@ -12834,7 +13810,7 @@ export interface operations {
                  *
                  *     - Same key while the first request is still in flight → `409 idempotency_key_in_use`.
                  *     - Same key with a DIFFERENT payload → `422 idempotency_key_reused`. Generate a new key per distinct request; reuse one only when retrying that exact request.
-                 *     - Responses with status >= 500 are deliberately not stored, so a server error stays retryable.
+                 *     - Retryable outcomes are deliberately not stored, so a retry with the same key runs for real: any status >= 500, `408`, `425` and `429`, and the refusals that happen before anything is done and tell you to fix something outside the request first — `connection_reauth_required`, `listing_inactive`, and the rate/daily limits. Every other answer, including a final refusal such as `422 airbnb_rejected`, is stored and replayed.
                  */
                 "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
             };
@@ -12909,7 +13885,7 @@ export interface operations {
                  *
                  *     - Same key while the first request is still in flight → `409 idempotency_key_in_use`.
                  *     - Same key with a DIFFERENT payload → `422 idempotency_key_reused`. Generate a new key per distinct request; reuse one only when retrying that exact request.
-                 *     - Responses with status >= 500 are deliberately not stored, so a server error stays retryable.
+                 *     - Retryable outcomes are deliberately not stored, so a retry with the same key runs for real: any status >= 500, `408`, `425` and `429`, and the refusals that happen before anything is done and tell you to fix something outside the request first — `connection_reauth_required`, `listing_inactive`, and the rate/daily limits. Every other answer, including a final refusal such as `422 airbnb_rejected`, is stored and replayed.
                  */
                 "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
             };
@@ -13257,6 +14233,15 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["ListingInactive"];
             404: components["responses"]["NotFound"];
+            /** @description `attachments_not_supported` — the body carried a file field. This endpoint sends text only; nothing was sent. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
             500: components["responses"]["InternalError"];
         };
     };
@@ -15326,7 +16311,7 @@ export interface operations {
                  *
                  *     - Same key while the first request is still in flight → `409 idempotency_key_in_use`.
                  *     - Same key with a DIFFERENT payload → `422 idempotency_key_reused`. Generate a new key per distinct request; reuse one only when retrying that exact request.
-                 *     - Responses with status >= 500 are deliberately not stored, so a server error stays retryable.
+                 *     - Retryable outcomes are deliberately not stored, so a retry with the same key runs for real: any status >= 500, `408`, `425` and `429`, and the refusals that happen before anything is done and tell you to fix something outside the request first — `connection_reauth_required`, `listing_inactive`, and the rate/daily limits. Every other answer, including a final refusal such as `422 airbnb_rejected`, is stored and replayed.
                  */
                 "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
             };
@@ -15404,7 +16389,7 @@ export interface operations {
                  *
                  *     - Same key while the first request is still in flight → `409 idempotency_key_in_use`.
                  *     - Same key with a DIFFERENT payload → `422 idempotency_key_reused`. Generate a new key per distinct request; reuse one only when retrying that exact request.
-                 *     - Responses with status >= 500 are deliberately not stored, so a server error stays retryable.
+                 *     - Retryable outcomes are deliberately not stored, so a retry with the same key runs for real: any status >= 500, `408`, `425` and `429`, and the refusals that happen before anything is done and tell you to fix something outside the request first — `connection_reauth_required`, `listing_inactive`, and the rate/daily limits. Every other answer, including a final refusal such as `422 airbnb_rejected`, is stored and replayed.
                  */
                 "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
             };
@@ -15485,7 +16470,7 @@ export interface operations {
                  *
                  *     - Same key while the first request is still in flight → `409 idempotency_key_in_use`.
                  *     - Same key with a DIFFERENT payload → `422 idempotency_key_reused`. Generate a new key per distinct request; reuse one only when retrying that exact request.
-                 *     - Responses with status >= 500 are deliberately not stored, so a server error stays retryable.
+                 *     - Retryable outcomes are deliberately not stored, so a retry with the same key runs for real: any status >= 500, `408`, `425` and `429`, and the refusals that happen before anything is done and tell you to fix something outside the request first — `connection_reauth_required`, `listing_inactive`, and the rate/daily limits. Every other answer, including a final refusal such as `422 airbnb_rejected`, is stored and replayed.
                  */
                 "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
             };
@@ -15526,6 +16511,975 @@ export interface operations {
             429: components["responses"]["AirbnbRateLimited"];
             500: components["responses"]["InternalError"];
             502: components["responses"]["AirbnbUpstreamError"];
+        };
+    };
+    preapprove_conversation: {
+        parameters: {
+            query?: never;
+            header?: {
+                /**
+                 * @description Makes a retry of this request safe. Send a unique string (a UUID generated at the point you build the request) and the response is stored for 24 hours: a repeat with the SAME key replays that stored response — tagged `Idempotency-Status: cached` — without running the operation again, so no duplicate reservation, guest or guest message is created.
+                 *
+                 *     - Same key while the first request is still in flight → `409 idempotency_key_in_use`.
+                 *     - Same key with a DIFFERENT payload → `422 idempotency_key_reused`. Generate a new key per distinct request; reuse one only when retrying that exact request.
+                 *     - Retryable outcomes are deliberately not stored, so a retry with the same key runs for real: any status >= 500, `408`, `425` and `429`, and the refusals that happen before anything is done and tell you to fix something outside the request first — `connection_reauth_required`, `listing_inactive`, and the rate/daily limits. Every other answer, including a final refusal such as `422 airbnb_rejected`, is stored and replayed.
+                 */
+                "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                /** @description Repull conversation id (from `GET /v1/conversations` or `conversationId` on `GET /v1/inquiries`) — not the Airbnb thread id. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /**
+                     * @description When `true`, the guest cannot Instant Book the listing and must book through this pre-approval. Leave `false` unless you need that.
+                     * @default false
+                     */
+                    blockInstantBooking?: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Pre-approved. The guest can now book the dates they asked about. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "conversationId": "164743",
+                     *       "status": "pre_approved",
+                     *       "blockInstantBooking": false,
+                     *       "expiresAt": "2026-09-23T17:40:38Z"
+                     *     }
+                     */
+                    "application/json": {
+                        /** @example 164743 */
+                        conversationId: string;
+                        /** @enum {string} */
+                        status: "pre_approved";
+                        /** @example false */
+                        blockInstantBooking: boolean;
+                        /**
+                         * Format: date-time
+                         * @description When the guest can no longer book on the pre-approval, if Airbnb reported it.
+                         */
+                        expiresAt: string | null;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description `connection_reauth_required` — Airbnb no longer accepts the connection for this action (expired, revoked, or granted without messaging/reservation permissions). Reconnect; retrying cannot succeed. `listing_inactive` — the listing is inactive. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The conversation does not exist in this workspace, or Airbnb does not know the inquiry. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The inquiry cannot be pre-approved any more. `conversation_already_booked` — the guest booked; `inquiry_no_longer_open` — Airbnb says it was already answered or closed; `inquiry_expired` — it lapsed. Do not retry. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `channel_not_supported` — not a direct Airbnb conversation; `airbnb_link_missing` — no Airbnb thread or host on record; `airbnb_rejected` — Airbnb refused (its reason is in `message`); `invalid_params` — bad body, `field` names it. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `airbnb_rate_limited` — back off and retry with the same `Idempotency-Key`. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `service_misconfigured` — Repull could not reach the service that performs the action (its route was missing or refused our credentials). Nothing was sent to Airbnb. A fault on our side, not in the request: `retryable` is `false` and resending will not help until it is fixed. Any other 500 is `internal_error`. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `airbnb_error` — Airbnb outage or timeout. Nothing about the request needs to change; retry with backoff. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    create_conversation_special_offer: {
+        parameters: {
+            query?: never;
+            header?: {
+                /**
+                 * @description Makes a retry of this request safe. Send a unique string (a UUID generated at the point you build the request) and the response is stored for 24 hours: a repeat with the SAME key replays that stored response — tagged `Idempotency-Status: cached` — without running the operation again, so no duplicate reservation, guest or guest message is created.
+                 *
+                 *     - Same key while the first request is still in flight → `409 idempotency_key_in_use`.
+                 *     - Same key with a DIFFERENT payload → `422 idempotency_key_reused`. Generate a new key per distinct request; reuse one only when retrying that exact request.
+                 *     - Retryable outcomes are deliberately not stored, so a retry with the same key runs for real: any status >= 500, `408`, `425` and `429`, and the refusals that happen before anything is done and tell you to fix something outside the request first — `connection_reauth_required`, `listing_inactive`, and the rate/daily limits. Every other answer, including a final refusal such as `422 airbnb_rejected`, is stored and replayed.
+                 */
+                "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                /** @description Repull conversation id (from `GET /v1/conversations` or `conversationId` on `GET /v1/inquiries`) — not the Airbnb thread id. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "checkIn": "2026-10-01",
+                 *       "checkOut": "2026-10-05",
+                 *       "guests": {
+                 *         "adults": 2,
+                 *         "children": 1
+                 *       },
+                 *       "totalPrice": 880
+                 *     }
+                 */
+                "application/json": {
+                    /**
+                     * @description Repull listing id to offer. Defaults to the listing the conversation is about.
+                     * @example 23892
+                     */
+                    listingId?: number;
+                    /**
+                     * Format: date
+                     * @example 2026-10-01
+                     */
+                    checkIn: string;
+                    /**
+                     * Format: date
+                     * @description Must be after `checkIn`.
+                     * @example 2026-10-05
+                     */
+                    checkOut: string;
+                    guests: {
+                        /** @example 2 */
+                        adults: number;
+                        /** @default 0 */
+                        children?: number;
+                        /** @default 0 */
+                        infants?: number;
+                        /** @default 0 */
+                        pets?: number;
+                    };
+                    /**
+                     * @description Total the guest pays for the whole stay, in the listing’s Airbnb currency.
+                     * @example 880
+                     */
+                    totalPrice: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Offer sent. The guest can book it until `expiresAt`. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "id": "1459920384",
+                     *       "conversationId": "164743",
+                     *       "status": "active",
+                     *       "listingId": "23892",
+                     *       "airbnbListingId": "955656266214757921",
+                     *       "checkIn": "2026-10-01",
+                     *       "checkOut": "2026-10-05",
+                     *       "nights": 4,
+                     *       "guests": {
+                     *         "total": 3,
+                     *         "adults": 2,
+                     *         "children": 1,
+                     *         "infants": 0,
+                     *         "pets": 0
+                     *       },
+                     *       "totalPrice": 880,
+                     *       "createdAt": "2026-09-22T18:00:00Z",
+                     *       "expiresAt": "2026-09-23T18:00:00Z"
+                     *     }
+                     */
+                    "application/json": {
+                        /**
+                         * @description Airbnb special-offer id. Use it to read or withdraw the offer.
+                         * @example 1459920384
+                         */
+                        id: string | null;
+                        /**
+                         * @description Repull conversation id the offer was sent on.
+                         * @example 164743
+                         */
+                        conversationId: string;
+                        /**
+                         * @description Airbnb’s status for the offer: `active` (the guest can book it), `accepted`, `declined`, `expired` or `voided` (withdrawn).
+                         * @example active
+                         */
+                        status: string | null;
+                        /**
+                         * @description Repull listing id, when known.
+                         * @example 23892
+                         */
+                        listingId?: string | null;
+                        /**
+                         * @description Airbnb listing id the offer is for (a string — it exceeds 2^53).
+                         * @example 955656266214757921
+                         */
+                        airbnbListingId?: string | null;
+                        /**
+                         * Format: date
+                         * @example 2026-10-01
+                         */
+                        checkIn: string | null;
+                        /**
+                         * Format: date
+                         * @example 2026-10-05
+                         */
+                        checkOut: string | null;
+                        /** @example 4 */
+                        nights: number | null;
+                        /** @description Guests on the offer. Airbnb counts adults + children as guests; infants and pets are extra. */
+                        guests?: {
+                            /** @example 3 */
+                            total?: number | null;
+                            /** @example 2 */
+                            adults?: number | null;
+                            /** @example 1 */
+                            children?: number | null;
+                            /** @example 0 */
+                            infants?: number | null;
+                            /** @example 0 */
+                            pets?: number | null;
+                        } | null;
+                        /**
+                         * @description Total for the stay, in the listing’s Airbnb currency.
+                         * @example 880
+                         */
+                        totalPrice: number | null;
+                        /** Format: date-time */
+                        createdAt?: string | null;
+                        /**
+                         * Format: date-time
+                         * @description When the guest can no longer book the offer (Airbnb gives them 24 hours).
+                         */
+                        expiresAt?: string | null;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description `connection_reauth_required` — Airbnb no longer accepts the connection for this action (expired, revoked, or granted without messaging/reservation permissions). Reconnect; retrying cannot succeed. `listing_inactive` — the listing is inactive. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The conversation does not exist in this workspace. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The inquiry cannot take an offer any more. `inquiry_no_longer_open` — Airbnb says it was booked or closed; `inquiry_expired` — it lapsed. Do not retry. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `invalid_params` — the body is wrong and `field` names it; `airbnb_rejected` — Airbnb refused the offer (its reason is in `message`); `listing_not_on_airbnb` — the offered listing is not on Airbnb; `channel_not_supported` — not a direct Airbnb conversation; `airbnb_link_missing` — no Airbnb thread or host on record. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `airbnb_rate_limited` — back off and retry with the same `Idempotency-Key`. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `service_misconfigured` — Repull could not reach the service that performs the action (its route was missing or refused our credentials). Nothing was sent to Airbnb. A fault on our side, not in the request: `retryable` is `false` and resending will not help until it is fixed. Any other 500 is `internal_error`. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `airbnb_error` — Airbnb outage or timeout. Nothing about the request needs to change; retry with backoff. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    get_conversation_special_offer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Repull conversation id (from `GET /v1/conversations` or `conversationId` on `GET /v1/inquiries`) — not the Airbnb thread id. */
+                id: number;
+                /**
+                 * @description The special offer’s `id`, as returned by `POST /v1/conversations/{id}/special-offers`.
+                 * @example 1459920384
+                 */
+                offerId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The offer. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /**
+                         * @description Airbnb special-offer id. Use it to read or withdraw the offer.
+                         * @example 1459920384
+                         */
+                        id: string | null;
+                        /**
+                         * @description Repull conversation id the offer was sent on.
+                         * @example 164743
+                         */
+                        conversationId: string;
+                        /**
+                         * @description Airbnb’s status for the offer: `active` (the guest can book it), `accepted`, `declined`, `expired` or `voided` (withdrawn).
+                         * @example active
+                         */
+                        status: string | null;
+                        /**
+                         * @description Repull listing id, when known.
+                         * @example 23892
+                         */
+                        listingId?: string | null;
+                        /**
+                         * @description Airbnb listing id the offer is for (a string — it exceeds 2^53).
+                         * @example 955656266214757921
+                         */
+                        airbnbListingId?: string | null;
+                        /**
+                         * Format: date
+                         * @example 2026-10-01
+                         */
+                        checkIn: string | null;
+                        /**
+                         * Format: date
+                         * @example 2026-10-05
+                         */
+                        checkOut: string | null;
+                        /** @example 4 */
+                        nights: number | null;
+                        /** @description Guests on the offer. Airbnb counts adults + children as guests; infants and pets are extra. */
+                        guests?: {
+                            /** @example 3 */
+                            total?: number | null;
+                            /** @example 2 */
+                            adults?: number | null;
+                            /** @example 1 */
+                            children?: number | null;
+                            /** @example 0 */
+                            infants?: number | null;
+                            /** @example 0 */
+                            pets?: number | null;
+                        } | null;
+                        /**
+                         * @description Total for the stay, in the listing’s Airbnb currency.
+                         * @example 880
+                         */
+                        totalPrice: number | null;
+                        /** Format: date-time */
+                        createdAt?: string | null;
+                        /**
+                         * Format: date-time
+                         * @description When the guest can no longer book the offer (Airbnb gives them 24 hours).
+                         */
+                        expiresAt?: string | null;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description `connection_reauth_required` — Airbnb no longer accepts the connection for this action (expired, revoked, or granted without messaging/reservation permissions). Reconnect; retrying cannot succeed. `listing_inactive` — the listing is inactive. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The conversation does not exist in this workspace, or the offer is not on this conversation (an offer id from another conversation is refused rather than acted on). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `invalid_params` — `id` or `offerId` is malformed; `channel_not_supported` — not a direct Airbnb conversation. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `airbnb_rate_limited` — back off and retry with the same `Idempotency-Key`. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `service_misconfigured` — Repull could not reach the service that performs the action (its route was missing or refused our credentials). Nothing was sent to Airbnb. A fault on our side, not in the request: `retryable` is `false` and resending will not help until it is fixed. Any other 500 is `internal_error`. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `airbnb_error` — Airbnb outage or timeout. Nothing about the request needs to change; retry with backoff. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    withdraw_conversation_special_offer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Repull conversation id (from `GET /v1/conversations` or `conversationId` on `GET /v1/inquiries`) — not the Airbnb thread id. */
+                id: number;
+                /**
+                 * @description The special offer’s `id`, as returned by `POST /v1/conversations/{id}/special-offers`.
+                 * @example 1459920384
+                 */
+                offerId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Withdrawn. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @example 1459920384 */
+                        id: string;
+                        /** @example 164743 */
+                        conversationId: string;
+                        /** @enum {string} */
+                        status: "withdrawn";
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description `connection_reauth_required` — Airbnb no longer accepts the connection for this action (expired, revoked, or granted without messaging/reservation permissions). Reconnect; retrying cannot succeed. `listing_inactive` — the listing is inactive. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The conversation does not exist in this workspace, or the offer is not on this conversation (an offer id from another conversation is refused rather than acted on). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Airbnb says the offer can no longer be withdrawn (the guest booked it, or it already expired). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `invalid_params` — `id` or `offerId` is malformed; `channel_not_supported` — not a direct Airbnb conversation. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `airbnb_rate_limited` — back off and retry with the same `Idempotency-Key`. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `service_misconfigured` — Repull could not reach the service that performs the action (its route was missing or refused our credentials). Nothing was sent to Airbnb. A fault on our side, not in the request: `retryable` is `false` and resending will not help until it is fixed. Any other 500 is `internal_error`. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `airbnb_error` — Airbnb outage or timeout. Nothing about the request needs to change; retry with backoff. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    list_inquiries: {
+        parameters: {
+            query?: {
+                /** @description Which inquiries to return. `all` returns every one. */
+                status?: "open" | "pre_approved" | "special_offer_sent" | "booked" | "expired" | "declined" | "not_possible" | "all";
+                /** @description Only inquiries about this Repull listing. */
+                listing_id?: number;
+                /** @description The inquiry on one conversation — combine with `status=all` to see it whatever its state. */
+                conversation_id?: number;
+                /** @description Max inquiries per page (default 50, cap 100; over the cap returns 422). */
+                limit?: number;
+                /** @description Opaque base64 cursor returned in the previous response's `pagination.nextCursor`. Omit to fetch the first page. */
+                cursor?: components["parameters"]["cursor"];
+                /** @description First-class alias for cursor-based pagination. Mutually exclusive with `cursor` — passing both returns 422. Accepts integers in `[0, 10000]`; deeper walks must use `cursor` (constant per-page cost). The response always includes `pagination.nextCursor` so consumers can switch from offset → cursor mid-walk for deep pagination without re-keying. */
+                offset?: components["parameters"]["Offset"];
+                /** @description When `true` (default), the response's `pagination.total` carries the count of rows matching the current filter, across all pages. Pass `false` to skip the count for very large workspaces where the per-page COUNT(*) cost matters. */
+                include_total?: components["parameters"]["IncludeTotal"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Inquiries. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            /**
+                             * @description Repull inquiry id.
+                             * @example 25173
+                             */
+                            id: string;
+                            /**
+                             * @description Repull conversation id — pass it to `POST /v1/conversations/{id}/pre-approval` or `/special-offers`.
+                             * @example 164743
+                             */
+                            conversationId: string | null;
+                            /** @example 23892 */
+                            listingId: string | null;
+                            /** @example airbnb */
+                            channel: string;
+                            /**
+                             * @description `open` — nobody has answered and the stay is still ahead; `pre_approved`; `special_offer_sent` (from the API, Vanio, or Airbnb’s own app); `booked` — the guest booked (`reservationId`); `expired` — the stay has started or Airbnb expired it; `declined`; `not_possible` — Airbnb says the dates cannot be booked.
+                             * @enum {string}
+                             */
+                            status: "open" | "pre_approved" | "special_offer_sent" | "booked" | "expired" | "declined" | "not_possible";
+                            /**
+                             * Format: date
+                             * @example 2026-09-23
+                             */
+                            checkIn: string | null;
+                            /**
+                             * Format: date
+                             * @example 2026-10-11
+                             */
+                            checkOut: string | null;
+                            guests: {
+                                /** @example 2 */
+                                total?: number | null;
+                                /** @example 2 */
+                                adults?: number | null;
+                                /** @example 0 */
+                                children?: number | null;
+                                /** @example 0 */
+                                infants?: number | null;
+                                /** @example 0 */
+                                pets?: number | null;
+                            };
+                            /** @description What Airbnb quoted the host for the stay the guest asked about. */
+                            expectedPayout: {
+                                /** @example 2152.6 */
+                                amount?: number | null;
+                                /** @example USD */
+                                currency?: string | null;
+                            };
+                            /** @description The reservation the inquiry became, once booked. */
+                            reservationId: string | null;
+                            /** @description A PMS (e.g. `hostaway`, `guesty`) this inquiry arrives through. When set, it cannot be pre-approved or offered from Repull — act on it in that PMS. */
+                            relayedBy: string | null;
+                            /**
+                             * Format: date-time
+                             * @description Airbnb’s response deadline for the host (it counts toward response rate).
+                             */
+                            respondBy: string | null;
+                            /** Format: date-time */
+                            respondedAt: string | null;
+                            /** Format: date-time */
+                            createdAt: string | null;
+                            /** Format: date-time */
+                            updatedAt: string | null;
+                        }[];
+                        pagination: components["schemas"]["Pagination"];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
+            422: components["responses"]["UnprocessableEntity"];
+        };
+    };
+    accept_reservation_request: {
+        parameters: {
+            query?: never;
+            header?: {
+                /**
+                 * @description Makes a retry of this request safe. Send a unique string (a UUID generated at the point you build the request) and the response is stored for 24 hours: a repeat with the SAME key replays that stored response — tagged `Idempotency-Status: cached` — without running the operation again, so no duplicate reservation, guest or guest message is created.
+                 *
+                 *     - Same key while the first request is still in flight → `409 idempotency_key_in_use`.
+                 *     - Same key with a DIFFERENT payload → `422 idempotency_key_reused`. Generate a new key per distinct request; reuse one only when retrying that exact request.
+                 *     - Retryable outcomes are deliberately not stored, so a retry with the same key runs for real: any status >= 500, `408`, `425` and `429`, and the refusals that happen before anything is done and tell you to fix something outside the request first — `connection_reauth_required`, `listing_inactive`, and the rate/daily limits. Every other answer, including a final refusal such as `422 airbnb_rejected`, is stored and replayed.
+                 */
+                "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                /** @description Repull reservation id (from `GET /v1/reservations?status=pending`) — not the Airbnb confirmation code. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Accepted on Airbnb. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "reservationId": "236354",
+                     *       "confirmationCode": "HM9J2MFR3W",
+                     *       "channel": "airbnb",
+                     *       "action": "accept",
+                     *       "status": "accepted",
+                     *       "declineReason": null
+                     *     }
+                     */
+                    "application/json": {
+                        /** @example 236354 */
+                        reservationId: string;
+                        /** @example HM9J2MFR3W */
+                        confirmationCode: string;
+                        /** @enum {string} */
+                        channel: "airbnb";
+                        /** @enum {string} */
+                        action: "accept" | "decline";
+                        /**
+                         * @description What Airbnb was asked to do and did not refuse. The reservation itself moves when Airbnb’s own notification lands, usually within seconds — that is when `reservation.request.updated` fires (`requestStatus` `accepted` or `declined`), plus `reservation.created` for an accepted request.
+                         * @enum {string}
+                         */
+                        status: "accepted" | "declined";
+                        /** @enum {string|null} */
+                        declineReason: "dates_not_available" | "not_comfortable" | "listing_not_ready" | "different_dates_needed" | "spam" | "other" | null;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description `connection_reauth_required` — Airbnb no longer accepts the connection for this action (expired, revoked, or granted without messaging/reservation permissions). Reconnect; retrying cannot succeed. `listing_inactive` — the listing is inactive. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The reservation does not exist in this workspace. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The request cannot be accepted any more. `reservation_not_pending` — it is not a pending request (decided before contacting Airbnb; `currentStatus` says what it is); `request_no_longer_pending` — Airbnb says it was already answered, withdrawn or expired; `request_expired` — it lapsed. Do not retry. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `channel_not_supported` — not a direct Airbnb booking; `airbnb_link_missing` — no Airbnb confirmation code or host on record; `airbnb_rejected` — Airbnb refused (its reason is in `message`); `invalid_params` — a body field was sent. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `airbnb_rate_limited` — back off and retry with the same `Idempotency-Key`. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `service_misconfigured` — Repull could not reach the service that performs the action (its route was missing or refused our credentials). Nothing was sent to Airbnb. A fault on our side, not in the request: `retryable` is `false` and resending will not help until it is fixed. Any other 500 is `internal_error`. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `airbnb_error` — Airbnb outage or timeout. Nothing about the request needs to change; retry with backoff. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    decline_reservation_request: {
+        parameters: {
+            query?: never;
+            header?: {
+                /**
+                 * @description Makes a retry of this request safe. Send a unique string (a UUID generated at the point you build the request) and the response is stored for 24 hours: a repeat with the SAME key replays that stored response — tagged `Idempotency-Status: cached` — without running the operation again, so no duplicate reservation, guest or guest message is created.
+                 *
+                 *     - Same key while the first request is still in flight → `409 idempotency_key_in_use`.
+                 *     - Same key with a DIFFERENT payload → `422 idempotency_key_reused`. Generate a new key per distinct request; reuse one only when retrying that exact request.
+                 *     - Retryable outcomes are deliberately not stored, so a retry with the same key runs for real: any status >= 500, `408`, `425` and `429`, and the refusals that happen before anything is done and tell you to fix something outside the request first — `connection_reauth_required`, `listing_inactive`, and the rate/daily limits. Every other answer, including a final refusal such as `422 airbnb_rejected`, is stored and replayed.
+                 */
+                "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                /** @description Repull reservation id (from `GET /v1/reservations?status=pending`) — not the Airbnb confirmation code. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "reason": "dates_not_available",
+                 *       "message": "Sorry, those dates are no longer available."
+                 *     }
+                 */
+                "application/json": {
+                    /**
+                     * @description Airbnb’s decline reason, verbatim. `dates_not_available` — the dates are taken; `not_comfortable` — you are not comfortable with the booking; `listing_not_ready` — the listing cannot be booked right now; `different_dates_needed` — you want different dates; `spam` — the request is spam; `other` — anything else (explain in `message`).
+                     * @enum {string}
+                     */
+                    reason: "dates_not_available" | "not_comfortable" | "listing_not_ready" | "different_dates_needed" | "spam" | "other";
+                    /**
+                     * @description Sent to the guest by Airbnb with the decline.
+                     * @example Sorry, those dates are no longer available.
+                     */
+                    message: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Declined on Airbnb. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "reservationId": "236354",
+                     *       "confirmationCode": "HM9J2MFR3W",
+                     *       "channel": "airbnb",
+                     *       "action": "decline",
+                     *       "status": "declined",
+                     *       "declineReason": "dates_not_available"
+                     *     }
+                     */
+                    "application/json": {
+                        /** @example 236354 */
+                        reservationId: string;
+                        /** @example HM9J2MFR3W */
+                        confirmationCode: string;
+                        /** @enum {string} */
+                        channel: "airbnb";
+                        /** @enum {string} */
+                        action: "accept" | "decline";
+                        /**
+                         * @description What Airbnb was asked to do and did not refuse. The reservation itself moves when Airbnb’s own notification lands, usually within seconds — that is when `reservation.request.updated` fires (`requestStatus` `accepted` or `declined`), plus `reservation.created` for an accepted request.
+                         * @enum {string}
+                         */
+                        status: "accepted" | "declined";
+                        /** @enum {string|null} */
+                        declineReason: "dates_not_available" | "not_comfortable" | "listing_not_ready" | "different_dates_needed" | "spam" | "other" | null;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description `connection_reauth_required` — Airbnb no longer accepts the connection for this action (expired, revoked, or granted without messaging/reservation permissions). Reconnect; retrying cannot succeed. `listing_inactive` — the listing is inactive. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The reservation does not exist in this workspace. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The request cannot be declined any more. `reservation_not_pending` — it is not a pending request; `request_no_longer_pending` — Airbnb says it was already answered, withdrawn or expired; `request_expired` — it lapsed. Do not retry. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `invalid_params` — `reason` is not one of Airbnb’s, or `message` is missing or too long (`field` names it); `channel_not_supported` — not a direct Airbnb booking; `airbnb_rejected` — Airbnb refused (its reason is in `message`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `airbnb_rate_limited` — back off and retry with the same `Idempotency-Key`. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `service_misconfigured` — Repull could not reach the service that performs the action (its route was missing or refused our credentials). Nothing was sent to Airbnb. A fault on our side, not in the request: `retryable` is `false` and resending will not help until it is fixed. Any other 500 is `internal_error`. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `airbnb_error` — Airbnb outage or timeout. Nothing about the request needs to change; retry with backoff. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
 }

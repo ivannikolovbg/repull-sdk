@@ -28,6 +28,7 @@ import type {
   AirbnbListingDetailsResult,
   AirbnbListingDetailsWriteRequest,
   AirbnbListingListResponse,
+  AirbnbOffer,
   AirbnbPermitsResult,
   AirbnbPermitsWriteRequest,
   AirbnbPermitsWriteResult,
@@ -51,6 +52,8 @@ import type {
   ConnectStatus,
   Connection,
   Conversation,
+  ConversationPreApproval,
+  ConversationPreApprovalRequest,
   CustomSchema,
   CustomSchemaCreate,
   CustomSchemaCreateResponse,
@@ -61,6 +64,7 @@ import type {
   GuestCreateRequest,
   GuestCreateResponse,
   HealthResponse,
+  InquiryListResponse,
   Listing,
   ListingActiveResponse,
   ListingStatusBatchRequest,
@@ -75,17 +79,22 @@ import type {
   Reservation,
   ReservationCreateRequest,
   ReservationCreateResponse,
+  ReservationDeclineRequest,
+  ReservationRequestResponse,
   ReservationUpdateRequest,
   ReservationUpdateResponse,
   Review,
   SendMessageRequest,
   SendMessageResponse,
+  SpecialOffer,
+  SpecialOfferCreateRequest,
+  SpecialOfferWithdrawResponse,
 } from '@repull/types';
 import { RepullError } from './errors.js';
 import { KvNamespace } from './kv.js';
 
 const DEFAULT_BASE_URL = 'https://api.repull.dev';
-const DEFAULT_USER_AGENT = '@repull/sdk/0.2.15';
+const DEFAULT_USER_AGENT = '@repull/sdk/0.2.16';
 
 export type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
@@ -114,6 +123,7 @@ export class Repull {
   readonly reservations: ReservationsNamespace;
   readonly properties: PropertiesNamespace;
   readonly conversations: ConversationsNamespace;
+  readonly inquiries: InquiriesNamespace;
   readonly guests: GuestsNamespace;
   readonly reviews: ReviewsNamespace;
   readonly health: HealthNamespace;
@@ -165,6 +175,7 @@ export class Repull {
     this.reservations = new ReservationsNamespace(this);
     this.properties = new PropertiesNamespace(this);
     this.conversations = new ConversationsNamespace(this);
+    this.inquiries = new InquiriesNamespace(this);
     this.guests = new GuestsNamespace(this);
     this.reviews = new ReviewsNamespace(this);
     this.health = new HealthNamespace(this);
@@ -507,6 +518,46 @@ class ReservationsNamespace {
       { body, idempotencyKey: opts.idempotencyKey, xSchema: opts.xSchema },
     );
   }
+
+  /**
+   * POST /v1/reservations/{id}/accept — accept a pending Airbnb booking
+   * request. New in v0.2.16.
+   *
+   * Only a reservation with `status: 'pending'` and a `respondBy` in the
+   * future can be answered; Airbnb lapses an unanswered request 24 hours after
+   * the guest asks. Takes no fields. Pass `opts.idempotencyKey` to make a
+   * retry safe.
+   */
+  accept(
+    id: string | number,
+    opts: { idempotencyKey?: string } = {},
+  ): Promise<ReservationRequestResponse> {
+    return this.client.request<ReservationRequestResponse>(
+      'POST',
+      `/v1/reservations/${encodeURIComponent(String(id))}/accept`,
+      { body: {}, idempotencyKey: opts.idempotencyKey },
+    );
+  }
+
+  /**
+   * POST /v1/reservations/{id}/decline — decline a pending Airbnb booking
+   * request. New in v0.2.16.
+   *
+   * `reason` is Airbnb's decline reason verbatim (`dates_not_available`,
+   * `not_comfortable`, `listing_not_ready`, `different_dates_needed`, `spam`,
+   * `other`); `message` (1-500 chars) is sent to the guest with the decline.
+   */
+  decline(
+    id: string | number,
+    body: ReservationDeclineRequest,
+    opts: { idempotencyKey?: string } = {},
+  ): Promise<ReservationRequestResponse> {
+    return this.client.request<ReservationRequestResponse>(
+      'POST',
+      `/v1/reservations/${encodeURIComponent(String(id))}/decline`,
+      { body, idempotencyKey: opts.idempotencyKey },
+    );
+  }
 }
 
 /**
@@ -514,7 +565,12 @@ class ReservationsNamespace {
  * future channels) — `/v1/conversations` returns a unified thread list.
  */
 class ConversationsNamespace {
-  constructor(private readonly client: Repull) {}
+  /** Airbnb special offers on an inquiry thread. New in v0.2.16. */
+  readonly specialOffers: ConversationSpecialOffersNamespace;
+
+  constructor(private readonly client: Repull) {
+    this.specialOffers = new ConversationSpecialOffersNamespace(client);
+  }
 
   /**
    * GET /v1/conversations — cursor-paginated list of conversation threads.
@@ -564,6 +620,12 @@ class ConversationsNamespace {
    * (today that means Airbnb stripped a link, email address or phone number),
    * so the guest received `deliveredContent`, not `submittedContent`.
    *
+   * Since v0.2.16 the body also takes `attachments` (1-5 files) alongside or
+   * instead of `message`. Airbnb accepts images and video and sends each file
+   * as its own message; Booking.com accepts JPEG/PNG and requires `message`;
+   * SMS, email and website chat reject attachments with
+   * `422 attachments_not_supported`.
+   *
    * Pass `opts.idempotencyKey` (a UUID generated where you build the request)
    * to make a retry safe, so a network retry cannot send the guest the same
    * message twice. The same key with a changed payload is rejected with
@@ -579,6 +641,96 @@ class ConversationsNamespace {
       `/v1/conversations/${encodeURIComponent(String(conversationId))}/messages`,
       { body, idempotencyKey: opts.idempotencyKey, xSchema: opts.xSchema },
     );
+  }
+
+  /**
+   * POST /v1/conversations/{id}/pre-approval — pre-approve the guest on an
+   * Airbnb inquiry so they can book at the listed price. New in v0.2.16.
+   *
+   * Pass `{ blockInstantBooking: true }` only when the guest must book
+   * through this pre-approval rather than Instant Book. Read `expiresAt` off
+   * the response for when the pre-approval lapses.
+   */
+  preApprove(
+    conversationId: string | number,
+    body: ConversationPreApprovalRequest = {},
+    opts: { idempotencyKey?: string } = {},
+  ): Promise<ConversationPreApproval> {
+    return this.client.request<ConversationPreApproval>(
+      'POST',
+      `/v1/conversations/${encodeURIComponent(String(conversationId))}/pre-approval`,
+      { body, idempotencyKey: opts.idempotencyKey },
+    );
+  }
+}
+
+/** Airbnb special offers — a custom price/dates offer on an inquiry thread. New in v0.2.16. */
+class ConversationSpecialOffersNamespace {
+  constructor(private readonly client: Repull) {}
+
+  /**
+   * POST /v1/conversations/{id}/special-offers — send the guest a special
+   * offer. `totalPrice` is the whole-stay total in the listing's Airbnb
+   * currency; `listingId` defaults to the listing the conversation is about.
+   * Keep the returned `id` to read or withdraw the offer.
+   */
+  create(
+    conversationId: string | number,
+    body: SpecialOfferCreateRequest,
+    opts: { idempotencyKey?: string } = {},
+  ): Promise<SpecialOffer> {
+    return this.client.request<SpecialOffer>(
+      'POST',
+      `/v1/conversations/${encodeURIComponent(String(conversationId))}/special-offers`,
+      { body, idempotencyKey: opts.idempotencyKey },
+    );
+  }
+
+  /** GET /v1/conversations/{id}/special-offers/{offerId} — read one special offer. */
+  get(conversationId: string | number, offerId: string): Promise<SpecialOffer> {
+    return this.client.request<SpecialOffer>(
+      'GET',
+      `/v1/conversations/${encodeURIComponent(String(conversationId))}/special-offers/${encodeURIComponent(offerId)}`,
+    );
+  }
+
+  /** DELETE /v1/conversations/{id}/special-offers/{offerId} — withdraw an offer the guest has not booked yet. */
+  withdraw(conversationId: string | number, offerId: string): Promise<SpecialOfferWithdrawResponse> {
+    return this.client.request<SpecialOfferWithdrawResponse>(
+      'DELETE',
+      `/v1/conversations/${encodeURIComponent(String(conversationId))}/special-offers/${encodeURIComponent(offerId)}`,
+    );
+  }
+}
+
+/** Airbnb inquiries — guests asking about a listing before booking. New in v0.2.16. */
+class InquiriesNamespace {
+  constructor(private readonly client: Repull) {}
+
+  /**
+   * GET /v1/inquiries — cursor-paginated inquiry list. `status` defaults to
+   * `open` server-side; pass `'all'` for every state. Answer an open inquiry
+   * with `conversations.preApprove` or `conversations.specialOffers.create`.
+   */
+  list(
+    query: {
+      status?:
+        | 'open'
+        | 'pre_approved'
+        | 'special_offer_sent'
+        | 'booked'
+        | 'expired'
+        | 'declined'
+        | 'not_possible'
+        | 'all';
+      listing_id?: number;
+      conversation_id?: number;
+      limit?: number;
+      cursor?: string;
+      include_total?: boolean;
+    } = {},
+  ): Promise<InquiryListResponse> {
+    return this.client.request<InquiryListResponse>('GET', '/v1/inquiries', { query });
   }
 }
 
@@ -737,10 +889,29 @@ class ChannelsNamespace {
 class AirbnbChannelNamespace {
   readonly listings: AirbnbListingsNamespace;
   readonly alterations: AirbnbAlterationsNamespace;
+  /** Airbnb pre-approvals / special offers by Airbnb id. New in v0.2.16. */
+  readonly offers: AirbnbOffersNamespace;
 
   constructor(client: Repull) {
     this.listings = new AirbnbListingsNamespace(client);
     this.alterations = new AirbnbAlterationsNamespace(client);
+    this.offers = new AirbnbOffersNamespace(client);
+  }
+}
+
+class AirbnbOffersNamespace {
+  constructor(private readonly client: Repull) {}
+
+  /**
+   * GET /v1/channels/airbnb/offers?offerId= — read a pre-approval or special
+   * offer straight from Airbnb by its Airbnb id (a live upstream read). Prefer
+   * `repull.conversations.specialOffers.get(conversationId, offerId)` when you
+   * have the conversation — it also confirms the offer belongs to it.
+   */
+  get(offerId: string): Promise<AirbnbOffer> {
+    return this.client.request<AirbnbOffer>('GET', '/v1/channels/airbnb/offers', {
+      query: { offerId },
+    });
   }
 }
 

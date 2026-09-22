@@ -323,3 +323,80 @@ describe('listing_inactive errors', () => {
     expect((err as RepullAuthError).listingIds).toEqual(['4118']);
   });
 });
+
+describe('v0.2.16 — inquiries, pre-approval, special offers, booking requests, attachments', () => {
+  it('conversations.send forwards attachments in the body', async () => {
+    const { repull, calls } = client({});
+    await repull.conversations.send(164743, {
+      message: 'Parking map attached',
+      attachments: [{ url: 'https://cdn.example.com/map.jpg', contentType: 'image/jpeg' }],
+    });
+    expect(calls[0].method).toBe('POST');
+    expect(calls[0].url.pathname).toBe('/v1/conversations/164743/messages');
+    expect(calls[0].body).toEqual({
+      message: 'Parking map attached',
+      attachments: [{ url: 'https://cdn.example.com/map.jpg', contentType: 'image/jpeg' }],
+    });
+  });
+
+  it('conversations.preApprove POSTs to /pre-approval with an empty body by default', async () => {
+    const { repull, calls } = client({ conversationId: '164743', status: 'pre_approved' }, 201);
+    const res = await repull.conversations.preApprove(164743);
+    expect(calls[0].method).toBe('POST');
+    expect(calls[0].url.pathname).toBe('/v1/conversations/164743/pre-approval');
+    expect(calls[0].body).toEqual({});
+    expect(res.status).toBe('pre_approved');
+  });
+
+  it('conversations.specialOffers create / get / withdraw hit the right paths', async () => {
+    const { repull, calls } = client({ id: '1459920384', status: 'withdrawn' });
+    await repull.conversations.specialOffers.create(164743, {
+      checkIn: '2026-10-01',
+      checkOut: '2026-10-05',
+      guests: { adults: 2 },
+      totalPrice: 880,
+    });
+    await repull.conversations.specialOffers.get(164743, '1459920384');
+    await repull.conversations.specialOffers.withdraw(164743, '1459920384');
+    expect(calls.map((c) => `${c.method} ${c.url.pathname}`)).toEqual([
+      'POST /v1/conversations/164743/special-offers',
+      'GET /v1/conversations/164743/special-offers/1459920384',
+      'DELETE /v1/conversations/164743/special-offers/1459920384',
+    ]);
+    expect(calls[0].body).toEqual({
+      checkIn: '2026-10-01',
+      checkOut: '2026-10-05',
+      guests: { adults: 2 },
+      totalPrice: 880,
+    });
+  });
+
+  it('reservations.accept / decline answer a booking request', async () => {
+    const { repull, calls } = client({ reservationId: '236354', action: 'decline' });
+    await repull.reservations.accept(236354);
+    await repull.reservations.decline(236354, { reason: 'dates_not_available', message: 'Sorry, taken.' });
+    expect(calls[0].url.pathname).toBe('/v1/reservations/236354/accept');
+    expect(calls[1].url.pathname).toBe('/v1/reservations/236354/decline');
+    expect(calls[1].body).toEqual({ reason: 'dates_not_available', message: 'Sorry, taken.' });
+  });
+
+  it('inquiries.list passes filters as query params', async () => {
+    const { repull, calls } = client({ data: [], pagination: { nextCursor: null, hasMore: false } });
+    await repull.inquiries.list({ status: 'all', listing_id: 23892, limit: 10 });
+    expect(calls[0].method).toBe('GET');
+    expect(calls[0].url.pathname).toBe('/v1/inquiries');
+    expect(calls[0].url.searchParams.get('status')).toBe('all');
+    expect(calls[0].url.searchParams.get('listing_id')).toBe('23892');
+    expect(calls[0].url.searchParams.get('limit')).toBe('10');
+  });
+});
+
+describe('channels.airbnb.offers.get', () => {
+  it('reads an Airbnb offer by its Airbnb id via ?offerId=', async () => {
+    const { repull, calls } = client({});
+    await repull.channels.airbnb.offers.get('1459920384');
+    expect(calls[0].method).toBe('GET');
+    expect(calls[0].url.pathname).toBe('/v1/channels/airbnb/offers');
+    expect(calls[0].url.searchParams.get('offerId')).toBe('1459920384');
+  });
+});

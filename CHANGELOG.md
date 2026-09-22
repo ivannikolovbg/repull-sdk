@@ -3,6 +3,42 @@
 All notable changes to `@repull/sdk` and `@repull/types` are recorded here.
 This project follows [Semantic Versioning](https://semver.org/).
 
+## v0.2.16 — 2026-09-22
+
+Regenerated `@repull/types` against the live spec (191 → 199 operations, none
+removed) and extended the facade to cover Airbnb inquiries, pre-approvals,
+special offers, booking-request accept/decline and message attachments.
+Purely additive.
+
+### Added
+
+- **`repull.inquiries.list({ status?, listing_id?, conversation_id?, limit?, cursor? })`** —
+  `GET /v1/inquiries`. `status` defaults to `open` server-side; pass `'all'`
+  for every state.
+- **`repull.conversations.preApprove(id, { blockInstantBooking? })`** —
+  `POST /v1/conversations/{id}/pre-approval`. Read `expiresAt` for when the
+  pre-approval lapses.
+- **`repull.conversations.specialOffers.create / get / withdraw`** —
+  `POST /v1/conversations/{id}/special-offers`, `GET`/`DELETE
+  .../special-offers/{offerId}`. `totalPrice` is the whole-stay total in the
+  listing's Airbnb currency.
+- **`repull.channels.airbnb.offers.get(offerId)`** —
+  `GET /v1/channels/airbnb/offers?offerId=`, a live Airbnb read by Airbnb id.
+- **`repull.reservations.accept(id)` / `repull.reservations.decline(id, { reason, message })`** —
+  `POST /v1/reservations/{id}/accept|decline` for a pending Airbnb booking
+  request (`status: 'pending'`, answer before `respondBy`).
+- **`attachments` on `repull.conversations.send`** — up to 5 files by public
+  `https://` URL. Per-channel limits are documented on `SendMessageRequest`.
+- **Types**: `Inquiry`, `InquiryListResponse`, `ConversationPreApproval(Request)`,
+  `SpecialOffer`, `SpecialOfferCreateRequest`, `SpecialOfferWithdrawResponse`,
+  `AirbnbOffer`, `ReservationDeclineRequest`, `ReservationRequestResponse`,
+  `SendMessageAttachment`, `SentAttachment`, `WebhookEvent`, `WebhookEventType`,
+  `InquiryWebhookObject`, and the new webhook envelopes `InquiryCreatedEvent`,
+  `InquiryUpdatedEvent`, `ReservationRequestCreatedEvent`,
+  `ReservationRequestUpdatedEvent` (`inquiry.created/updated`,
+  `reservation.request.created/updated`).
+- `Reservation` gains `statusDetail` (`request_expired`) and `respondBy`.
+
 ## v0.2.15 — 2026-09-18
 
 Regenerated `@repull/types` against the live spec (175 → 191 operations, none

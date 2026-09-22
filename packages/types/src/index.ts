@@ -196,6 +196,55 @@ export type ReservationGuestInput = components['schemas']['ReservationGuestInput
 export type SendMessageRequest = components['schemas']['SendMessageRequest'];
 /** Returned by `POST /v1/conversations/{id}/messages`. */
 export type SendMessageResponse = components['schemas']['SendMessageResponse'];
+/** One file in `SendMessageRequest.attachments` (up to 5 per message; per-channel limits apply). */
+export type SendMessageAttachment = components['schemas']['SendMessageAttachment'];
+/** One delivered file echoed back on `SendMessageResponse`. */
+export type SentAttachment = components['schemas']['SentAttachment'];
+
+/** Body of `POST /v1/conversations/{id}/pre-approval` (optional). */
+export type ConversationPreApprovalRequest =
+  NonNullable<operations['preapprove_conversation']['requestBody']>['content']['application/json'];
+/** Returned by `POST /v1/conversations/{id}/pre-approval` (201). */
+export type ConversationPreApproval =
+  operations['preapprove_conversation']['responses'][201]['content']['application/json'];
+/** Body of `POST /v1/conversations/{id}/special-offers`. */
+export type SpecialOfferCreateRequest =
+  operations['create_conversation_special_offer']['requestBody']['content']['application/json'];
+/** A special offer — returned by create (201) and `GET /v1/conversations/{id}/special-offers/{offerId}`. */
+export type SpecialOffer =
+  operations['get_conversation_special_offer']['responses'][200]['content']['application/json'];
+/** Returned by `DELETE /v1/conversations/{id}/special-offers/{offerId}`. */
+export type SpecialOfferWithdrawResponse =
+  operations['withdraw_conversation_special_offer']['responses'][200]['content']['application/json'];
+/** Returned by `GET /v1/channels/airbnb/offers?offerId=` — a pre-approval or special offer read live from Airbnb. */
+export type AirbnbOffer =
+  operations['get_airbnb_offer']['responses'][200]['content']['application/json'];
+/** Body of `POST /v1/reservations/{id}/decline`. */
+export type ReservationDeclineRequest =
+  operations['decline_reservation_request']['requestBody']['content']['application/json'];
+/** Returned by `POST /v1/reservations/{id}/accept` and `/decline`. */
+export type ReservationRequestResponse =
+  operations['accept_reservation_request']['responses'][200]['content']['application/json'];
+/** Returned by `GET /v1/inquiries`. */
+export type InquiryListResponse =
+  operations['list_inquiries']['responses'][200]['content']['application/json'];
+/** One inquiry row from `GET /v1/inquiries`. */
+export type Inquiry = InquiryListResponse['data'][number];
+
+/** Every webhook event type the API can deliver. */
+export type WebhookEventType = components['schemas']['WebhookEventType'];
+/** Discriminated union of every webhook delivery envelope, keyed on `type`. */
+export type WebhookEvent = components['schemas']['WebhookEvent'];
+/** `data.object` of `inquiry.*` webhook events. */
+export type InquiryWebhookObject = components['schemas']['InquiryWebhookObject'];
+/** `inquiry.created` webhook delivery. */
+export type InquiryCreatedEvent = components['schemas']['InquiryCreatedEvent'];
+/** `inquiry.updated` webhook delivery. */
+export type InquiryUpdatedEvent = components['schemas']['InquiryUpdatedEvent'];
+/** `reservation.request.created` webhook delivery (a guest asked to book; accept or decline it). */
+export type ReservationRequestCreatedEvent = components['schemas']['ReservationRequestCreatedEvent'];
+/** `reservation.request.updated` webhook delivery (the request was accepted, declined or expired). */
+export type ReservationRequestUpdatedEvent = components['schemas']['ReservationRequestUpdatedEvent'];
 
 /**
  * Custom field-mapping schema. Reshapes the `native` response payload into
