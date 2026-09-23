@@ -67,8 +67,12 @@ import type {
   InquiryListResponse,
   Listing,
   ListingActiveResponse,
+  ListingMarketStateRequest,
+  ListingMarketStateResponse,
   ListingStatusBatchRequest,
   ListingStatusBatchResponse,
+  BookingPropertyActionRequest,
+  BookingPropertyActionResponse,
   ConnectDisconnectResponse,
   ListResponse,
   MarketBrowseResponse,
@@ -880,9 +884,76 @@ class HealthNamespace {
 
 class ChannelsNamespace {
   readonly airbnb: AirbnbChannelNamespace;
+  /** Booking.com property-level operations. New in v0.2.17. */
+  readonly booking: BookingChannelNamespace;
 
   constructor(private readonly client: Repull) {
     this.airbnb = new AirbnbChannelNamespace(client);
+    this.booking = new BookingChannelNamespace(client);
+  }
+}
+
+class BookingChannelNamespace {
+  readonly properties: BookingPropertiesNamespace;
+
+  constructor(client: Repull) {
+    this.properties = new BookingPropertiesNamespace(client);
+  }
+}
+
+class BookingPropertiesNamespace {
+  constructor(private readonly client: Repull) {}
+
+  /**
+   * POST /v1/channels/booking/properties/{id} — take this listing's
+   * Booking.com property off sale, or put it back. New in v0.2.17.
+   *
+   * `id` is a **Repull listing id**, not a Booking.com hotel id.
+   *
+   * **Booking.com has no unlist, so this is an availability write.** `unlist`
+   * closes the mapped room across the whole forward window. `relist` is not
+   * its mirror image: it re-syncs the true calendar, so dates that are
+   * genuinely blocked (a reservation, an owner stay) stay blocked and only the
+   * closure `unlist` wrote lifts — re-opening everything would sell dates that
+   * are not for sale.
+   *
+   * **Which property gets closed.** A listing can be mapped to more than one
+   * Booking.com property. With exactly one, send nothing. With several, name
+   * one with `hotelId`; omit it and the request is refused with
+   * `409 ambiguous_booking_mapping` listing the candidates, and nothing is
+   * written — closing the wrong property's availability takes real inventory
+   * off sale while the one you meant keeps selling. Naming a property this
+   * listing is not mapped to is a `404` that names the ones it is.
+   *
+   * **This does not change the listing in Repull** — `active` is untouched by
+   * both actions. To take a listing off the market on every channel at once,
+   * use `repull.listings.offline(id)`.
+   */
+  action(
+    id: string | number,
+    body: BookingPropertyActionRequest,
+  ): Promise<BookingPropertyActionResponse> {
+    return this.client.request<BookingPropertyActionResponse>(
+      'POST',
+      `/v1/channels/booking/properties/${encodeURIComponent(String(id))}`,
+      { body },
+    );
+  }
+
+  /** `action(id, { action: 'unlist' })`. New in v0.2.17. */
+  unlist(
+    id: string | number,
+    opts: { hotelId?: string } = {},
+  ): Promise<BookingPropertyActionResponse> {
+    return this.action(id, { action: 'unlist', ...opts });
+  }
+
+  /** `action(id, { action: 'relist' })`. New in v0.2.17. */
+  relist(
+    id: string | number,
+    opts: { hotelId?: string } = {},
+  ): Promise<BookingPropertyActionResponse> {
+    return this.action(id, { action: 'relist', ...opts });
   }
 }
 
@@ -1463,6 +1534,71 @@ class ListingsNamespace {
     return this.client.request<ListingPullResponse>(
       'POST',
       `/v1/listings/${encodeURIComponent(String(id))}/pull/airbnb`,
+      { body },
+    );
+  }
+
+  /**
+   * POST /v1/listings/{id}/offline — stop this listing being sold, on every
+   * channel it is connected to, in one call. New in v0.2.17.
+   *
+   * **Not the same as deactivating the listing in Repull.** Taking a listing
+   * offline stops it taking bookings but leaves billing, plan limits and API
+   * access untouched; `setActive(id, false)` does the opposite — the
+   * guest-facing listing stays live and keeps selling, while the listing stops
+   * being billed and returns `403 listing_inactive` through the API. Neither
+   * deletes anything.
+   *
+   * What it means differs per channel and you do not have to know which is
+   * which: on Airbnb the live listing is deactivated and then read back, so
+   * "we sent the request" is never reported as success; on Booking.com there
+   * is no unlist, so the mapped room is closed across the forward window.
+   *
+   * **The answer is per channel item.** A listing can sit on several Airbnb
+   * connections and a Booking.com property at once; they fail independently
+   * and a partial result is the ordinary outcome — check each `channels[]`
+   * entry's `ok`, not just the HTTP status. Pass `hotelId` when the listing is
+   * mapped to more than one Booking.com property, or the call is refused with
+   * `409 ambiguous_booking_mapping` and nothing is written.
+   */
+  offline(
+    id: string | number,
+    body: ListingMarketStateRequest = {},
+  ): Promise<ListingMarketStateResponse> {
+    return this.client.request<ListingMarketStateResponse>(
+      'POST',
+      `/v1/listings/${encodeURIComponent(String(id))}/offline`,
+      { body },
+    );
+  }
+
+  /**
+   * POST /v1/listings/{id}/online — put this listing back on sale, on every
+   * channel it is connected to. Counterpart of `offline`. New in v0.2.17.
+   *
+   * **It does not push content.** On Airbnb it re-enables sync and makes the
+   * listing available again, but anything that changed while the listing was
+   * down is still unpublished — follow with a publish if the content moved.
+   * On Booking.com it re-syncs the true calendar rather than opening
+   * everything: dates genuinely blocked (a reservation, an owner stay) stay
+   * blocked and only the closure `offline` wrote lifts. The two directions are
+   * deliberately not mirror images.
+   *
+   * **One asymmetry worth planning for.** Taking a listing down passes no
+   * billing gate; putting it back up goes through the channel-publish gate, so
+   * on a lapsed subscription `offline` still works and this throws
+   * `402 payment_required`. That refusal is a billing refusal with the action
+   * that fixes it — retrying or reconnecting the channel does nothing for it.
+   *
+   * Throws `403 listing_inactive` when the listing is inactive.
+   */
+  online(
+    id: string | number,
+    body: ListingMarketStateRequest = {},
+  ): Promise<ListingMarketStateResponse> {
+    return this.client.request<ListingMarketStateResponse>(
+      'POST',
+      `/v1/listings/${encodeURIComponent(String(id))}/online`,
       { body },
     );
   }

@@ -3,6 +3,63 @@
 All notable changes to `@repull/sdk` and `@repull/types` are recorded here.
 This project follows [Semantic Versioning](https://semver.org/).
 
+## v0.2.17 — 2026-09-23
+
+Regenerated `@repull/types` against the live spec (199 → 202 operations, none
+removed) and extended the facade to cover listing market state and
+Booking.com unlist/relist. Purely additive.
+
+### Added
+
+- **`repull.listings.offline(id, { hotelId? })`** and
+  **`repull.listings.online(id, { hotelId? })`** —
+  `POST /v1/listings/{id}/offline|online`. Take a listing off sale, or put it
+  back, on every connected channel in one call.
+
+  This is **not** the same as deactivating a listing in Repull, and the two get
+  confused because both sound like removal:
+
+  | | `listings.offline(id)` | `listings.setActive(id, false)` |
+  |---|---|---|
+  | The guest-facing listing | **Stops taking bookings** | Stays live and keeps selling |
+  | Billing and plan limits | Unchanged | No longer billed, no longer counts toward the cap |
+  | API access to the listing | Unchanged | `403 listing_inactive` until reactivated |
+
+  The answer is **per channel item**: a listing can sit on several Airbnb
+  connections and a Booking.com property at once, they fail independently, and
+  a partial result is the ordinary outcome — read each `channels[].ok`, not
+  just the absence of a thrown error. `online` is not the mirror image of
+  `offline`: it re-syncs the true calendar rather than opening everything, so
+  genuinely blocked dates stay blocked. It also goes through the
+  channel-publish gate, so on a lapsed subscription `offline` still works and
+  `online` throws `402 payment_required`.
+- **`repull.channels.booking.properties.unlist(id, { hotelId? })`**,
+  **`.relist(id, { hotelId? })`** and the underlying **`.action(id, body)`** —
+  `POST /v1/channels/booking/properties/{id}`, where `id` is a **Repull listing
+  id**, not a Booking.com hotel id. Booking.com has no unlist, so this is an
+  availability write. Pass `hotelId` when the listing maps to several
+  Booking.com properties, or the call is refused with
+  `409 ambiguous_booking_mapping` and nothing is written.
+- **Types** — `ListingMarketStateRequest`, `ListingMarketStateResponse`,
+  `ChannelMarketStateItem`, `BookingPropertyActionRequest`,
+  `BookingPropertyActionResponse` and `BookingPublishResult` are now exported
+  as convenience aliases from `@repull/types` and re-exported from
+  `@repull/sdk`.
+- **Generated surface** (`@repull/types`) — `POST /v1/channels/booking/setup`
+  gains the `create-property`, `add-room`, `add-unit` and `advance` actions;
+  `ListingCreateRequest` gains `roomTypeCategory`, `propertyTypeCategory` and
+  `postalCode`; `ListingContentUpdateRequest.address` gains `state` and
+  `postalCode`; `ListingPublishStatusChannel` gains `pushError`;
+  `ListingPublishStatusConnection` gains `lockedFields`;
+  `ListingPublishStatusResponse` gains `addressReadiness`;
+  `AirbnbPublishResult` gains `live` and `warnings`; the error envelope gains
+  `previous_code`.
+
+### Changed
+
+- `ListingPublishResponse` is now `ListingPublishBookingResponse` (the type
+  behind `POST /v1/listings/{id}/publish/booking`); the old name is gone.
+
 ## v0.2.16 — 2026-09-22
 
 Regenerated `@repull/types` against the live spec (191 → 199 operations, none

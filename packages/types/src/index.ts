@@ -26,6 +26,27 @@ export type ListingStatusBatchRequest = components['schemas']['ListingStatusBatc
 /** Response of `POST /v1/listings/status` — `{ active, updated, unchanged }`. */
 export type ListingStatusBatchResponse = components['schemas']['ListingStatusBatchResponse'];
 /**
+ * Body of `POST /v1/listings/{id}/online` and `.../offline` — optional
+ * `hotelId` to disambiguate when the listing is mapped to several
+ * Booking.com properties.
+ */
+export type ListingMarketStateRequest = components['schemas']['ListingMarketStateRequest'];
+/**
+ * Response of `POST /v1/listings/{id}/online` and `.../offline` —
+ * `{ listingId, state, channels }`. Channels fail independently, so a partial
+ * result is an ordinary outcome: check each item's `ok`.
+ */
+export type ListingMarketStateResponse = components['schemas']['ListingMarketStateResponse'];
+/** One channel's outcome inside a `ListingMarketStateResponse`. */
+export type ChannelMarketStateItem = components['schemas']['ChannelMarketStateItem'];
+/** Body of `POST /v1/channels/booking/properties/{id}` — `unlist` / `relist`. */
+export type BookingPropertyActionRequest = components['schemas']['BookingPropertyActionRequest'];
+/** Response of `POST /v1/channels/booking/properties/{id}`. */
+export type BookingPropertyActionResponse =
+  components['schemas']['BookingPropertyActionResponse'];
+/** Booking.com half of a publish result. */
+export type BookingPublishResult = components['schemas']['BookingPublishResult'];
+/**
  * `DELETE /v1/connect/{provider}` response —
  * `{ disconnected, provider, accountId, listingsDeactivated }`.
  */
