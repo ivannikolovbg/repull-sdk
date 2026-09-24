@@ -304,10 +304,6 @@ export class Repull {
 class MigrationsNamespace {
   constructor(private readonly client: Repull) {}
 
-  private path(workspaceId: string | number, suffix = ''): string {
-    return `/v1/migrations/${encodeURIComponent(String(workspaceId))}${suffix}`;
-  }
-
   /** GET /v1/migrations — newest first, cursor-paginated. */
   list(query: { limit?: number; cursor?: string } = {}): Promise<{
     data: Migration[];
@@ -318,17 +314,17 @@ class MigrationsNamespace {
 
   /** GET /v1/migrations/{workspaceId} — state, sources with their last import, counts. */
   get(workspaceId: string | number): Promise<{ data: Migration }> {
-    return this.client.request('GET', this.path(workspaceId));
+    return this.client.request('GET', `/v1/migrations/${encodeURIComponent(String(workspaceId))}`);
   }
 
   /** GET /v1/migrations/{workspaceId}/report — what landed, and what needs a decision. */
   report(workspaceId: string | number): Promise<{ data: MigrationReport }> {
-    return this.client.request('GET', this.path(workspaceId, '/report'));
+    return this.client.request('GET', `/v1/migrations/${encodeURIComponent(String(workspaceId))}/report`);
   }
 
   /** GET /v1/migrations/{workspaceId}/channel-map — Airbnb / Booking.com / VRBO links, read live. */
   channelMap(workspaceId: string | number): Promise<{ data: MigrationChannelMap }> {
-    return this.client.request('GET', this.path(workspaceId, '/channel-map'));
+    return this.client.request('GET', `/v1/migrations/${encodeURIComponent(String(workspaceId))}/channel-map`);
   }
 
   /** POST /v1/migrations/{workspaceId}/import — run the import again. */
@@ -336,7 +332,7 @@ class MigrationsNamespace {
     workspaceId: string | number,
     body: { entities?: Array<'listings' | 'reservations' | 'messages' | 'calendar'>; since?: string } = {},
   ): Promise<{ data: { workspaceId: string; queued: Array<{ connectionId: string; provider: string; queued: boolean; error?: string }> } }> {
-    return this.client.request('POST', this.path(workspaceId, '/import'), { body });
+    return this.client.request('POST', `/v1/migrations/${encodeURIComponent(String(workspaceId))}/import`, { body });
   }
 
   /** POST /v1/migrations/{workspaceId}/cutover-check — compare your upcoming reservations with the source. */
@@ -344,17 +340,17 @@ class MigrationsNamespace {
     workspaceId: string | number,
     reservations: Array<{ confirmationCode: string; checkIn: string; checkOut: string }>,
   ): Promise<{ data: MigrationCutoverCheck }> {
-    return this.client.request('POST', this.path(workspaceId, '/cutover-check'), { body: { reservations } });
+    return this.client.request('POST', `/v1/migrations/${encodeURIComponent(String(workspaceId))}/cutover-check`, { body: { reservations } });
   }
 
   /** POST /v1/migrations/{workspaceId}/cutover — disconnect the source. Idempotent. */
   cutover(workspaceId: string | number): Promise<{ data: Migration & { disconnectedConnections: number } }> {
-    return this.client.request('POST', this.path(workspaceId, '/cutover'));
+    return this.client.request('POST', `/v1/migrations/${encodeURIComponent(String(workspaceId))}/cutover`);
   }
 
   /** DELETE /v1/migrations/{workspaceId} — cut over and deactivate. The data is kept. */
   delete(workspaceId: string | number): Promise<{ data: { workspaceId: string; deactivated: boolean; deactivatedAt: string } }> {
-    return this.client.request('DELETE', this.path(workspaceId));
+    return this.client.request('DELETE', `/v1/migrations/${encodeURIComponent(String(workspaceId))}`);
   }
 }
 
