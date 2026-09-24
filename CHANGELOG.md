@@ -3,6 +3,27 @@
 All notable changes to `@repull/sdk` and `@repull/types` are recorded here.
 This project follows [Semantic Versioning](https://semver.org/).
 
+## v0.2.18 — 2026-09-24
+
+Regenerated against the live `https://api.repull.dev/openapi.json` (202 → 209 operations).
+
+### Additive
+- **Repull Migrate** — `repull.migrations`: `list`, `get`, `report`, `channelMap`, `import`, `cutoverCheck`,
+  `cutover`, `delete`.
+- `repull.workspace(workspaceId)` — a client that acts on a workspace your workspace created through Repull
+  Migrate (sends `X-Workspace-Id`); also available as the `workspaceId` constructor option.
+- `connect.createSession` accepts `purpose: 'migrate'`, `workspace`, `copy`, `scope` — and `locale`, which the
+  API always accepted but this method did not forward.
+- Types: `Migration`, `MigrationReport`, `MigrationChannelMap`, `MigrationCutoverCheck`, `MigrationImportRun`,
+  `MigrationCompletedEvent`, `MigrationFailedEvent`, …; `ConnectProvider.migrationCapabilities`.
+
+### Changed
+- Airbnb permits write takes Airbnb's submission shape (`flow_slug` + `answers` keyed by `answer_key`).
+- Default User-Agent now reports the real version (it still said 0.2.16).
+
+### Removed
+- Atlas health endpoint types (endpoint retired).
+
 ## v0.2.17 — 2026-09-23
 
 Regenerated `@repull/types` against the live spec (199 → 202 operations, none

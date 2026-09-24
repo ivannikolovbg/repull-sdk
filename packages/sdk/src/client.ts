@@ -47,6 +47,10 @@ import type {
   ListingPullAirbnbRequest,
   ListingPullResponse,
   ConnectPickerSession,
+  Migration,
+  MigrationChannelMap,
+  MigrationCutoverCheck,
+  MigrationReport,
   ConnectProvider,
   ConnectSession,
   ConnectStatus,
@@ -98,7 +102,7 @@ import { RepullError } from './errors.js';
 import { KvNamespace } from './kv.js';
 
 const DEFAULT_BASE_URL = 'https://api.repull.dev';
-const DEFAULT_USER_AGENT = '@repull/sdk/0.2.16';
+const DEFAULT_USER_AGENT = '@repull/sdk/0.2.18';
 
 export type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
@@ -118,6 +122,11 @@ export interface RepullOptions {
   userAgent?: string;
   /** Number of retries on 429/5xx. Default 2. */
   maxRetries?: number;
+  /**
+   * Act on a workspace your workspace created through Repull Migrate: every
+   * request carries `X-Workspace-Id`. Prefer `repull.workspace(id)`.
+   */
+  workspaceId?: string | number;
 }
 
 const isBrowser = typeof window !== 'undefined' && typeof (globalThis as { document?: unknown }).document !== 'undefined';
@@ -136,6 +145,7 @@ export class Repull {
   readonly listings: ListingsNamespace;
   readonly schemas: SchemasNamespace;
   readonly kv: KvNamespace;
+  readonly migrations: MigrationsNamespace;
 
   private readonly opts: {
     apiKey?: string;
@@ -144,6 +154,7 @@ export class Repull {
     maxRetries: number;
     fetch: FetchLike;
     userAgent: string;
+    workspaceId?: string;
   };
 
   constructor(opts: RepullOptions = {}) {
@@ -173,6 +184,7 @@ export class Repull {
       maxRetries: opts.maxRetries ?? 2,
       fetch: fetchImpl,
       userAgent,
+      workspaceId: opts.workspaceId !== undefined ? String(opts.workspaceId) : undefined,
     };
 
     this.connect = new ConnectNamespace(this);
@@ -188,6 +200,26 @@ export class Repull {
     this.listings = new ListingsNamespace(this);
     this.schemas = new SchemasNamespace(this);
     this.kv = new KvNamespace(this);
+    this.migrations = new MigrationsNamespace(this);
+  }
+
+  /**
+   * A client that acts on a workspace your workspace created through Repull
+   * Migrate — same key, every request sent with `X-Workspace-Id`.
+   *
+   *   const pm = repull.workspace(migration.workspaceId)
+   *   const { data } = await pm.properties.list()
+   */
+  workspace(workspaceId: string | number): Repull {
+    return new Repull({
+      apiKey: this.opts.apiKey,
+      baseUrl: this.opts.baseUrl,
+      dangerouslyAllowBrowser: this.opts.dangerouslyAllowBrowser,
+      fetch: this.opts.fetch,
+      userAgent: this.opts.userAgent,
+      maxRetries: this.opts.maxRetries,
+      workspaceId,
+    });
   }
 
   /** @internal */
@@ -210,6 +242,7 @@ export class Repull {
     if (!isBrowser) headers['User-Agent'] = this.opts.userAgent;
     if (init.xSchema) headers['X-Schema'] = init.xSchema;
     if (init.idempotencyKey) headers['Idempotency-Key'] = init.idempotencyKey;
+    if (this.opts.workspaceId) headers['X-Workspace-Id'] = this.opts.workspaceId;
 
     const reqInit: RequestInit = {
       method,
@@ -263,6 +296,68 @@ export class Repull {
   }
 }
 
+/**
+ * Repull Migrate — every property manager you move gets a workspace of their
+ * own. Start one with `connect.createSession({ purpose: 'migrate', … })`,
+ * track it here, and read its data with `repull.workspace(workspaceId)`.
+ */
+class MigrationsNamespace {
+  constructor(private readonly client: Repull) {}
+
+  private path(workspaceId: string | number, suffix = ''): string {
+    return `/v1/migrations/${encodeURIComponent(String(workspaceId))}${suffix}`;
+  }
+
+  /** GET /v1/migrations — newest first, cursor-paginated. */
+  list(query: { limit?: number; cursor?: string } = {}): Promise<{
+    data: Migration[];
+    pagination: { nextCursor: string | null; hasMore: boolean; total: number };
+  }> {
+    return this.client.request('GET', '/v1/migrations', { query });
+  }
+
+  /** GET /v1/migrations/{workspaceId} — state, sources with their last import, counts. */
+  get(workspaceId: string | number): Promise<{ data: Migration }> {
+    return this.client.request('GET', this.path(workspaceId));
+  }
+
+  /** GET /v1/migrations/{workspaceId}/report — what landed, and what needs a decision. */
+  report(workspaceId: string | number): Promise<{ data: MigrationReport }> {
+    return this.client.request('GET', this.path(workspaceId, '/report'));
+  }
+
+  /** GET /v1/migrations/{workspaceId}/channel-map — Airbnb / Booking.com / VRBO links, read live. */
+  channelMap(workspaceId: string | number): Promise<{ data: MigrationChannelMap }> {
+    return this.client.request('GET', this.path(workspaceId, '/channel-map'));
+  }
+
+  /** POST /v1/migrations/{workspaceId}/import — run the import again. */
+  import(
+    workspaceId: string | number,
+    body: { entities?: Array<'listings' | 'reservations' | 'messages' | 'calendar'>; since?: string } = {},
+  ): Promise<{ data: { workspaceId: string; queued: Array<{ connectionId: string; provider: string; queued: boolean; error?: string }> } }> {
+    return this.client.request('POST', this.path(workspaceId, '/import'), { body });
+  }
+
+  /** POST /v1/migrations/{workspaceId}/cutover-check — compare your upcoming reservations with the source. */
+  cutoverCheck(
+    workspaceId: string | number,
+    reservations: Array<{ confirmationCode: string; checkIn: string; checkOut: string }>,
+  ): Promise<{ data: MigrationCutoverCheck }> {
+    return this.client.request('POST', this.path(workspaceId, '/cutover-check'), { body: { reservations } });
+  }
+
+  /** POST /v1/migrations/{workspaceId}/cutover — disconnect the source. Idempotent. */
+  cutover(workspaceId: string | number): Promise<{ data: Migration & { disconnectedConnections: number } }> {
+    return this.client.request('POST', this.path(workspaceId, '/cutover'));
+  }
+
+  /** DELETE /v1/migrations/{workspaceId} — cut over and deactivate. The data is kept. */
+  delete(workspaceId: string | number): Promise<{ data: { workspaceId: string; deactivated: boolean; deactivatedAt: string } }> {
+    return this.client.request('DELETE', this.path(workspaceId));
+  }
+}
+
 class ConnectNamespace {
   readonly airbnb: AirbnbConnectNamespace;
   readonly booking: BookingConnectNamespace;
@@ -296,12 +391,30 @@ class ConnectNamespace {
     redirectUrl: string;
     allowedProviders?: string[];
     state?: string;
-  }): Promise<ConnectPickerSession> {
-    return this.client.request<ConnectPickerSession>('POST', '/v1/connect', {
+    /** Pin the hosted pages' language (`en`, `fr`). */
+    locale?: string;
+    /**
+     * `'migrate'` starts a Repull Migrate session: the property manager's data
+     * lands in a workspace of their own, returned as `workspaceId`.
+     */
+    purpose?: 'connect' | 'migrate';
+    /** Migrate only — the property manager being moved. */
+    workspace?: { name: string; externalRef?: string };
+    /** Migrate only — your wording for the hosted pages. */
+    copy?: { title?: string; subtitle?: string; completedTitle?: string; completedBody?: string };
+    /** Migrate only — what you want brought across, shown before they connect. */
+    scope?: string[];
+  }): Promise<ConnectPickerSession & { purpose?: 'migrate'; workspaceId?: string }> {
+    return this.client.request('POST', '/v1/connect', {
       body: {
         redirectUrl: opts.redirectUrl,
         ...(opts.allowedProviders ? { allowedProviders: opts.allowedProviders } : {}),
         ...(opts.state ? { state: opts.state } : {}),
+        ...(opts.locale ? { locale: opts.locale } : {}),
+        ...(opts.purpose ? { purpose: opts.purpose } : {}),
+        ...(opts.workspace ? { workspace: opts.workspace } : {}),
+        ...(opts.copy ? { copy: opts.copy } : {}),
+        ...(opts.scope ? { scope: opts.scope } : {}),
       },
     });
   }

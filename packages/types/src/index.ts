@@ -536,5 +536,18 @@ export interface PricingResponse {
   [key: string]: unknown;
 }
 
+// ─── Repull Migrate ──────────────────────────────────────────────
+/** One migration — a property manager moved into a workspace of their own. */
+export type Migration = components['schemas']['Migration'];
+export type MigrationState = components['schemas']['Migration']['state'];
+export type MigrationImportRun = components['schemas']['MigrationImportRun'];
+export type MigrationReport = components['schemas']['MigrationReport'];
+export type MigrationChannelMap = components['schemas']['MigrationChannelMap'];
+export type MigrationCutoverCheck = components['schemas']['MigrationCutoverCheck'];
+export type MigrationReservationRef = components['schemas']['MigrationReservationRef'];
+export type MigrationImportPayload = components['schemas']['MigrationImportPayload'];
+export type MigrationCompletedEvent = components['schemas']['MigrationCompletedEvent'];
+export type MigrationFailedEvent = components['schemas']['MigrationFailedEvent'];
+
 // Force types-only namespace
 export type Paths = paths;

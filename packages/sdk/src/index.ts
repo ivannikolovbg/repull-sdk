@@ -37,6 +37,16 @@ export { RepullError, RepullAuthError, RepullRateLimitError, RepullValidationErr
 export { KvNamespace } from './kv.js';
 export type { KvOptions, KvSetOptions, KvListOptions, KvClearOptions, KvEntry } from './kv.js';
 export type {
+  Migration,
+  MigrationState,
+  MigrationImportRun,
+  MigrationReport,
+  MigrationChannelMap,
+  MigrationCutoverCheck,
+  MigrationReservationRef,
+  MigrationImportPayload,
+  MigrationCompletedEvent,
+  MigrationFailedEvent,
   Property,
   Reservation,
   Listing,
