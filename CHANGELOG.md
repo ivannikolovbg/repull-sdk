@@ -3,6 +3,12 @@
 All notable changes to `@repull/sdk` and `@repull/types` are recorded here.
 This project follows [Semantic Versioning](https://semver.org/).
 
+## [0.2.20] - 2026-09-25
+
+Regenerated against the live `https://api.repull.dev/openapi.json`:
+
+- `Reservation.statusDetail` now says how every `cancelled` reservation ended: `declined`, `request_expired`, `request_voided`, `verification_failed`, `hold_voided`, `cancelled_by_guest`, `cancelled_by_host`, `cancelled_by_platform` — the same on `GET /v1/reservations` and in reservation webhooks.
+
 ## [0.2.19] - 2026-09-24
 
 Regenerated against the live `https://api.repull.dev/openapi.json` (210 operations):
