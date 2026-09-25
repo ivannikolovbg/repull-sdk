@@ -32,8 +32,10 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * List properties
-         * @description Cursor-paginated list of properties for the authenticated workspace. Walk pages with `?cursor=<pagination.nextCursor>`; stop when `pagination.hasMore` is `false`. Cursor is opaque base64 — do not parse it.
+         * List properties (older name for /v1/listings)
+         * @description **`/v1/properties` is the older name for `/v1/listings`** — the same listings, the same ids. It stays for existing integrations; new code should use `/v1/listings`, which is where create, content, publishing and markups live.
+         *
+         *     Cursor-paginated list of properties for the authenticated workspace. Walk pages with `?cursor=<pagination.nextCursor>`; stop when `pagination.hasMore` is `false`. Cursor is opaque base64 — do not parse it.
          *
          *     `?offset=` is also accepted as a first-class alias for shallow paging (0..10000) — see the `offset` parameter below. Mutually exclusive with `cursor`.
          *
@@ -60,8 +62,10 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get property details
-         * @description Fetch a single property by Repull id. Property ids are workspace-scoped — an id from one workspace is not valid in another. 404 means the id does not exist OR belongs to a different workspace.
+         * Get property details (older name for /v1/listings/{id})
+         * @description **`/v1/properties` is the older name for `/v1/listings`** — the same listings, the same ids. It stays for existing integrations; new code should use `/v1/listings`, which is where create, content, publishing and markups live.
+         *
+         *     Fetch a single property by Repull id. Property ids are workspace-scoped — an id from one workspace is not valid in another. 404 means the id does not exist OR belongs to a different workspace.
          *
          *     **Optional expansions:** Pass `?include=amenities` to enrich the response with the property's amenities (sourced from the unified `listings_amenities` table). Returns `[]` when the property has no amenity rows. The default response stays lean; consumers must opt in.
          *
@@ -4205,6 +4209,48 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/listings/{id}/markups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get a listing's channel markups
+         * @description The markup each channel adds to this listing's price.
+         *
+         *     A listing's price on a channel is its own nightly price plus the channel's markup: a $200 night with a 35% Airbnb markup is sent to Airbnb as $270. The calendar keeps the listing's own price (`GET /v1/availability/{propertyId}` returns it); the markup is added only when a price is sent to the channel.
+         *
+         *     - **Airbnb** — one markup per listing.
+         *     - **Booking.com** — one markup per **property**, shared by every listing priced through it (`listingIds` names them).
+         *
+         *     Returns `404 not_found` for a listing that does not exist or is not in this workspace, and `403 listing_inactive` for an inactive one.
+         */
+        get: operations["get_listing_markups"];
+        /**
+         * Set a listing's markup on a channel
+         * @description Set the markup one channel adds to this listing's price. When the value changes, the affected listings' prices are re-sent to that channel straight away (`pricesResent`); nothing else is sent.
+         *
+         *     A listing's price on a channel is its own nightly price plus the channel's markup: a $200 night with a 35% Airbnb markup is sent to Airbnb as $270. The calendar keeps the listing's own price (`GET /v1/availability/{propertyId}` returns it); the markup is added only when a price is sent to the channel.
+         *
+         *     - **Airbnb** — one markup per listing.
+         *     - **Booking.com** — one markup per **property**, shared by every listing priced through it (`listingIds` names them).
+         *
+         *     Returns `404 not_found` for a listing that does not exist or is not in this workspace, and `403 listing_inactive` for an inactive one.
+         *
+         *     On Booking.com the markup belongs to the property, so setting it reprices every listing on that property (`affectedListingIds`). A listing on more than one property must name one with `hotelId`; without it the request is refused with `409 ambiguous_booking_mapping` listing the candidates, rather than repricing a property it guessed.
+         *
+         *     `markupPercent` is a percentage — `15` for 15%. A value between 0 and 1 is refused as a probable fraction, with the number to send instead.
+         */
+        put: operations["set_listing_markup"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -6695,7 +6741,7 @@ export interface components {
             active?: boolean;
             syncEnabled?: boolean;
             primary?: boolean;
-            /** @description Decimal markup (e.g. "1.10" for +10%). */
+            /** @description The Airbnb markup as a fraction: "0.35" = +35% on the listing's own price. Read or set it as a percentage with `/v1/listings/{id}/markups`. */
             markup?: string | null;
             /**
              * @description Airbnb's own API sync decision for THIS listing, as Airbnb reports it. Airbnb authorises sync one listing at a time, so a connected account can still contain listings it will not accept writes for.
@@ -6750,6 +6796,7 @@ export interface components {
             active?: boolean;
             syncEnabled?: boolean;
             bookingUrl?: string | null;
+            /** @description The Booking.com markup on this property, as a fraction: "0.18" = +18%, shared by every listing on the property. Read or set it as a percentage with `/v1/listings/{id}/markups`. */
             markup?: string | null;
             syncCategory?: string | null;
             /** Format: date-time */
@@ -13295,7 +13342,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
-            /** @description `connection_reauth_required` — Airbnb no longer accepts the connection for this action (expired, revoked, or granted without messaging/reservation permissions). Reconnect; retrying cannot succeed. `listing_inactive` — the listing is inactive. */
+            /** @description `insufficient_access` — the Airbnb account is connected with read-only or messaging access; this action needs full access (Airbnb's `property_management` permission). Nothing was sent to Airbnb; reconnect with `accessType: full_access`. `connection_reauth_required` — Airbnb no longer accepts the connection for this action (expired or revoked). Reconnect; retrying cannot succeed. `listing_inactive` — the listing is inactive. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -14389,7 +14436,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
-            /** @description `connection_reauth_required` — Airbnb no longer accepts the connection for this action (expired, revoked, or granted without messaging/reservation permissions). Reconnect; retrying cannot succeed. `listing_inactive` — the listing is inactive. */
+            /** @description `insufficient_access` — the Airbnb account is connected with read-only or messaging access; this action needs full access (Airbnb's `property_management` permission). Nothing was sent to Airbnb; reconnect with `accessType: full_access`. `connection_reauth_required` — Airbnb no longer accepts the connection for this action (expired or revoked). Reconnect; retrying cannot succeed. `listing_inactive` — the listing is inactive. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -14540,7 +14587,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
-            /** @description `connection_reauth_required` — Airbnb no longer accepts the connection for this action (expired, revoked, or granted without messaging/reservation permissions). Reconnect; retrying cannot succeed. `listing_inactive` — the listing is inactive. */
+            /** @description `insufficient_access` — the Airbnb account is connected with read-only or messaging access; this action needs full access (Airbnb's `property_management` permission). Nothing was sent to Airbnb; reconnect with `accessType: full_access`. `connection_reauth_required` — Airbnb no longer accepts the connection for this action (expired or revoked). Reconnect; retrying cannot succeed. `listing_inactive` — the listing is inactive. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -14640,7 +14687,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
-            /** @description `connection_reauth_required` — Airbnb no longer accepts the connection for this action (expired, revoked, or granted without messaging/reservation permissions). Reconnect; retrying cannot succeed. `listing_inactive` — the listing is inactive. */
+            /** @description `insufficient_access` — the Airbnb account is connected with read-only or messaging access; this action needs full access (Airbnb's `property_management` permission). Nothing was sent to Airbnb; reconnect with `accessType: full_access`. `connection_reauth_required` — Airbnb no longer accepts the connection for this action (expired or revoked). Reconnect; retrying cannot succeed. `listing_inactive` — the listing is inactive. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -17792,7 +17839,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
-            /** @description `connection_reauth_required` — Airbnb no longer accepts the connection for this action (expired, revoked, or granted without messaging/reservation permissions). Reconnect; retrying cannot succeed. `listing_inactive` — the listing is inactive. */
+            /** @description `insufficient_access` — the Airbnb account is connected with read-only or messaging access; this action needs full access (Airbnb's `property_management` permission). Nothing was sent to Airbnb; reconnect with `accessType: full_access`. `connection_reauth_required` — Airbnb no longer accepts the connection for this action (expired or revoked). Reconnect; retrying cannot succeed. `listing_inactive` — the listing is inactive. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -18020,7 +18067,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
-            /** @description `connection_reauth_required` — Airbnb no longer accepts the connection for this action (expired, revoked, or granted without messaging/reservation permissions). Reconnect; retrying cannot succeed. `listing_inactive` — the listing is inactive. */
+            /** @description `insufficient_access` — the Airbnb account is connected with read-only or messaging access; this action needs full access (Airbnb's `property_management` permission). Nothing was sent to Airbnb; reconnect with `accessType: full_access`. `connection_reauth_required` — Airbnb no longer accepts the connection for this action (expired or revoked). Reconnect; retrying cannot succeed. `listing_inactive` — the listing is inactive. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -18175,7 +18222,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
-            /** @description `connection_reauth_required` — Airbnb no longer accepts the connection for this action (expired, revoked, or granted without messaging/reservation permissions). Reconnect; retrying cannot succeed. `listing_inactive` — the listing is inactive. */
+            /** @description `insufficient_access` — the Airbnb account is connected with read-only or messaging access; this action needs full access (Airbnb's `property_management` permission). Nothing was sent to Airbnb; reconnect with `accessType: full_access`. `connection_reauth_required` — Airbnb no longer accepts the connection for this action (expired or revoked). Reconnect; retrying cannot succeed. `listing_inactive` — the listing is inactive. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -18265,7 +18312,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
-            /** @description `connection_reauth_required` — Airbnb no longer accepts the connection for this action (expired, revoked, or granted without messaging/reservation permissions). Reconnect; retrying cannot succeed. `listing_inactive` — the listing is inactive. */
+            /** @description `insufficient_access` — the Airbnb account is connected with read-only or messaging access; this action needs full access (Airbnb's `property_management` permission). Nothing was sent to Airbnb; reconnect with `accessType: full_access`. `connection_reauth_required` — Airbnb no longer accepts the connection for this action (expired or revoked). Reconnect; retrying cannot succeed. `listing_inactive` — the listing is inactive. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -18492,7 +18539,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
-            /** @description `connection_reauth_required` — Airbnb no longer accepts the connection for this action (expired, revoked, or granted without messaging/reservation permissions). Reconnect; retrying cannot succeed. `listing_inactive` — the listing is inactive. */
+            /** @description `insufficient_access` — the Airbnb account is connected with read-only or messaging access; this action needs full access (Airbnb's `property_management` permission). Nothing was sent to Airbnb; reconnect with `accessType: full_access`. `connection_reauth_required` — Airbnb no longer accepts the connection for this action (expired or revoked). Reconnect; retrying cannot succeed. `listing_inactive` — the listing is inactive. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -18635,7 +18682,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
-            /** @description `connection_reauth_required` — Airbnb no longer accepts the connection for this action (expired, revoked, or granted without messaging/reservation permissions). Reconnect; retrying cannot succeed. `listing_inactive` — the listing is inactive. */
+            /** @description `insufficient_access` — the Airbnb account is connected with read-only or messaging access; this action needs full access (Airbnb's `property_management` permission). Nothing was sent to Airbnb; reconnect with `accessType: full_access`. `connection_reauth_required` — Airbnb no longer accepts the connection for this action (expired or revoked). Reconnect; retrying cannot succeed. `listing_inactive` — the listing is inactive. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -19099,6 +19146,104 @@ export interface operations {
             403: components["responses"]["ListingInactive"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+            422: components["responses"]["UnprocessableEntity"];
+        };
+    };
+    get_listing_markups: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Repull listing id. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Markups per channel. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @description Repull listing id. */
+                        id?: string;
+                        airbnb?: {
+                            /** @description Airbnb listing id. */
+                            airbnbId?: string;
+                            /**
+                             * @description Percent added to the listing's price on Airbnb. 35 = +35%. `null` = none.
+                             * @example 35
+                             */
+                            markupPercent?: number | null;
+                        }[];
+                        booking?: {
+                            /** @description Booking.com property id. */
+                            hotelId?: string;
+                            /**
+                             * @description Percent added on Booking.com, for every listing on this property.
+                             * @example 18
+                             */
+                            markupPercent?: number | null;
+                            /** @description Listings in this workspace priced through this property — all share this markup. */
+                            listingIds?: string[];
+                        }[];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    set_listing_markup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Repull listing id. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "channel": "booking",
+                 *       "markupPercent": 18
+                 *     }
+                 */
+                "application/json": {
+                    /** @enum {string} */
+                    channel: "airbnb" | "booking";
+                    /** @description 15 = +15%. `null` removes the markup. */
+                    markupPercent: number | null;
+                    /** @description Booking.com property — required when the listing is on more than one. */
+                    hotelId?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Saved. `{ id, channel, markupPercent, changed, hotelId?, affectedListingIds, pricesResent }`. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
+            404: components["responses"]["NotFound"];
+            /** @description `ambiguous_booking_mapping` — the listing is on several Booking.com properties; `valid_values` lists them. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             422: components["responses"]["UnprocessableEntity"];
         };
     };

@@ -3,6 +3,14 @@
 All notable changes to `@repull/sdk` and `@repull/types` are recorded here.
 This project follows [Semantic Versioning](https://semver.org/).
 
+## [0.2.21] - 2026-09-25
+
+Regenerated against the live `https://api.repull.dev/openapi.json`:
+
+- `GET /v1/listings/{id}/markups` and `PUT /v1/listings/{id}/markups` — a listing's markup per channel (Airbnb per listing, Booking.com per property), as a percentage; prices are re-sent to the channel on change.
+- The `markup` field on Airbnb connections and Booking.com properties is documented as a fraction (`"0.35"` = +35%).
+- `/v1/properties` is documented as the older name for `/v1/listings`.
+
 ## [0.2.20] - 2026-09-25
 
 Regenerated against the live `https://api.repull.dev/openapi.json`:
