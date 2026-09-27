@@ -89,13 +89,13 @@ export interface paths {
         };
         /**
          * Get property availability
-         * @description Channel-agnostic day-by-day availability calendar for a property over a date window. Returns a thin per-date shape — `{ date, available, price, minNights }` — projected from the property calendar.
+         * @description Channel-agnostic day-by-day availability calendar for a property over a date window. Returns a thin per-date shape — `{ date, available, price, minNights, availableUnits }` — projected from the property calendar. `availableUnits` is 1 or 0 for a single home, and the rooms of the type left for a hotel-model listing (a Mews or Cloudbeds room type).
          *
          *     The `from` and `to` query params are **required** (ISO `YYYY-MM-DD`, inclusive) — omitting or malforming either returns 422. The window is capped at 366 days; longer ranges are truncated to the first 366 days.
          *
          *     **`days` contains only the dates we actually hold calendar data for.** Requested dates with no calendar row are listed in `coverage.missingDates` — their availability is unknown. Never treat a missing date as bookable: this endpoint deliberately does not synthesise availability, because a fabricated open date can be double-booked. A property with no calendar still returns a real 200 (`days: []`, every date in `coverage.missingDates`), never a 404 — 404 means the property id does not exist or belongs to a different workspace.
          *
-         *     This endpoint is read-only, and the projected per-date shape carries **availability, price, and min-nights only** — it does NOT expose max-stay, closed-to-arrival (CTA), closed-to-departure (CTD), or the dedicated stop-sell flag. To read or write that full restriction set on Booking.com use the channel routes: `GET`/`PUT /v1/channels/booking/availability` (with the room + rate ids from `GET /v1/channels/booking/properties/{id}/rooms`). To **write** calendar values use `PUT /v1/availability/{propertyId}` (or `PATCH /v1/availability/batch`), which updates the property calendar and pushes to its connected channels; channel-only settings stay on the channel routes.
+         *     This endpoint is read-only, and the projected per-date shape carries **availability, units left, price, and min-nights only** — it does NOT expose max-stay, closed-to-arrival (CTA), closed-to-departure (CTD), or the dedicated stop-sell flag. To read or write that full restriction set on Booking.com use the channel routes: `GET`/`PUT /v1/channels/booking/availability` (with the room + rate ids from `GET /v1/channels/booking/properties/{id}/rooms`). To **write** calendar values use `PUT /v1/availability/{propertyId}` (or `PATCH /v1/availability/batch`), which updates the property calendar and pushes to its connected channels; channel-only settings stay on the channel routes.
          *
          *     Returns `403 listing_inactive` when the listing is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
@@ -249,7 +249,7 @@ export interface paths {
         };
         /**
          * Get guest profile
-         * @description Returns the full guest profile — base list-row fields plus contacts, flags, notes, risk metadata, and reservation aggregates. Aggregates main vanio's `GuestService.getGuestProfile()` into the public Repull shape so SDK consumers don't have to learn the internal schema.
+         * @description Returns the full guest profile — base list-row fields plus contacts, flags, notes, risk metadata, and reservation aggregates.
          *
          *     **Inactive listings:** a guest whose every reservation is on an inactive listing returns `403 listing_inactive` naming those listings (the guest is kept, so this is not a 404). Otherwise the reservation aggregates exclude reservations on inactive listings. A guest with no reservations is always readable.
          */
@@ -271,7 +271,7 @@ export interface paths {
         };
         /**
          * List conversations
-         * @description Cursor-paginated list of message threads owned by the workspace. Backed by main vanio's `/api/threads/list` which keyset-paginates against `(last_message_at, id)` for constant per-page cost. Use `pagination.nextCursor` from one response as the `cursor` query param of the next request.
+         * @description Cursor-paginated list of message threads owned by the workspace. Use `pagination.nextCursor` from one response as the `cursor` query param of the next request.
          *
          *     `?offset=` is also accepted as a first-class alias for shallow paging (0..10000) — see the `offset` parameter below. Mutually exclusive with `cursor`.
          *
@@ -375,7 +375,7 @@ export interface paths {
         };
         /**
          * List reviews
-         * @description Cursor-paginated guest + host review stream for the workspace. Backed by main vanio's unified `reviews` table (populated by per-channel backfill crons), so this surface returns the complete cross-channel history — separate from `/v1/channels/airbnb/reviews` which hits Airbnb live.
+         * @description Cursor-paginated guest + host review stream for the workspace. This surface returns the complete cross-channel history — separate from `/v1/channels/airbnb/reviews` which hits Airbnb live.
          *
          *     `?offset=` is also accepted as a first-class alias for shallow paging (0..10000) — see the `offset` parameter below. Mutually exclusive with `cursor`.
          *
@@ -1291,7 +1291,7 @@ export interface paths {
         };
         /**
          * Get Airbnb listing
-         * @description Fetch all Airbnb connection rows for a single Vanio listing id. A property may be linked from multiple Airbnb hosts — every match is returned. Pass `?include=amenities` to enrich each row with its current Airbnb amenities.
+         * @description Fetch all Airbnb connection rows for a single Repull listing id. A property may be linked from multiple Airbnb hosts — every match is returned. Pass `?include=amenities` to enrich each row with its current Airbnb amenities.
          *
          *     Each row carries `syncCategory` — Airbnb's own per-listing API sync decision (`sync_all`, `sync_rates_and_availability`, or `none`) — and `writable`, which is `false` exactly when that category is `none`, meaning Airbnb refuses every write to the listing and Repull returns `403 listing_not_api_connected` without sending anything. `GET /v1/channels/airbnb/listings` reports both fields for the whole portfolio in one call.
          *
@@ -1315,7 +1315,7 @@ export interface paths {
          *     | Reverse it with | `PATCH /v1/listings/{id}` `{ "active": true }` | `action: "relist"` |
          *     | Data kept | Yes, and it keeps syncing | Yes |
          *
-         *     Neither one deletes anything on Airbnb. **There is no endpoint on this API that deletes an Airbnb listing** — the word `delete` on this route means "deactivate the Repull record" and nothing else. (Main vanio's internal listing-sync layer has a same-named action that DOES hard-delete on Airbnb; it is not exposed here, by any endpoint, deliberately. If you have read that code, note that the two names do not mean the same thing.)
+         *     Neither one deletes anything on Airbnb. **There is no endpoint on this API that deletes an Airbnb listing** — the word `delete` on this route means "deactivate the Repull record" and nothing else.
          *
          *     `delete` is idempotent. To take a listing off the market on every channel at once — Airbnb and Booking.com together — use `POST /v1/listings/{id}/offline`.
          *
@@ -1801,18 +1801,26 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * List Airbnb transactions
-         * @description List Airbnb host transactions (reservation earnings, payouts, resolution adjustments) for this workspace, newest first. **Pure DB read** — customer-facing reads never call Airbnb upstream; they serve the `airbnb_transactions` mirror. Each row carries the genuine host- and guest-side financial breakdown (accommodation subtotal, cleaning fee, host + guest service fees split base/VAT, tax buckets, expected/actual host payout with settlement status). Trigger a refresh with `POST` on this path. When the mirror is empty or the host disconnected, `dataFreshness.stale = true` with a `reason` (`never_synced`, `host_disconnected_<iso>`, `sync_lag_>_24h`).
+         * List Airbnb transactions (settlement ledger)
+         * @description The Airbnb settlement ledger for this workspace: every payout Airbnb sent to the host, each followed by the lines it paid — reservations and their installments, adjustments, resolution payouts and adjustments, cancellation fees. A payout's lines' signed `amount`s sum to its `payout.paidOutAmount` exactly, negative lines included (an adjustment offset against a later payout appears under that payout). `status: UPCOMING` lines are expected earnings not paid out yet; they belong to no payout.
          *
-         *     Transactions of reservations on inactive listings are left out; payout rows, which belong to no listing, are always included.
+         *     **Ids are stable.** Airbnb sends no line id and no payout id on lines, so Repull derives them deterministically: a Payout row's id is Airbnb's payout id; a line's is `<payoutId>:<type>:<confirmationCode>:<n>`. The same line has the same id on every refresh and every page, so you can upsert on `transactionId`. A payout that nets to $0.00 has no Airbnb id; it gets a derived `Z-<date>-<hash>` id with `payout.payoutIdSynthetic: true`.
          *
-         *     **Several Airbnb accounts?** A workspace can connect more than one. By default this returns every connected account's rows; pass `?account_id=<airbnb host id>` to scope to one. Every row carries `accountId` + `accountName` either way, and `dataFreshness.accounts[]` reports each account's freshness separately, so one disconnected host no longer marks the whole response stale.
+         *     **Order:** newest first by the payout's date; each Payout row is followed by its lines in Airbnb's order (`payout.lineIndex`).
+         *
+         *     **Dates:** `start_date` / `end_date` match the payout's date for settled lines (a line can be dated the day before its payout, and is still returned with it) and the line's own date for UPCOMING lines.
+         *
+         *     **Pure DB read** — never calls Airbnb. Refresh with `POST` on this path. `dataFreshness` reports when each account's ledger was last refreshed.
+         *
+         *     Lines on listings that are inactive in Repull are included and flagged `onInactiveListing: true`, so every payout reconciles. Lines Repull cannot match to a reservation keep `reservationId: null`.
+         *
+         *     **Not in Airbnb's transaction history** (listed in `unavailableFields`): taxes Airbnb collects and remits itself, and the guest-paid total (see the reservation's financial breakdown); pass-through occupancy tax paid to the host does appear, as its own `Pass Through Tot` lines, the original line a refund or reversal reverses (it names the stay and the resolution), and currency-conversion amounts (only the payout currency is reported).
          */
         get: operations["list_airbnb_transactions"];
         put?: never;
         /**
-         * Sync Airbnb transactions
-         * @description Refresh the Airbnb transactions mirror for this workspace by pulling from Airbnb upstream and upserting the breakdown that `GET` serves. Optional JSON body `{ start_date, end_date, transaction_type }` (`transaction_type` is `COMPLETED` or `UPCOMING`; both are synced when omitted). Returns `{ synced, count }`.
+         * Refresh Airbnb transactions
+         * @description Pull the transaction history from Airbnb into the ledger `GET` serves. Every connected Airbnb account is refreshed, or only `?account_id=`. Without dates: settled lines from the last 12 months and the forecast for the next 12. Safe to repeat: settled lines are upserted on their stable ids, never duplicated or removed; the UPCOMING forecast inside the fetched window is replaced, so a line that has since been paid out moves to its payout. Each account reports its own outcome in `accounts[]`: one account Airbnb refuses (a revoked host, a listing Airbnb no longer serves) is reported there with Airbnb's reason and does not stop the others. When every account fails, the response is Airbnb's answer with its usual code.
          */
         post: operations["sync_airbnb_transactions"];
         delete?: never;
@@ -2103,7 +2111,7 @@ export interface paths {
         put?: never;
         /**
          * Create Airbnb special offer or pre-approval
-         * @description Create a pre-approval or a special offer on an Airbnb thread, addressed by **Airbnb** ids. **Write-side** — calls Airbnb upstream. The Repull-id equivalents, which also update the inquiry in Vanio, are `POST /v1/conversations/{id}/pre-approval` and `POST /v1/conversations/{id}/special-offers` — prefer those unless you only hold Airbnb ids.
+         * @description Create a pre-approval or a special offer on an Airbnb thread, addressed by **Airbnb** ids. **Write-side** — calls Airbnb upstream. The Repull-id equivalents, which also update the inquiry in Repull, are `POST /v1/conversations/{id}/pre-approval` and `POST /v1/conversations/{id}/special-offers` — prefer those unless you only hold Airbnb ids.
          *
          *     - `type: "preapproval"` — let the guest book the dates and price they asked about. Requires `thread_id`; optional `block_instant_booking`.
          *     - `type: "offer"` — your own terms. Requires `thread_id`, `listing_id` (the **Airbnb** listing id, as a string), `start_date`, `nights`, `total_price` (whole stay, listing currency) and `guest_details` with `number_of_guests` (or `number_of_adults`; Airbnb counts adults + children).
@@ -2146,7 +2154,7 @@ export interface paths {
         put?: never;
         /**
          * Create a Repull listing
-         * @description Create a new vacation-rental listing under the authenticated workspace. The listing is stored in the canonical Vanio listings tables and can be published to multiple channels (Airbnb, Booking.com) via the publish endpoints.
+         * @description Create a new vacation-rental listing under the authenticated workspace. The listing is stored as a canonical Repull listing and can be published to multiple channels (Airbnb, Booking.com) via the publish endpoints.
          */
         post: operations["createListing"];
         delete?: never;
@@ -2313,6 +2321,8 @@ export interface paths {
          *     A listing with no Booking.com property mapped at all is not an error: the call returns `result.published: false` with `result.reason` and `result.hotelId: null`, and nothing is pushed.
          *
          *     Returns `403 listing_inactive` when the listing is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
+         *
+         *     A listing with no Booking.com room linked is refused with `409 listing_not_on_booking` and the next step, rather than answered with `published: false`.
          */
         post: operations["publishListingToBooking"];
         delete?: never;
@@ -2358,9 +2368,9 @@ export interface paths {
         put?: never;
         /**
          * Mint a direct-to-storage photo upload URL
-         * @description Mints a short-lived signed upload URL + token for a listing photo. **The client PUTs the raw file bytes directly to the returned `uploadUrl` — the file bytes never pass through the Repull API or main vanio.** This endpoint only mints the URL; do not POST the file itself here, it will not be accepted.
+         * @description Mints a short-lived signed upload URL + token for a listing photo. **The client PUTs the raw file bytes directly to the returned `uploadUrl` — the file bytes never pass through the Repull API.** This endpoint only mints the URL; do not POST the file itself here, it will not be accepted.
          *
-         *     Flow: (1) POST here with `fileName`/`fileType`/optional `fileSize` to get `{ uploadUrl, token, path, publicUrl, expiresIn }`; (2) PUT the raw file bytes to `uploadUrl` from the client; (3) `publicUrl` is the durable URL for the uploaded photo — attach it to the listing via `PUT /v1/listings/{id}/content` (`photos` field) or list it back via `GET /v1/listings/{id}/photos`.
+         *     Flow: (1) POST here with `fileName`, `fileType` and `fileSize` (bytes) to get `{ uploadUrl, token, path, publicUrl, expiresIn }`; (2) PUT the raw file bytes to `uploadUrl` from the client; (3) **attach it** — uploading does not put the photo on the listing: send `publicUrl` in `photos` on `PUT /v1/listings/{id}/content` (with `photosMode: "append"` to keep existing photos). The response's `nextStep` says the same.
          *
          *     Returns `403 listing_inactive` when the listing is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
@@ -4251,6 +4261,112 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/connect/cloudbeds/credentials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Submit Cloudbeds credentials for a Connect session
+         * @description Completes a credentials-pattern connection for Cloudbeds with a property (or organization) API key, created in Cloudbeds under Apps & Marketplace → API Credentials.
+         *
+         *     In Cloudbeds a listing is a room type and its rooms are units. A booking with several rooms becomes one reservation per room.
+         *
+         *     The key is validated and the properties it can see are read before anything is stored. On success Repull subscribes to the property's Cloudbeds webhooks (reservations, guests, room blocks) and queues the first sync.
+         *
+         *     Cloudbeds keys expire if unused for 30 days; the connection's regular sync keeps them alive.
+         *
+         *     No API key required when called with a `sessionId` — the session is the capability token.
+         */
+        post: operations["submitCloudbedsCredentials"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/connect/mews/credentials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Submit Mews credentials for a Connect session
+         * @description Completes a credentials-pattern connection for Mews. The property enables Repull in Mews and shares its Connector API access token.
+         *
+         *     In Mews a listing is a room type and its rooms are units: rates, restrictions and availability live on the room type, and each reservation names the room it was assigned.
+         *
+         *     The token is validated against Mews and the property it belongs to is read before anything is stored, so a bad token returns `invalid_credentials` rather than a dead connection. The first sync (listings, rooms, reservations) is queued on success.
+         *
+         *     To try it without a Mews customer, send the demo access token from Mews's documentation with `environment: "demo"`.
+         *
+         *     No API key required when called with a `sessionId` — the session is the capability token.
+         */
+        post: operations["submitMewsCredentials"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/listings/{id}/units": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List a listing's units (rooms)
+         * @description The physical rooms under a listing. For a hotel-model PMS (Mews, Cloudbeds) a listing is a room type: prices, restrictions and availability are set on the room type, and each reservation is assigned one of these rooms (`reservation.unit.id`). A room can belong to more than one room type.
+         *
+         *     Any other listing is a single home, which is its own unit, and returns an empty list.
+         */
+        get: operations["listListingUnits"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/reservations/{id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel a reservation
+         * @description Cancels a reservation where it lives.
+         *
+         *     - **Mews or Cloudbeds** (hotel-model PMS): cancelled in the PMS, then read back, so Repull and the PMS agree. No cancellation fee is charged.
+         *     - **Direct, website or owner bookings**: cancelled in Repull — the nights are released and `reservation.cancelled` fires.
+         *     - **A channel booking** (Airbnb, Booking.com, VRBO) or a booking owned by another PMS: `409 reservation_owned_by_channel`. Cancel it there; the cancellation reaches Repull with the next sync.
+         *
+         *     Cancelling an already-cancelled reservation is not an error: the response carries `alreadyCancelled: true`.
+         *
+         *     Returns `403 listing_inactive` when the listing is inactive.
+         */
+        post: operations["cancel_reservation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -4339,6 +4455,11 @@ export interface components {
              * @example 2
              */
             minNights: number;
+            /**
+             * @description Units still sellable that night. 1 or 0 for a single home. For a hotel-model listing (a Mews or Cloudbeds room type) the rooms of that type left, e.g. 3 of 5 — see `GET /v1/listings/{id}/units`. `available` is false whenever this is 0.
+             * @example 1
+             */
+            availableUnits: number;
         };
         /** @description How much of the requested window we actually hold calendar data for. Read this before treating an absent date as bookable — absence means "no data", not "available". */
         PropertyAvailabilityCoverage: {
@@ -4574,6 +4695,13 @@ export interface components {
              * @example HMXYZ123
              */
             confirmationCode: string;
+            /** @description The physical room the stay was assigned, for a hotel-model PMS (Mews, Cloudbeds) where the listing is a room type. `null` when no room is assigned yet, and for every listing that is a single home. */
+            unit?: {
+                /** @description The room id, as listed by `GET /v1/listings/{id}/units`. */
+                id?: string;
+                /** @example 101 */
+                name?: string | null;
+            } | null;
             /** @description Inline guest summary. May be undefined for owner-blocks / pre-arrival rows. */
             primaryGuest?: components["schemas"]["ReservationPrimaryGuest"];
             /** @description Normalized guest counts. May be undefined when the source channel did not provide counts. */
@@ -4671,7 +4799,7 @@ export interface components {
             /** Format: date-time */
             lastUsed?: string | null;
         };
-        /** @description A risk/operational flag attached to a guest profile (e.g. blacklist, do-not-host, VIP). Severity comes from main vanio's flag taxonomy. */
+        /** @description A risk/operational flag attached to a guest profile (e.g. blacklist, do-not-host, VIP). */
         GuestFlag: {
             /** @description Severity / category (e.g. `info`, `warning`, `block`). */
             type?: string;
@@ -4714,7 +4842,7 @@ export interface components {
             currency?: string | null;
             isBlacklisted?: boolean;
             blacklistedReason?: string | null;
-            /** @description Main-vanio risk score (e.g. `low`, `medium`, `high`). */
+            /** @description Risk score (e.g. `low`, `medium`, `high`). */
             riskLevel?: string | null;
             verificationLevel?: string | null;
             /** Format: date-time */
@@ -4840,9 +4968,9 @@ export interface components {
             translatedBody?: string | null;
             /** @description Files on this message, inbound or outbound. Empty array when there are none. A file-only message has an empty `body`. */
             attachments?: components["schemas"]["ConversationMessageAttachment"][];
-            /** @description `true` when the message was sent by a Vanio automation (template, schedule, etc.). */
+            /** @description `true` when the message was sent by an automation (template, schedule, etc.). */
             isAutomated?: boolean;
-            /** @description `true` when the body was authored by Vanio AI (autopilot, draft). */
+            /** @description `true` when the body was written by AI (autopilot, draft). */
             aiGenerated?: boolean;
             /** Format: date-time */
             sentAt?: string;
@@ -4865,7 +4993,7 @@ export interface components {
             /** Format: date-time */
             submittedAt?: string | null;
         };
-        /** @description A guest or host review unified across channels. Returned by `GET /v1/reviews` and `GET /v1/reviews/{id}`. Populated from main vanio's unified `reviews` table after the per-channel backfill cron has run. */
+        /** @description A guest or host review unified across channels. Returned by `GET /v1/reviews` and `GET /v1/reviews/{id}`. Includes every channel's reviews once they have been imported. */
         Review: {
             /** @description Internal Repull review id — pass back to `/v1/reviews/{id}`. */
             id?: string;
@@ -5193,7 +5321,7 @@ export interface components {
             status?: "active" | "inactive" | "error";
             /**
              * @description Provider-side account ID (e.g. the Airbnb host ID).
-             * @example 23998907
+             * @example 10000001
              */
             externalAccountId?: string | null;
             /** Format: date-time */
@@ -5322,7 +5450,7 @@ export interface components {
          * @description Canonical event type identifier. Every webhook delivery declares one of these in its `type` field; SDKs key the discriminated `WebhookEvent` union on this value.
          * @enum {string}
          */
-        WebhookEventType: "reservation.created" | "reservation.updated" | "reservation.cancelled" | "reservation.message.received" | "reservation.alteration.created" | "reservation.alteration.responded" | "reservation.request.created" | "reservation.request.updated" | "inquiry.created" | "inquiry.updated" | "listing.created" | "listing.updated" | "listing.deleted" | "listing.suspended" | "listing.reactivated" | "calendar.updated" | "account.created" | "account.disconnected" | "review.created" | "review.responded" | "ai.operation.completed" | "ai.operation.failed" | "payment.completed" | "payment.refunded" | "migration.completed" | "migration.failed" | "repull.ping" | "usage.quota.warning";
+        WebhookEventType: "reservation.created" | "reservation.updated" | "reservation.cancelled" | "reservation.message.received" | "reservation.message.sent" | "reservation.message.updated" | "reservation.alteration.created" | "reservation.alteration.responded" | "reservation.request.created" | "reservation.request.updated" | "inquiry.created" | "inquiry.updated" | "listing.created" | "listing.updated" | "listing.deleted" | "listing.suspended" | "listing.reactivated" | "calendar.updated" | "account.created" | "account.disconnected" | "review.created" | "review.responded" | "ai.operation.completed" | "ai.operation.failed" | "payment.completed" | "payment.refunded" | "payout.completed" | "migration.completed" | "migration.failed" | "repull.ping" | "usage.quota.warning";
         /**
          * @description Lightweight reservation snapshot delivered as `data.object` on every reservation webhook event. Stable across `reservation.created`, `reservation.updated`, and `reservation.cancelled`. Fetch the full reservation via `GET /v1/reservations/{id}` if you need pricing, guest contact info, or audit history — those are deliberately omitted to keep deliveries small.
          *
@@ -5460,6 +5588,80 @@ export interface components {
             sentAt?: string;
             /** @description Files the guest sent (photos, videos, documents), same shape as `GET /v1/conversations/{id}/messages`. Empty array when there are none. */
             attachments?: components["schemas"]["ConversationMessageAttachment"][];
+        };
+        /** @description Payload for `reservation.message.sent`: a host-side message was sent on a reservation thread. Same fields as `reservation.message.received`, plus `source`. */
+        ReservationMessageSentPayload: {
+            /** @example 235970 */
+            reservationId?: number | null;
+            /** @example 161347 */
+            threadId?: string;
+            /**
+             * @description Repull message id, as `GET /v1/conversations/{id}/messages` returns it.
+             * @example 1854462
+             */
+            messageId?: string;
+            /**
+             * @description The channel's own message id. Dedupe on it.
+             * @example 32877308873
+             */
+            externalMessageId?: string | null;
+            /** @example airbnb */
+            channel?: string;
+            /**
+             * @description `channel`: sent in the channel's own app (e.g. the Airbnb app). `repull`: sent through Repull — the API, the dashboard, an automation or AI.
+             * @enum {string}
+             */
+            source?: "channel" | "repull";
+            from?: {
+                /**
+                 * @description `host` or `co-host`.
+                 * @example host
+                 */
+                type?: string;
+                name?: string | null;
+            };
+            body?: string;
+            /** Format: date-time */
+            sentAt?: string;
+            /** @enum {string} */
+            direction?: "outbound";
+            isAutomated?: boolean;
+            aiGenerated?: boolean;
+            attachments?: components["schemas"]["ConversationMessageAttachment"][];
+        };
+        /** @description Payload for `reservation.message.updated`: a message was edited on the channel. `body` is the new text; `previousBody` what it replaced. Read receipts and reactions do not fire it. */
+        ReservationMessageUpdatedPayload: {
+            /** @example 235970 */
+            reservationId?: number | null;
+            /** @example 161347 */
+            threadId?: string;
+            /** @example 1854462 */
+            messageId?: string;
+            /** @example 32877308873 */
+            externalMessageId?: string | null;
+            /** @example airbnb */
+            channel?: string;
+            from?: {
+                /** @example host */
+                type?: string;
+                name?: string | null;
+            };
+            /** @description The text after the edit. */
+            body?: string;
+            /** @description The text before the edit. */
+            previousBody?: string;
+            /**
+             * Format: date-time
+             * @description When the edit was made, as the channel reports it. Also the event's `revision`.
+             */
+            editedAt?: string;
+            /**
+             * Format: date-time
+             * @description When the message was first sent.
+             */
+            sentAt?: string;
+            /** @enum {string} */
+            direction?: "inbound" | "outbound";
         };
         /** @description Lightweight alteration snapshot delivered as `data.object` on `reservation.alteration.*` events. Currently Airbnb only. Fetch full state (original vs new dates/guests/price) via `GET /v1/channels/airbnb/alterations` filtered by `reservation_code`. */
         AlterationWebhookObject: {
@@ -6018,6 +6220,20 @@ export interface components {
             /** Format: date-time */
             revision?: string | null;
         };
+        /** @description Payload for `payout.completed`: one Airbnb payout and every line it paid. `payout` and each of `lines` are `AirbnbTransaction` objects, identical — ids included — to what `GET /v1/channels/airbnb/transactions?payout_id=` returns, so you can deduplicate on `transactionId` across webhooks and reads. The lines' signed `amount`s sum to `payout.payout.paidOutAmount`. */
+        PayoutCompletedPayload: {
+            /** @enum {string} */
+            channel: "airbnb";
+            /**
+             * @description The Airbnb account (host id) that was paid.
+             * @example 10000001
+             */
+            accountId: string;
+            accountName?: string | null;
+            payout: components["schemas"]["AirbnbTransaction"];
+            /** @description In payout order (`payout.lineIndex`). */
+            lines: components["schemas"]["AirbnbTransaction"][];
+        };
         /** @description Payload for `repull.ping`. A diagnostic delivery used by the dashboard to verify endpoint reachability. */
         RepullPingPayload: {
             /** @example Ping from Repull. If you can read this, your endpoint is reachable. */
@@ -6160,6 +6376,48 @@ export interface components {
             timestamp: string;
             account?: components["schemas"]["WebhookEventAccount"];
             data: components["schemas"]["ReservationMessageReceivedPayload"];
+        };
+        ReservationMessageSentEvent: {
+            /**
+             * @description The event name. This field is `event`, not `type`. (enum property replaced by openapi-typescript)
+             * @enum {string}
+             */
+            event: "reservation.message.sent";
+            /**
+             * Format: uuid
+             * @description Stable across every delivery and replay of this logical event — dedupe on it.
+             */
+            eventId: string;
+            /** @example 2026-04 */
+            apiVersion: string;
+            /**
+             * Format: date-time
+             * @description When this delivery was built.
+             */
+            timestamp: string;
+            account?: components["schemas"]["WebhookEventAccount"];
+            data: components["schemas"]["ReservationMessageSentPayload"];
+        };
+        ReservationMessageUpdatedEvent: {
+            /**
+             * @description The event name. This field is `event`, not `type`. (enum property replaced by openapi-typescript)
+             * @enum {string}
+             */
+            event: "reservation.message.updated";
+            /**
+             * Format: uuid
+             * @description Stable across every delivery and replay of this logical event — dedupe on it.
+             */
+            eventId: string;
+            /** @example 2026-04 */
+            apiVersion: string;
+            /**
+             * Format: date-time
+             * @description When this delivery was built.
+             */
+            timestamp: string;
+            account?: components["schemas"]["WebhookEventAccount"];
+            data: components["schemas"]["ReservationMessageUpdatedPayload"];
         };
         ReservationAlterationCreatedEvent: {
             /**
@@ -6560,6 +6818,27 @@ export interface components {
             account?: components["schemas"]["WebhookEventAccount"];
             data: components["schemas"]["PaymentCompletedPayload"];
         };
+        PayoutCompletedEvent: {
+            /**
+             * @description The event name. This field is `event`, not `type`. (enum property replaced by openapi-typescript)
+             * @enum {string}
+             */
+            event: "payout.completed";
+            /**
+             * Format: uuid
+             * @description Stable across every delivery and replay of this logical event — dedupe on it.
+             */
+            eventId: string;
+            /** @example 2026-04 */
+            apiVersion: string;
+            /**
+             * Format: date-time
+             * @description When this delivery was built.
+             */
+            timestamp: string;
+            account?: components["schemas"]["WebhookEventAccount"];
+            data: components["schemas"]["PayoutCompletedPayload"];
+        };
         PaymentRefundedEvent: {
             /**
              * @description The event name. This field is `event`, not `type`. (enum property replaced by openapi-typescript)
@@ -6693,11 +6972,11 @@ export interface components {
             data: components["schemas"]["MigrationImportPayload"];
         };
         /** @description The full event envelope POSTed to your webhook URL. Discriminated on `type` — narrow `event.data` by switching on `event.type`. Use the matching `*Event` variant directly if your SDK lacks discriminator support. Events about an inactive listing (reservations, messages, alterations, reviews, payments, calendar and listing events) are not delivered. The data keeps syncing while the listing is inactive, but its events are never sent — including after you reactivate it; webhooks resume for events that happen from reactivation on. Account-level events are always delivered. */
-        WebhookEvent: components["schemas"]["ReservationCreatedEvent"] | components["schemas"]["ReservationUpdatedEvent"] | components["schemas"]["ReservationCancelledEvent"] | components["schemas"]["ReservationMessageReceivedEvent"] | components["schemas"]["ReservationAlterationCreatedEvent"] | components["schemas"]["ReservationAlterationRespondedEvent"] | components["schemas"]["ReservationRequestCreatedEvent"] | components["schemas"]["ReservationRequestUpdatedEvent"] | components["schemas"]["InquiryCreatedEvent"] | components["schemas"]["InquiryUpdatedEvent"] | components["schemas"]["ListingCreatedEvent"] | components["schemas"]["ListingUpdatedEvent"] | components["schemas"]["ListingDeletedEvent"] | components["schemas"]["ListingSuspendedEvent"] | components["schemas"]["ListingReactivatedEvent"] | components["schemas"]["CalendarUpdatedEvent"] | components["schemas"]["AccountCreatedEvent"] | components["schemas"]["AccountDisconnectedEvent"] | components["schemas"]["ReviewCreatedEvent"] | components["schemas"]["ReviewRespondedEvent"] | components["schemas"]["AiOperationCompletedEvent"] | components["schemas"]["AiOperationFailedEvent"] | components["schemas"]["PaymentCompletedEvent"] | components["schemas"]["PaymentRefundedEvent"] | components["schemas"]["RepullPingEvent"] | components["schemas"]["UsageQuotaWarningEvent"] | components["schemas"]["MigrationCompletedEvent"] | components["schemas"]["MigrationFailedEvent"];
-        /** @description A Vanio listing paired with its Airbnb connection rows. The list endpoint groups every `listings_airbnb` row that points at the same Vanio `listingId` under a single `connections[]` array. */
+        WebhookEvent: components["schemas"]["ReservationCreatedEvent"] | components["schemas"]["ReservationUpdatedEvent"] | components["schemas"]["ReservationCancelledEvent"] | components["schemas"]["ReservationMessageReceivedEvent"] | components["schemas"]["ReservationMessageSentEvent"] | components["schemas"]["ReservationMessageUpdatedEvent"] | components["schemas"]["ReservationAlterationCreatedEvent"] | components["schemas"]["ReservationAlterationRespondedEvent"] | components["schemas"]["ReservationRequestCreatedEvent"] | components["schemas"]["ReservationRequestUpdatedEvent"] | components["schemas"]["InquiryCreatedEvent"] | components["schemas"]["InquiryUpdatedEvent"] | components["schemas"]["ListingCreatedEvent"] | components["schemas"]["ListingUpdatedEvent"] | components["schemas"]["ListingDeletedEvent"] | components["schemas"]["ListingSuspendedEvent"] | components["schemas"]["ListingReactivatedEvent"] | components["schemas"]["CalendarUpdatedEvent"] | components["schemas"]["AccountCreatedEvent"] | components["schemas"]["AccountDisconnectedEvent"] | components["schemas"]["ReviewCreatedEvent"] | components["schemas"]["ReviewRespondedEvent"] | components["schemas"]["AiOperationCompletedEvent"] | components["schemas"]["AiOperationFailedEvent"] | components["schemas"]["PaymentCompletedEvent"] | components["schemas"]["PaymentRefundedEvent"] | components["schemas"]["PayoutCompletedEvent"] | components["schemas"]["RepullPingEvent"] | components["schemas"]["UsageQuotaWarningEvent"] | components["schemas"]["MigrationCompletedEvent"] | components["schemas"]["MigrationFailedEvent"];
+        /** @description A listing paired with its Airbnb connections. The list endpoint groups every Airbnb connection of the same `listingId` under a single `connections[]` array. */
         AirbnbListing: {
             /**
-             * @description Vanio (Repull) listing id
+             * @description Repull listing id
              * @example 6248
              */
             listingId?: string;
@@ -6710,18 +6989,18 @@ export interface components {
             city?: string | null;
             /**
              * Format: uri
-             * @description Cover photo URL for the Vanio listing. **Only present when the caller passes `?include=thumbnail`.** `null` when the listing has no cover photo stored — the listing is still returned.
+             * @description Cover photo URL for the listing. **Only present when the caller passes `?include=thumbnail`.** `null` when the listing has no cover photo stored — the listing is still returned.
              */
             thumbnailUrl?: string | null;
             connections?: components["schemas"]["AirbnbConnection"][];
         };
-        /** @description An Airbnb-side connection record for a Vanio listing. The same property may appear under multiple connections if it has been linked from multiple Airbnb host accounts. */
+        /** @description An Airbnb-side connection record for a listing. The same property may appear under multiple connections if it has been linked from multiple Airbnb host accounts. */
         AirbnbConnection: {
             /** @description Connection row id */
             id?: string;
             /**
              * @description Airbnb-side listing id
-             * @example 1116939745194659457
+             * @example 1234567890123456789
              */
             airbnbId?: string;
             /**
@@ -6731,7 +7010,7 @@ export interface components {
             accountId?: string | null;
             /**
              * @description Display name of that connected Airbnb account.
-             * @example Pomello
+             * @example Seaside Stays
              */
             accountName?: string | null;
             /** @description Alias of `accountId`, kept for compatibility — same Airbnb host id, same string. */
@@ -6851,7 +7130,7 @@ export interface components {
             accountId?: string | null;
             /**
              * @description Display name of that connected Airbnb account.
-             * @example Pomello
+             * @example Seaside Stays
              */
             accountName?: string | null;
             /**
@@ -6889,7 +7168,7 @@ export interface components {
             accountId?: string | null;
             /**
              * @description Display name of that connected Airbnb account.
-             * @example Pomello
+             * @example Seaside Stays
              */
             accountName?: string | null;
             guestName?: string | null;
@@ -6956,7 +7235,7 @@ export interface components {
             accountId?: string | null;
             /**
              * @description Display name of that connected Airbnb account.
-             * @example Pomello
+             * @example Seaside Stays
              */
             accountName?: string | null;
             /**
@@ -7050,7 +7329,7 @@ export interface components {
             accountId?: string | null;
             /**
              * @description Display name of that connected Airbnb account.
-             * @example Pomello
+             * @example Seaside Stays
              */
             accountName?: string | null;
             rating?: number | null;
@@ -7340,6 +7619,7 @@ export interface components {
             total?: number;
         };
         PropertyListResponse: {
+            planNotice?: components["schemas"]["PlanNotice"];
             data?: components["schemas"]["Property"][];
             pagination?: components["schemas"]["Pagination"];
         };
@@ -7369,6 +7649,7 @@ export interface components {
             pagination?: components["schemas"]["CursorPagination"];
         };
         ConnectionListResponse: {
+            planNotice?: components["schemas"]["PlanNotice"];
             data?: components["schemas"]["Connection"][];
             pagination?: components["schemas"]["Pagination"];
         };
@@ -7388,7 +7669,7 @@ export interface components {
             accountId: string;
             /**
              * @description Display name of the connected account.
-             * @example Pomello
+             * @example Seaside Stays
              */
             accountName?: string | null;
             /**
@@ -7434,100 +7715,100 @@ export interface components {
             pagination: components["schemas"]["Pagination"];
             dataFreshness: components["schemas"]["AirbnbDataFreshness"];
         };
-        /** @description One Airbnb host transaction — a reservation earning, a settled payout, or a resolution adjustment — with the genuine host- and guest-side financial breakdown Airbnb exposes. All money is in host currency; fees and withholding are negative (deductions). Two owner-statement concepts are NOT available from Airbnb and are listed in `unavailable_fields` rather than fabricated: property-management fee and itemised nightly discounts (the latter are already netted into `host_breakdown.accommodation_subtotal`). */
+        /** @description One line of the Airbnb settlement ledger: a Payout row (`isPayout: true`) or a line it paid. Money is in the payout currency; `amount` is signed (negative = taken back, e.g. an adjustment offset against this payout). A payout's lines sum to its `payout.paidOutAmount`. */
         AirbnbTransaction: {
-            /** @description Upstream Airbnb transaction id. */
-            transaction_id: string;
             /**
-             * @description Transaction kind.
-             * @enum {string|null}
+             * @description Stable id. A Payout row: Airbnb's payout id. A settled line: `<payoutId>:<type>:<confirmationCode>:<n>`. An upcoming line: `upcoming:<accountId>:<type>:<confirmationCode>:<date>:<n>`. Identical on every refresh; upsert on it.
+             * @example M-HQLLNSWKUWK7R:reservation:HMRQ8FC4YN:1
              */
-            type?: "Reservation" | "Payout" | "Resolution_Adjustment" | null;
-            reference?: string | null;
+            transactionId: string;
+            /**
+             * @description The connected Airbnb account (host id, as a string — they exceed 2^53).
+             * @example 10000001
+             */
+            accountId?: string | null;
+            /** @example Seaside Stays */
+            accountName?: string | null;
+            /**
+             * @description `COMPLETED`: settled in a payout. `UPCOMING`: expected, not paid out yet.
+             * @enum {string}
+             */
+            status: "COMPLETED" | "UPCOMING";
+            /**
+             * @description Airbnb's line type, verbatim: `Payout`, `Reservation`, `Adjustment`, `Resolution Payout`, `Resolution Adjustment`, `Cancellation Fee`, `Pass Through Tot`, …
+             * @example Reservation
+             */
+            type: string;
+            /** @description `true` on the Payout row itself. */
+            isPayout: boolean;
             /**
              * Format: date
-             * @description Transaction date.
+             * @description The line's date as Airbnb reports it. Can be the day before its payout's date.
              */
             date?: string | null;
-            /** @description Airbnb confirmation code — links this transaction to a reservation. */
-            confirmation_code?: string | null;
-            /** @description Resolved Vanio reservation id when the confirmation code matched a reservation in this workspace; null otherwise. */
-            reservation_id?: number | null;
+            /** @example USD */
+            currency?: string | null;
             /**
-             * @description Which connected Airbnb account this transaction belongs to — the Airbnb host id, as a string (they exceed 2^53). `null` on rows that name no listing (payouts).
-             * @example 1772489413932732258
+             * @description Signed amount this line contributes to its payout, after Airbnb's host service fee. On a Payout row, the amount paid out.
+             * @example 40.6
              */
-            account_id?: string | null;
+            amount?: number | null;
             /**
-             * @description Display name of that connected Airbnb account.
-             * @example Pomello
+             * @description Before Airbnb's host service fee: `amount - fees.hostServiceFee`.
+             * @example 48.05
              */
-            account_name?: string | null;
+            grossAmount?: number | null;
+            fees: {
+                /**
+                 * @description Airbnb's host service fee on this line, as a deduction (negative). Already taken out of `amount`.
+                 * @example -7.45
+                 */
+                hostServiceFee: number | null;
+                /**
+                 * @description Cleaning fee included in this line's gross.
+                 * @example 40.57
+                 */
+                cleaningFee: number | null;
+            };
+            payout: {
+                /**
+                 * @description The payout this line was settled in (its own id on a Payout row). `null` on an UPCOMING line.
+                 * @example M-HQLLNSWKUWK7R
+                 */
+                payoutId: string | null;
+                /** @description `true` when Airbnb sent no payout id (a payout netting to $0.00) and Repull derived a stable one. */
+                payoutIdSynthetic: boolean;
+                /** Format: date */
+                payoutDate: string | null;
+                /** @description Position within the payout, from 1. `null` on the Payout row and on UPCOMING lines. */
+                lineIndex: number | null;
+                /** @description On the Payout row only: the amount paid out. Its lines sum to it. */
+                paidOutAmount: number | null;
+            };
+            /** @example HMRQ8FC4YN */
+            confirmationCode?: string | null;
+            /** @description Repull reservation id when the confirmation code matches a reservation in this workspace; `null` when it does not (explicitly unlinked). */
+            reservationId?: string | null;
             /** @description Airbnb listing id. */
-            listing_id?: string | null;
-            thread_id?: string | null;
+            listingId?: string | null;
+            listingName?: string | null;
+            /** @description `true` when the line is on a listing that is inactive in Repull. Still returned, so the payout reconciles. */
+            onInactiveListing: boolean;
+            guestName?: string | null;
             nights?: number | null;
             /** Format: date */
-            reservation_start_date?: string | null;
-            /** Format: date-time */
-            booked_at?: string | null;
-            /** Format: date-time */
-            check_in?: string | null;
-            /** Format: date-time */
-            check_out?: string | null;
-            time_zone?: string | null;
-            guest_name?: string | null;
+            reservationStartDate?: string | null;
+            /** @description Airbnb's description: the stay dates, the resolution, or on a Payout row the payout method. */
+            description?: string | null;
             /**
-             * @description Payout status signal: COMPLETED (settled) vs UPCOMING (expected).
-             * @enum {string|null}
+             * @description The resolution id on resolution payouts and adjustments; else `null`.
+             * @example CLSF-06472635
              */
-            status?: "COMPLETED" | "UPCOMING" | null;
-            status_type?: string | null;
-            payout: {
-                payout_id: string | null;
-                /**
-                 * Format: date
-                 * @description Settlement date (populated on Payout-type rows).
-                 */
-                payout_date: string | null;
-                paid_out_amount: number | null;
-            };
-            currency?: string | null;
-            host_currency?: string | null;
-            /** @description Top-level transaction amount. */
-            amount?: number | null;
-            /** @description Host-side breakdown (all host currency). */
-            host_breakdown: {
-                /** @description Nightly rate × nights, net of stay-level discounts already applied by Airbnb. */
-                accommodation_subtotal?: number | null;
-                cleaning_fee?: number | null;
-                /** @description Airbnb host service fee, base component (negative = deduction). */
-                host_service_fee_base?: number | null;
-                /** @description Airbnb host service fee, VAT component (negative = deduction). */
-                host_service_fee_vat?: number | null;
-                /** @description Convenience sum of base + VAT. */
-                host_service_fee_total?: number | null;
-                airbnb_collected_tax?: number | null;
-                pass_through_tax?: number | null;
-                occupancy_tax?: number | null;
-                tax_withholding?: number | null;
-                /** @description Expected/actual net payout to the host. */
-                host_payout: number | null;
-            };
-            /** @description Guest-side breakdown (what the guest paid). */
-            guest_breakdown: {
-                total_paid: number | null;
-                service_fee_base?: number | null;
-                service_fee_vat?: number | null;
-            };
-            /** @description Fields Airbnb does not expose (never fabricated), e.g. `management_fee`, `itemized_discounts`. */
-            unavailable_fields: string[];
-            /** @description Raw Airbnb standard-fees array. */
-            standard_fees?: unknown;
-            /** @description Raw Airbnb tax-details object. */
-            tax_details?: unknown;
+            reference?: string | null;
+            /** @description What Airbnb's transaction history does not carry, so it is never filled in: `taxes` (those Airbnb remits itself; pass-through tax paid to the host arrives as `Pass Through Tot` lines), `guest_paid_total`, `original_transaction_id`, `currency_conversion`, `management_fee`. */
+            unavailableFields: string[];
             /** Format: date-time */
-            synced_at?: string | null;
+            syncedAt?: string | null;
         };
         /** @description One Airbnb host record under the workspace, decorated with its most recent disconnect reason from `airbnb_host_events` (backfill events excluded). */
         AirbnbConnectionHost: {
@@ -8025,6 +8306,29 @@ export interface components {
             persisted?: boolean;
             content?: components["schemas"]["ListingContent"];
         };
+        /** @description Added to the body of EVERY JSON response (success or error, except bare arrays and 5xx) while the workspace is connected to more listings than its plan lets it use — so a developer reading any payload, or an AI assistant relaying it, sees it. Connect keeps every listing it finds, but on a capped plan only as many as the plan allows are active; the rest are held back inactive and keep syncing. The same responses also carry the `X-Repull-Listings-Held-Back` and `X-Repull-Active-Listing-Limit` headers. Using a held-back listing answers `403 listing_inactive` with `reason: "plan_limit"`. Tell the user: they can see the held-back listings with `GET /v1/listings?status=all`, choose which are active with `POST /v1/listings/status`, or upgrade. */
+        PlanNotice: {
+            /** @enum {string} */
+            code: "listings_held_back";
+            /**
+             * @description Connected listings kept inactive because of the plan.
+             * @example 40
+             */
+            listingsHeldBack: number;
+            /**
+             * @description The plan's cap on active listings.
+             * @example 3
+             */
+            activeListingLimit: number | null;
+            /** @example 40 more connected listings are held inactive because your plan allows 3 active listings. They stay connected and keep syncing. */
+            message: string;
+            fix: string;
+            /**
+             * Format: uri
+             * @example https://repull.dev/dashboard/billing
+             */
+            billingUrl: string;
+        };
         ListingPhotoUploadUrlRequest: {
             /**
              * @description Original file name, e.g. "living-room.jpg".
@@ -8036,15 +8340,18 @@ export interface components {
              * @example image/jpeg
              */
             fileType: string;
-            /** @description File size in bytes, when known. Must be positive if provided. */
-            fileSize?: number | null;
+            /**
+             * @description File size in bytes. Required: the signed upload is issued for this size.
+             * @example 453631
+             */
+            fileSize: number;
         };
         /** @description A short-lived signed upload target. PUT the raw file bytes to `uploadUrl` — the bytes never pass through the Repull API. */
         ListingPhotoUploadUrlResponse: {
             listingId?: string;
             /**
              * Format: uri
-             * @description PUT the raw file bytes here directly from the client. Not a Repull or vanio API endpoint — a signed storage URL.
+             * @description PUT the raw file bytes here directly from the client. Not a Repull API endpoint — a signed storage URL.
              */
             uploadUrl?: string;
             /** @description Opaque upload token bound to this signed URL. */
@@ -8058,6 +8365,8 @@ export interface components {
             publicUrl?: string;
             /** @description Seconds until `uploadUrl` expires. Mint a new one via a fresh POST if the upload did not happen in time. */
             expiresIn?: number;
+            /** @description What to do after uploading. Uploading does NOT attach the photo to the listing: send `publicUrl` in `photos` on `PUT /v1/listings/{id}/content` (with `photosMode: "append"` to keep existing photos). */
+            nextStep?: string;
         };
         ListingPhoto: {
             /**
@@ -8267,6 +8576,16 @@ export interface components {
          *     An **inactive** listing appears only in `GET /v1/listings`, and only when `?status=` asks for it. Such a row carries identity fields only — `id`, `name`, `status`, `channels` — so `address`, `content`, `details`, `createdAt` and `updatedAt` are absent until the listing is activated. `GET /v1/listings/{id}` and every other listing endpoint answer `403 listing_inactive` for it. The one field you can add back is `thumbnailUrl`, by passing `?include=thumbnail` — enough to render an activate/deactivate picker with pictures from a single request.
          */
         Listing: {
+            /** @description `GET /v1/listings/{id}` only. The physical rooms under a hotel-model listing (a Mews or Cloudbeds room type); empty for a single home. Same items as `GET /v1/listings/{id}/units`. */
+            units?: {
+                id?: string;
+                name?: string;
+                active?: boolean;
+                parentId?: string | null;
+                housekeepingStatus?: string | null;
+                floor?: string | null;
+                source?: string;
+            }[];
             /** @description Repull listing id */
             id?: string;
             /** @example I - Stafford Apartment */
@@ -8297,6 +8616,7 @@ export interface components {
         };
         CursorPagination: components["schemas"]["Pagination"];
         ListingListResponse: {
+            planNotice?: components["schemas"]["PlanNotice"];
             data?: components["schemas"]["Listing"][];
             pagination?: components["schemas"]["CursorPagination"];
         };
@@ -8307,7 +8627,7 @@ export interface components {
              * @example 2026-05-14
              */
             date?: string;
-            /** @description Current calendar price (from Vanio listings_calendar_days) before applying the recommendation. */
+            /** @description Current calendar price before applying the recommendation. */
             currentPrice?: number | null;
             /** @description Atlas model's recommended price. */
             recommendedPrice?: number;
@@ -9320,16 +9640,37 @@ export interface components {
             listingId?: number;
             /** @example direct */
             platform?: string;
-            /** @example accept */
+            /**
+             * @description Same vocabulary as `GET /v1/reservations/{id}`.
+             * @example confirmed
+             */
             status?: string;
             /** Format: date */
             checkIn?: string;
             /** Format: date */
             checkOut?: string;
             guestId?: number | null;
-            /** @description The price the pricing engine derived for the stay. Reservations created through this endpoint are NOT priced from the request — see the operation description. */
+            /** @description The price the pricing engine derived for the stay. Reservations created through this endpoint are NOT priced from the request — see the operation description. On a Mews or Cloudbeds listing, the PMS prices it from its own rate. */
             totalPrice?: number | null;
             currency?: string | null;
+            /** @description Mews or Cloudbeds listings only: the room the PMS assigned. Absent for every other listing. */
+            unit?: {
+                id?: string;
+                name?: string | null;
+            } | null;
+            /** @description Mews or Cloudbeds listings only: the booking was made in the PMS first, and this is what it applied. */
+            pms?: {
+                /** @example mews */
+                provider?: string;
+                /** @description The PMS's own id for the booking. */
+                reservationId?: string;
+                applied?: string[];
+                errors?: {
+                    section?: string;
+                    message?: string;
+                    code?: string;
+                }[];
+            };
         };
         /** @description At least one field is required. Guest identity, pricing, `status`, `platform` and notes are rejected by name — see the operation description for why each is excluded. */
         ReservationUpdateRequest: {
@@ -9656,12 +9997,16 @@ export interface components {
         MapConnectBookingRoomsResponse: {
             /** @example true */
             success: boolean;
-            /** @description Number of rooms processed (mapped + unmapped). */
+            /** @description Rooms now linked to a listing. */
             mapped: number;
+            /** @description Rooms submitted with `listingId: null` ("don't map"), which are left without a listing. */
+            unmapped?: number;
             sessionId: string;
             connectionId: string;
-            /** @description Reservations pulled from Booking.com once the rooms were mapped. Mapping triggers the same full property sync the dashboard's Sync button runs, because a reservation can only be resolved to a listing through a mapped room. `null` means the sync could not be run — the connection and mapping are still good, and the property can be synced from the dashboard. */
+            /** @description Reservations pulled from Booking.com once the rooms were mapped. Mapping triggers the same full property sync the dashboard's Sync button runs, because a reservation can only be resolved to a listing through a mapped room. `0` without a sync when no room was mapped. `null` means the sync could not be run — the connection and mapping are still good, and the property can be synced from the dashboard. */
             reservationsImported?: number | null;
+            /** @description How many reservations Booking.com returned for the property. Equal to `reservationsImported` unless some could not be attached to a listing — so `0` here means Booking.com had none. `null` when the sync could not run. */
+            reservationsFound?: number | null;
         };
         /** @description Body for `POST /v1/channels/airbnb/listings/map`. */
         MapAirbnbListingRequest: {
@@ -9728,6 +10073,8 @@ export interface components {
             platformLinkId?: string | null;
             /** @description Reservations Booking.com returned for the property and ran through the import after the room was mapped — the property's active bookings, which would otherwise never reach the listing. A reservation already present is left as it is, so this counts what was processed, not what was new, and re-sending never duplicates. Runs on every successful map, including a re-map to the same listing, so re-sending retries an import that did not run. `null` means the mapping succeeded but the import could not run; the room is still mapped. Absent after an unmap, when there is nothing to pull. */
             reservationsImported?: number | null;
+            /** @description How many reservations Booking.com returned for the property. Equal to `reservationsImported` unless some could not be attached — so `0` here means Booking.com had none. Same `null` / absent rules as `reservationsImported`. */
+            reservationsFound?: number | null;
         };
         /** @description Body for `POST /v1/channels/airbnb/listings/{id}`. */
         AirbnbListingActionRequest: {
@@ -9757,7 +10104,7 @@ export interface components {
             airbnbConnectionId?: string;
             /** @description Whether the Airbnb listing is taking bookings after this call. `false` after `unlist`, `true` after `relist`. */
             live?: boolean;
-            /** @description True when the result was confirmed by reading the listing back from Airbnb (done on `unlist`: Airbnb accepting the call is not proof the listing came down). */
+            /** @description True when the result was confirmed by reading the listing back from Airbnb, on `unlist` and `relist` alike: Airbnb accepting the call is not proof the listing came down or went live. `false` means the read-back could not run — an unknown, not a success. A read-back that shows the wrong state is returned as an error, not as `verified: false`. */
             verified?: boolean;
         };
         /** @description One section of a publish that did not reach Airbnb. */
@@ -9916,7 +10263,7 @@ export interface components {
             message?: string;
             /** @description What to do about it, phrased for the direction you asked for — "still live and taking bookings" and "still down" call for different reactions. Absent when `ok` is true. */
             fix?: string;
-            /** @description Airbnb only, and only when going offline: the listing was READ BACK after the deactivation and confirmed down. Airbnb accepts a deactivation and leaves some listings live, so "we sent the request" is a weaker claim than this one and is never reported as success. */
+            /** @description Airbnb only: the listing was READ BACK afterwards and is in the state asked for — down after `offline`, live after `online`. Airbnb can accept a deactivation and leave a listing live, or accept an activation and keep it offline; either is returned as a failure, never as success. `false` means the read-back could not run — an unknown, not a success. */
             verified?: boolean;
         };
         /**
@@ -13711,6 +14058,22 @@ export interface operations {
                  *     Note this is NOT the `X-Account-Id` header, which carries a connection id and cannot tell two Airbnb hosts apart.
                  */
                 account_id?: components["parameters"]["AirbnbAccountId"];
+                /** @description Inclusive lower bound on the payout's date (the line's own date for UPCOMING lines). YYYY-MM-DD. */
+                start_date?: string;
+                /** @description Inclusive upper bound, as `start_date`. */
+                end_date?: string;
+                /** @description `COMPLETED` (settled) or `UPCOMING` (expected). */
+                status?: "COMPLETED" | "UPCOMING";
+                /** @description Airbnb's line type, exact match ignoring case — e.g. `Payout`, `Reservation`, `Adjustment`, `Resolution Payout`. */
+                type?: string;
+                /** @description One payout: its Payout row and all its lines. */
+                payout_id?: string;
+                /** @description Every line for one reservation — each installment, adjustment and resolution. */
+                confirmation_code?: string;
+                /** @description Lines per page. Hard cap is 500. */
+                limit?: number;
+                /** @description Opaque cursor returned by the previous response's `pagination.nextCursor`. Omit to fetch the first page. */
+                cursor?: string;
             };
             header?: never;
             path?: never;
@@ -13718,7 +14081,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Transactions */
+            /** @description Ledger lines */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -13726,18 +14089,39 @@ export interface operations {
                 content: {
                     "application/json": {
                         data: components["schemas"]["AirbnbTransaction"][];
+                        pagination: components["schemas"]["Pagination"];
                         dataFreshness: components["schemas"]["AirbnbDataFreshness"];
                     };
                 };
             };
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["AirbnbAccountNotFound"];
+            /** @description A filter or body field is malformed (dates are YYYY-MM-DD; status is COMPLETED or UPCOMING). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
             500: components["responses"]["InternalError"];
         };
     };
     sync_airbnb_transactions: {
         parameters: {
-            query?: never;
+            query?: {
+                /**
+                 * @description Scope the response to ONE connected Airbnb account. The value is the Airbnb host id — the same `accounts[].externalAccountId` that `GET /v1/connect/airbnb` returns and `DELETE /v1/connect/airbnb?accountId=` accepts.
+                 *
+                 *     A workspace can connect several Airbnb accounts. Omit this and you get every account's rows (the default, unchanged). Every row carries `accountId` + `accountName` either way, so you can group without a second call.
+                 *
+                 *     An id that is not connected to THIS workspace returns `404 not_found` with your own ids in `valid_values` — we do not distinguish "no such host" from "someone else's host", because confirming the latter would leak another workspace's account.
+                 *
+                 *     Note this is NOT the `X-Account-Id` header, which carries a connection id and cannot tell two Airbnb hosts apart.
+                 */
+                account_id?: components["parameters"]["AirbnbAccountId"];
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -13747,21 +14131,24 @@ export interface operations {
                 "application/json": {
                     /**
                      * Format: date
-                     * @description Inclusive lower bound on transaction date.
+                     * @description Inclusive lower bound (YYYY-MM-DD).
                      */
                     start_date?: string;
                     /**
                      * Format: date
-                     * @description Inclusive upper bound on transaction date.
+                     * @description Inclusive upper bound (YYYY-MM-DD).
                      */
                     end_date?: string;
-                    /** @enum {string} */
+                    /**
+                     * @description Refresh only settled or only upcoming lines. Both when omitted.
+                     * @enum {string}
+                     */
                     transaction_type?: "COMPLETED" | "UPCOMING";
                 };
             };
         };
         responses: {
-            /** @description Sync result */
+            /** @description Refresh result */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -13769,12 +14156,36 @@ export interface operations {
                 content: {
                     "application/json": {
                         synced: boolean;
-                        /** @description Number of transactions upserted. */
+                        /** @description Ledger lines written, Payout rows included. */
                         count: number;
+                        accounts: {
+                            /** @description Airbnb host id. */
+                            accountId: string;
+                            count: number;
+                            /** @description Payouts in the refreshed window. */
+                            payouts: number;
+                            /** @description UPCOMING lines Airbnb no longer lists (paid out or cancelled) and were removed. */
+                            upcomingRemoved: number;
+                            /** @description Present only when this account was not refreshed. `code` is `connection_reauth_required`, `airbnb_rejected`, `airbnb_rate_limited`, `airbnb_error`, or `time_budget` (the request ran out of time before reaching it: refresh it alone with `?account_id=`). */
+                            error?: {
+                                code: string;
+                                message: string;
+                            };
+                        }[];
                     };
                 };
             };
             401: components["responses"]["Unauthorized"];
+            /** @description `connection_reauth_required`: Airbnb no longer accepts this account's connection. Reconnect it. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            404: components["responses"]["AirbnbAccountNotFound"];
             /** @description No connected Airbnb account for this workspace. */
             409: {
                 headers: {
@@ -13784,7 +14195,34 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+            /** @description A body field is malformed, or `airbnb_rejected`: Airbnb refused the request for every account. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `airbnb_rate_limited`: Airbnb is throttling this account. Retry after `retry_after` seconds. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
             500: components["responses"]["InternalError"];
+            /** @description `airbnb_error`: Airbnb did not complete the request. Retry with backoff. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     get_airbnb_thread: {
@@ -15010,7 +15448,24 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             402: components["responses"]["PublishBillingRefused"];
             403: components["responses"]["ListingInactive"];
-            404: components["responses"]["NotFound"];
+            /** @description `not_found`: the listing does not exist in this workspace. `no_connection`: no Airbnb account is connected — connect one with `POST /v1/connect/airbnb`, then send its `hostId`. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `invalid_params`: neither `airbnbConnectionId` nor `hostId` was sent. The error names the values that work for this listing — its existing Airbnb connection ids, or the connected accounts' `hostId`s — in `valid_values`. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     publishListingToBooking: {
@@ -15045,7 +15500,15 @@ export interface operations {
             402: components["responses"]["PublishBillingRefused"];
             403: components["responses"]["ListingInactive"];
             404: components["responses"]["NotFound"];
-            409: components["responses"]["Conflict"];
+            /** @description `listing_not_on_booking`: no Booking.com room is linked to this listing. `fix` names the next step for this workspace — link a room (`POST /v1/channels/booking/listings/map`) or create a property (`POST /v1/channels/booking/setup`, `create-property`). Also `ambiguous_booking_mapping` when the listing is on several properties and no `hotelId` was sent. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     getListingPublishStatus: {
@@ -15192,7 +15655,7 @@ export interface operations {
                 number_of_days?: number;
                 /** @description Restrict to a single Booking.com room id. */
                 room_id?: string;
-                /** @description Defaults to `true`: availability per room, which is how Booking.com keeps inventory and how Vanio reads it. Send `false` for the per-rate read — its `roomsToSell` is often 0 for rooms that are on sale. */
+                /** @description Defaults to `true`: availability per room, which is how Booking.com keeps inventory. Send `false` for the per-rate read — its `roomsToSell` is often 0 for rooms that are on sale. */
                 room_level?: boolean;
             };
             header?: never;
@@ -15491,7 +15954,7 @@ export interface operations {
                 startDate?: string;
                 number_of_days?: number;
                 room_id?: string;
-                /** @description Defaults to `true`: availability per room, which is how Booking.com keeps inventory and how Vanio reads it. Send `false` for the per-rate read — its `roomsToSell` is often 0 for rooms that are on sale. */
+                /** @description Defaults to `true`: availability per room, which is how Booking.com keeps inventory. Send `false` for the per-rate read — its `roomsToSell` is often 0 for rooms that are on sale. */
                 room_level?: boolean;
                 /** @description Booking.com hotel id, when this listing is published under more than one property. Omit it and a read uses the oldest mapping (reporting the rest in `otherHotelIds`), while a write is refused with `409 ambiguous_booking_mapping` rather than guess. `GET /v1/channels/booking/properties` lists the valid ids. */
                 hotel_id?: string;
@@ -16204,7 +16667,7 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["ListingInactive"];
-            /** @description Upstream Atlas/main vanio failure */
+            /** @description Upstream market-data failure */
             502: {
                 headers: {
                     [name: string]: unknown;
@@ -16320,7 +16783,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["ListingInactive"];
             422: components["responses"]["UnprocessableEntity"];
-            /** @description Upstream Atlas/main vanio failure */
+            /** @description Upstream market-data failure */
             502: {
                 headers: {
                     [name: string]: unknown;
@@ -16366,7 +16829,7 @@ export interface operations {
             403: components["responses"]["ListingInactive"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["UnprocessableEntity"];
-            /** @description Upstream Atlas/main vanio failure */
+            /** @description Upstream market-data failure */
             502: {
                 headers: {
                     [name: string]: unknown;
@@ -16410,7 +16873,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["ListingInactive"];
             404: components["responses"]["NotFound"];
-            /** @description Upstream Atlas/main vanio failure */
+            /** @description Upstream market-data failure */
             502: {
                 headers: {
                     [name: string]: unknown;
@@ -16450,7 +16913,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["ListingInactive"];
             404: components["responses"]["NotFound"];
-            /** @description Upstream Atlas/main vanio failure */
+            /** @description Upstream market-data failure */
             502: {
                 headers: {
                     [name: string]: unknown;
@@ -16480,7 +16943,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
-            /** @description Upstream Atlas/main vanio failure */
+            /** @description Upstream market-data failure */
             502: {
                 headers: {
                     [name: string]: unknown;
@@ -16521,7 +16984,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
-            /** @description Upstream Atlas/main vanio failure */
+            /** @description Upstream market-data failure */
             502: {
                 headers: {
                     [name: string]: unknown;
@@ -16754,6 +17217,7 @@ export interface operations {
                             avgLatencyMs?: number;
                         };
                         range?: string;
+                        planNotice?: components["schemas"]["PlanNotice"];
                     };
                 };
             };
@@ -19238,6 +19702,237 @@ export interface operations {
             403: components["responses"]["ListingInactive"];
             404: components["responses"]["NotFound"];
             /** @description `ambiguous_booking_mapping` — the listing is on several Booking.com properties; `valid_values` lists them. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            422: components["responses"]["UnprocessableEntity"];
+        };
+    };
+    submitCloudbedsCredentials: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Connect session id from `POST /v1/connect/cloudbeds`. Omit when calling with your API key. */
+                    sessionId?: string;
+                    /** @description A Cloudbeds API key (starts with `cbat_`). */
+                    credentials: {
+                        /** @description Cloudbeds API key. */
+                        apiKey: string;
+                        /** @description Organization keys only: limit the connection to these properties. Omit to use every property the key can see. */
+                        propertyIds?: string[];
+                    };
+                };
+            };
+        };
+        responses: {
+            /** @description Credentials accepted, the connection stored and its first sync queued */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @example cloudbeds */
+                        provider?: string;
+                        connected?: boolean;
+                        /** @description Id of the stored connection. */
+                        pmsConnectionId?: string;
+                        /** @description False when an existing connection was updated. */
+                        created?: boolean;
+                        sessionId?: string | null;
+                        accountInfo?: {
+                            /** @description The Cloudbeds property id these credentials belong to. */
+                            externalAccountId?: string;
+                            accountName?: string | null;
+                            /** @description Every property the credentials cover. */
+                            propertyIds?: string[];
+                        };
+                        webhooks?: {
+                            /** @description Webhook subscriptions created at the PMS (Cloudbeds). Mews webhooks are enabled once per integration by Mews, so this is 0 there. */
+                            registered?: number;
+                            /** @description Why subscribing failed, if it did. The connection still syncs by polling. */
+                            error?: string;
+                        };
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["UnprocessableEntity"];
+        };
+    };
+    submitMewsCredentials: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Connect session id from `POST /v1/connect/mews`. Omit when calling with your API key. */
+                    sessionId?: string;
+                    /** @description The property's Mews Connector API access token. */
+                    credentials: {
+                        /** @description The property's Connector API access token. */
+                        accessToken: string;
+                        /**
+                         * @description `demo` targets Mews's public demo environment.
+                         * @default production
+                         * @enum {string}
+                         */
+                        environment?: "production" | "demo";
+                    };
+                };
+            };
+        };
+        responses: {
+            /** @description Credentials accepted, the connection stored and its first sync queued */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @example mews */
+                        provider?: string;
+                        connected?: boolean;
+                        /** @description Id of the stored connection. */
+                        pmsConnectionId?: string;
+                        /** @description False when an existing connection was updated. */
+                        created?: boolean;
+                        sessionId?: string | null;
+                        accountInfo?: {
+                            /** @description The Mews property id these credentials belong to. */
+                            externalAccountId?: string;
+                            accountName?: string | null;
+                            /** @description Every property the credentials cover. */
+                            propertyIds?: string[];
+                        };
+                        webhooks?: {
+                            /** @description Webhook subscriptions created at the PMS (Cloudbeds). Mews webhooks are enabled once per integration by Mews, so this is 0 there. */
+                            registered?: number;
+                            /** @description Why subscribing failed, if it did. The connection still syncs by polling. */
+                            error?: string;
+                        };
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["UnprocessableEntity"];
+        };
+    };
+    listListingUnits: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Listing id. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The listing's units */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        listingId?: number;
+                        total?: number;
+                        data?: {
+                            /** @description The PMS's id for the room; `reservation.unit.id` refers to it. */
+                            id?: string;
+                            /** @example 101 */
+                            name?: string;
+                            active?: boolean;
+                            /** @description A sub-space's parent room (a bed in a dorm), else null. */
+                            parentId?: string | null;
+                            /** @description The PMS's housekeeping state, verbatim (e.g. `Dirty`, `Clean`, `Inspected`). */
+                            housekeepingStatus?: string | null;
+                            floor?: string | null;
+                            /** @example mews */
+                            source?: string;
+                        }[];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["UnprocessableEntity"];
+        };
+    };
+    cancel_reservation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Reservation id. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @description Why it was cancelled; recorded on the reservation (and in the PMS's notes). */
+                    reason?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Cancelled */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        id?: string;
+                        confirmationCode?: string | null;
+                        listingId?: string | null;
+                        /** @enum {string} */
+                        status?: "cancelled";
+                        /** Format: date */
+                        checkIn?: string | null;
+                        /** Format: date */
+                        checkOut?: string | null;
+                        updatedAt?: string | null;
+                        /** @description Present and true when the reservation was already cancelled. */
+                        alreadyCancelled?: boolean;
+                        /** @description Present when the cancellation was made in a PMS. */
+                        pms?: {
+                            /** @example mews */
+                            provider?: string;
+                            applied?: string[];
+                            errors?: {
+                                section?: string;
+                                message?: string;
+                                code?: string;
+                            }[];
+                        };
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            /** @description The reservation belongs to a channel or another PMS (`reservation_owned_by_channel`), or the PMS connection is gone (`no_connection`). */
             409: {
                 headers: {
                     [name: string]: unknown;

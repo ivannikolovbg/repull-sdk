@@ -89,6 +89,12 @@ import type {
   ReservationCreateResponse,
   ReservationDeclineRequest,
   ReservationRequestResponse,
+  ReservationCancelRequest,
+  ReservationCancelResponse,
+  ListingUnitsResponse,
+  MewsCredentialsRequest,
+  CloudbedsCredentialsRequest,
+  HotelPmsCredentialsResponse,
   ReservationUpdateRequest,
   ReservationUpdateResponse,
   Review,
@@ -102,7 +108,7 @@ import { RepullError } from './errors.js';
 import { KvNamespace } from './kv.js';
 
 const DEFAULT_BASE_URL = 'https://api.repull.dev';
-const DEFAULT_USER_AGENT = '@repull/sdk/0.2.18';
+const DEFAULT_USER_AGENT = '@repull/sdk/0.2.22';
 
 export type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
@@ -359,12 +365,18 @@ class ConnectNamespace {
   readonly booking: BookingConnectNamespace;
   readonly plumguide: ProviderConnectNamespace;
   readonly vrbo: ProviderConnectNamespace;
+  /** Mews (hotel PMS). New in v0.2.22. */
+  readonly mews: HotelPmsConnectNamespace<MewsCredentialsRequest>;
+  /** Cloudbeds (hotel PMS). New in v0.2.22. */
+  readonly cloudbeds: HotelPmsConnectNamespace<CloudbedsCredentialsRequest>;
 
   constructor(private readonly client: Repull) {
     this.airbnb = new AirbnbConnectNamespace(client);
     this.booking = new BookingConnectNamespace(client);
     this.plumguide = new ProviderConnectNamespace(client, 'plumguide');
     this.vrbo = new ProviderConnectNamespace(client, 'vrbo');
+    this.mews = new HotelPmsConnectNamespace(client, 'mews');
+    this.cloudbeds = new HotelPmsConnectNamespace(client, 'cloudbeds');
   }
 
   /** GET /v1/connect — list every connection on this workspace. */
@@ -543,6 +555,30 @@ class ProviderConnectNamespace {
   }
 }
 
+/**
+ * Mews and Cloudbeds — hotel-model PMSs. A listing is a room type and its
+ * rooms are units (`properties.units`, `reservation.unit`).
+ */
+class HotelPmsConnectNamespace<Req> extends ProviderConnectNamespace {
+  constructor(private readonly hotelClient: Repull, private readonly hotelProvider: 'mews' | 'cloudbeds') {
+    super(hotelClient, hotelProvider);
+  }
+
+  /**
+   * POST /v1/connect/{mews|cloudbeds}/credentials — validate the property's
+   * token (Mews) or API key (Cloudbeds), store the connection and start the
+   * first sync. Mews: `{ credentials: { accessToken, environment? } }`;
+   * Cloudbeds: `{ credentials: { apiKey, propertyIds? } }`.
+   */
+  submitCredentials(body: Req): Promise<HotelPmsCredentialsResponse> {
+    return this.hotelClient.request<HotelPmsCredentialsResponse>(
+      'POST',
+      `/v1/connect/${this.hotelProvider}/credentials`,
+      { body },
+    );
+  }
+}
+
 class ReservationsNamespace {
   constructor(private readonly client: Repull) {}
 
@@ -668,6 +704,27 @@ class ReservationsNamespace {
     return this.client.request<ReservationRequestResponse>(
       'POST',
       `/v1/reservations/${encodeURIComponent(String(id))}/decline`,
+      { body, idempotencyKey: opts.idempotencyKey },
+    );
+  }
+
+  /**
+   * POST /v1/reservations/{id}/cancel — cancel where the booking lives.
+   * New in v0.2.22.
+   *
+   * Mews/Cloudbeds: cancelled in the PMS. Direct, website and owner bookings:
+   * cancelled in Repull. A channel booking (Airbnb, Booking.com, VRBO) is
+   * `409 reservation_owned_by_channel` — cancel it on the channel. Cancelling
+   * twice returns `alreadyCancelled: true`.
+   */
+  cancel(
+    id: string | number,
+    body: ReservationCancelRequest = {},
+    opts: { idempotencyKey?: string } = {},
+  ): Promise<ReservationCancelResponse> {
+    return this.client.request<ReservationCancelResponse>(
+      'POST',
+      `/v1/reservations/${encodeURIComponent(String(id))}/cancel`,
       { body, idempotencyKey: opts.idempotencyKey },
     );
   }
@@ -978,6 +1035,17 @@ class PropertiesNamespace {
       'GET',
       `/v1/properties/${encodeURIComponent(String(id))}`,
       { xSchema: opts.xSchema },
+    );
+  }
+
+  /**
+   * GET /v1/listings/{id}/units — the rooms under a Mews or Cloudbeds room
+   * type; empty for a single home. New in v0.2.22.
+   */
+  units(id: string | number): Promise<ListingUnitsResponse> {
+    return this.client.request<ListingUnitsResponse>(
+      'GET',
+      `/v1/listings/${encodeURIComponent(String(id))}/units`,
     );
   }
 }

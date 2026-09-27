@@ -246,6 +246,25 @@ export type ReservationDeclineRequest =
 /** Returned by `POST /v1/reservations/{id}/accept` and `/decline`. */
 export type ReservationRequestResponse =
   operations['accept_reservation_request']['responses'][200]['content']['application/json'];
+/** Body of `POST /v1/reservations/{id}/cancel`. */
+export type ReservationCancelRequest = NonNullable<
+  operations['cancel_reservation']['requestBody']
+>['content']['application/json'];
+/** Returned by `POST /v1/reservations/{id}/cancel`. */
+export type ReservationCancelResponse =
+  operations['cancel_reservation']['responses'][200]['content']['application/json'];
+/** Returned by `GET /v1/listings/{id}/units` — the rooms under a Mews or Cloudbeds room type. */
+export type ListingUnitsResponse =
+  operations['listListingUnits']['responses'][200]['content']['application/json'];
+/** Body of `POST /v1/connect/mews/credentials`. */
+export type MewsCredentialsRequest =
+  operations['submitMewsCredentials']['requestBody']['content']['application/json'];
+/** Body of `POST /v1/connect/cloudbeds/credentials`. */
+export type CloudbedsCredentialsRequest =
+  operations['submitCloudbedsCredentials']['requestBody']['content']['application/json'];
+/** Returned by `POST /v1/connect/{mews,cloudbeds}/credentials`. */
+export type HotelPmsCredentialsResponse =
+  operations['submitMewsCredentials']['responses'][200]['content']['application/json'];
 /** Returned by `GET /v1/inquiries`. */
 export type InquiryListResponse =
   operations['list_inquiries']['responses'][200]['content']['application/json'];
