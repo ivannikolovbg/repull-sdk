@@ -109,7 +109,7 @@ import { RepullError } from './errors.js';
 import { KvNamespace } from './kv.js';
 
 const DEFAULT_BASE_URL = 'https://api.repull.dev';
-const DEFAULT_USER_AGENT = '@repull/sdk/0.2.23';
+const DEFAULT_USER_AGENT = '@repull/sdk/0.2.24';
 
 export type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
