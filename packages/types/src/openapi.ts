@@ -1652,12 +1652,21 @@ export interface paths {
         };
         get?: never;
         /**
-         * Edit Airbnb host review
-         * @description Edit a host-side review for an Airbnb stay. Airbnb collapses POST + PUT into the same upstream call (`PUT /v2/listing_reviews/{id}`), so this endpoint covers both initial submit and subsequent edits while the review window is open.
+         * Submit your review of a guest (publishes, final)
+         * @description Submit your review of a guest — the review with `reviewerRole: "host"`. **Submitting publishes it and is final:** Airbnb has no draft and does not allow edits; a second submission is `409 review_already_submitted`. Airbnb accepts it up to 14 days after checkout (`expiresAt`).
          *
-         *     Body is a partial `AirbnbReview` — pass the fields you want to change (rating, public review, private feedback, category ratings).
+         *     Required: `publicReview`, `isRevieweeRecommended` (whether you would host the guest again), and a 1–5 rating for **each** of `cleanliness`, `communication` and `respect_house_rules` — send `rating` to use one score for all three, `categoryRatings` to score them individually, or both (`rating` fills any category you did not rate). Optional: `privateFeedback`, a note to the guest that is not published. A request missing a required piece is refused with `422 invalid_params` naming it, before anything is sent to Airbnb.
          *
-         *     Returns `403 listing_inactive` when the listing this resolves to is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
+         *     ```json
+         *     {
+         *       "publicReview": "Joanne was a great guest.",
+         *       "rating": 5,
+         *       "privateFeedback": "Thanks for leaving the place so tidy!",
+         *       "isRevieweeRecommended": true
+         *     }
+         *     ```
+         *
+         *     A guest's review of you (`reviewerRole: "guest"`) cannot be written here — `409 not_host_review`; reply to it with `POST /v1/channels/airbnb/reviews/{id}/respond`. After the window closes: `409 review_window_closed`. Full guide: https://repull.dev/docs/channels/airbnb/reviews
          */
         put: operations["edit_airbnb_review"];
         post?: never;
@@ -7317,6 +7326,46 @@ export interface components {
             photoId?: string;
             /** @description Position in the tour, 1 first. */
             sortOrder?: number;
+        };
+        /**
+         * @description Your review of a guest. Airbnb requires `publicReview`, `isRevieweeRecommended`, and a rating for each of cleanliness, communication and respect_house_rules — through `rating`, `categoryRatings`, or both. Submitting publishes it and is final.
+         * @example {
+         *       "publicReview": "Joanne was a great guest. The space was kept clean and communication was clear.",
+         *       "rating": 5,
+         *       "categoryRatings": [
+         *         {
+         *           "category": "cleanliness",
+         *           "rating": 5,
+         *           "comment": "Left it spotless"
+         *         }
+         *       ],
+         *       "privateFeedback": "Thanks for being such a considerate guest!",
+         *       "isRevieweeRecommended": true
+         *     }
+         */
+        AirbnbHostReviewSubmit: {
+            /**
+             * @description Shown publicly on the guest's profile. `comment` is accepted as an alias.
+             * @example Joanne was a great guest. The space was kept clean and communication was clear.
+             */
+            publicReview: string;
+            /**
+             * @description Used for every category not rated in `categoryRatings`.
+             * @example 5
+             */
+            rating?: number;
+            /** @description Per-category scores. Categories not listed take `rating`; without `rating`, all three must be listed. */
+            categoryRatings?: {
+                /** @enum {string} */
+                category: "cleanliness" | "communication" | "respect_house_rules";
+                rating: number;
+                /** @description Optional note for this category (Airbnb caps it at 50 characters). */
+                comment?: string;
+            }[];
+            /** @description Optional. A note to the guest that is not published. */
+            privateFeedback?: string;
+            /** @description Required. Whether you would host this guest again. */
+            isRevieweeRecommended: boolean;
         };
         /** @description An Airbnb review (guest → host or host → guest). */
         AirbnbReview: {
@@ -13812,14 +13861,14 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Airbnb review id (`HRabc123` style). */
+                /** @description The review's `id` or `externalReviewId`, both as returned by `GET /v1/reviews`. */
                 id: string;
             };
             cookie?: never;
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["AirbnbReview"];
+                "application/json": components["schemas"]["AirbnbHostReviewSubmit"];
             };
         };
         responses: {
