@@ -927,7 +927,9 @@ export interface paths {
          * Reply to a review on any channel
          * @description Resolves the review, reads its channel and dispatches the reply. Channel-neutral: you do not need to know where the review came from.
          *
-         *     Replies are available on Airbnb today; a review from a channel without a reply API returns `422 unsupported_channel` naming the channels that do work.
+         *     Replies work on Airbnb and Booking.com. Each channel accepts one reply per review. A review from a channel without a reply API returns `422 unsupported_channel` naming the channels that do work.
+         *
+         *     To review a guest (Airbnb only), use `POST /v1/reviews/{id}/guest-review`.
          *
          *     **Inactive listings:** a review of an inactive listing returns `403 listing_inactive` and no reply reaches the channel. Activate the listing first.
          */
@@ -1632,7 +1634,7 @@ export interface paths {
         /**
          * Respond to / submit Airbnb review (legacy)
          * @deprecated
-         * @description Legacy action-based shape. Body `{ action: "respond"|"submit", reviewId, response?, review? }`. Kept for backwards compatibility — prefer `PUT /v1/channels/airbnb/reviews/{id}` (edit) and `POST /v1/channels/airbnb/reviews/{id}/respond` (reply) for new integrations.
+         * @description Legacy action-based shape. Body `{ action: "respond"|"submit", reviewId, response?, review? }`. Kept for backwards compatibility — prefer `POST /v1/reviews/{id}/guest-review` (review a guest) and `POST /v1/reviews/{id}/reply` (reply) for new integrations.
          *
          *     Returns `403 listing_inactive` when the listing this resolves to is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
@@ -1666,7 +1668,9 @@ export interface paths {
          *     }
          *     ```
          *
-         *     A guest's review of you (`reviewerRole: "guest"`) cannot be written here — `409 not_host_review`; reply to it with `POST /v1/channels/airbnb/reviews/{id}/respond`. After the window closes: `409 review_window_closed`. Full guide: https://repull.dev/docs/channels/airbnb/reviews
+         *     A guest's review of you (`reviewerRole: "guest"`) cannot be written here — `409 not_host_review`; reply to it with `POST /v1/reviews/{id}/reply`. After the window closes: `409 review_window_closed`.
+         *
+         *     The same submission is available channel-neutrally as `POST /v1/reviews/{id}/guest-review`. Guide: https://repull.dev/docs/reviews#review-a-guest
          */
         put: operations["edit_airbnb_review"];
         post?: never;
@@ -1687,7 +1691,10 @@ export interface paths {
         put?: never;
         /**
          * Respond to Airbnb review
-         * @description Post a public host response to a guest review. Airbnb allows one response per review — repeated POSTs return 409. Response text is capped at 1000 characters.
+         * @deprecated
+         * @description **Deprecated — use `POST /v1/reviews/{id}/reply`**, which replies to a review from any channel. This route keeps working unchanged.
+         *
+         *     Post a public host response to a guest review. Airbnb allows one response per review — repeated POSTs return 409. Response text is capped at 1000 characters.
          *
          *     Returns `403 listing_inactive` when the listing this resolves to is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
@@ -4370,6 +4377,41 @@ export interface paths {
          *     Returns `403 listing_inactive` when the listing is inactive.
          */
         post: operations["cancel_reservation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/reviews/{id}/guest-review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Review a guest (publishes, final)
+         * @description Submit your review of a guest — a review with `reviewerRole: "host"` from `GET /v1/reviews?reviewerRole=host`. Only Airbnb lets hosts review guests; a review from another channel returns `422 unsupported_channel`.
+         *
+         *     **Submitting publishes it and is final:** Airbnb has no draft and does not allow edits; a second submission is `409 review_already_submitted`. Airbnb accepts it up to 14 days after checkout (`expiresAt`); after that, `409 review_window_closed`.
+         *
+         *     Required: `publicReview`, `isRevieweeRecommended` (whether you would host the guest again), and a 1–5 rating for **each** of `cleanliness`, `communication` and `respect_house_rules` — send `rating` to use one score for all three, `categoryRatings` to score them individually, or both (`rating` fills any category you did not rate). Optional: `privateFeedback`, a note to the guest that is not published. A request missing a required piece is refused with `422 invalid_params` naming it, before anything is sent to Airbnb.
+         *
+         *     ```json
+         *     {
+         *       "publicReview": "Joanne was a great guest.",
+         *       "rating": 5,
+         *       "privateFeedback": "Thanks for leaving the place so tidy!",
+         *       "isRevieweeRecommended": true
+         *     }
+         *     ```
+         *
+         *     A guest's review of you (`reviewerRole: "guest"`) cannot be written here — `409 not_host_review`; answer it with `POST /v1/reviews/{id}/reply`. Same behaviour as `PUT /v1/channels/airbnb/reviews/{id}`. Guide: https://repull.dev/docs/reviews#review-a-guest
+         */
+        post: operations["submitGuestReview"];
         delete?: never;
         options?: never;
         head?: never;
@@ -19989,6 +20031,60 @@ export interface operations {
                 content?: never;
             };
             422: components["responses"]["UnprocessableEntity"];
+        };
+    };
+    submitGuestReview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The review `id` from `GET /v1/reviews`. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AirbnbHostReviewSubmit"];
+            };
+        };
+        responses: {
+            /** @description Review published on Airbnb */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        id?: string;
+                        externalReviewId?: string;
+                        submitted?: boolean;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
+            404: components["responses"]["NotFound"];
+            /** @description `review_already_submitted`, `not_host_review` or `review_window_closed`. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `invalid_params` (a required piece is missing, named in `field`) or `unsupported_channel` (the review is not from Airbnb). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            429: components["responses"]["AirbnbRateLimited"];
+            502: components["responses"]["AirbnbUpstreamError"];
         };
     };
 }

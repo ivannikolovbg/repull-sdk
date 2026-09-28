@@ -61,6 +61,8 @@ export type WebhookSubscription = components['schemas']['WebhookSubscription'];
 export type AIOperation = components['schemas']['AIOperation'];
 export type RepullErrorPayload = components['schemas']['Error'];
 export type Review = components['schemas']['Review'];
+/** Body of `POST /v1/reviews/{id}/guest-review` (and `PUT /v1/channels/airbnb/reviews/{id}`). */
+export type GuestReviewSubmit = components['schemas']['AirbnbHostReviewSubmit'];
 
 /**
  * A Vanio listing paired with its Airbnb connection rows. Returned by

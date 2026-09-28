@@ -400,3 +400,22 @@ describe('channels.airbnb.offers.get', () => {
     expect(calls[0].url.searchParams.get('offerId')).toBe('1459920384');
   });
 });
+
+describe('reviews writes', () => {
+  it('reply posts the message to the unified route', async () => {
+    const { repull, calls } = client({ id: '187744', platform: 'booking', response: 'Thanks!' });
+    await repull.reviews.reply(187744, { message: 'Thanks!' });
+    expect(calls[0].method).toBe('POST');
+    expect(calls[0].url.pathname).toBe('/v1/reviews/187744/reply');
+    expect(calls[0].body).toEqual({ message: 'Thanks!' });
+  });
+
+  it('guestReview sends the host review body unchanged', async () => {
+    const { repull, calls } = client({ id: '181567', externalReviewId: '1', submitted: true });
+    const body = { publicReview: 'Great guest', rating: 5, isRevieweeRecommended: true };
+    await repull.reviews.guestReview(181567, body);
+    expect(calls[0].method).toBe('POST');
+    expect(calls[0].url.pathname).toBe('/v1/reviews/181567/guest-review');
+    expect(calls[0].body).toEqual(body);
+  });
+});

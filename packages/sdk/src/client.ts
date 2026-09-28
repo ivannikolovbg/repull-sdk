@@ -98,6 +98,7 @@ import type {
   ReservationUpdateRequest,
   ReservationUpdateResponse,
   Review,
+  GuestReviewSubmit,
   SendMessageRequest,
   SendMessageResponse,
   SpecialOffer,
@@ -1000,6 +1001,30 @@ class ReviewsNamespace {
     return this.client.request<Review>('GET', `/v1/reviews/${encodeURIComponent(String(id))}`, {
       xSchema: opts.xSchema,
     });
+  }
+  /**
+   * POST /v1/reviews/{id}/reply — public reply under a guest's review, on
+   * whichever channel it came from (Airbnb, Booking.com). One per review.
+   */
+  reply(
+    id: string | number,
+    body: { message: string },
+  ): Promise<{ id: string; platform: string; response: string }> {
+    return this.client.request('POST', `/v1/reviews/${encodeURIComponent(String(id))}/reply`, { body });
+  }
+
+  /**
+   * POST /v1/reviews/{id}/guest-review — your review of a guest (Airbnb only).
+   * Publishes immediately and is final: Airbnb has no draft and no edit.
+   * `publicReview` and `isRevieweeRecommended` are required, plus a rating for
+   * each of cleanliness, communication and respect_house_rules (`rating` fills
+   * any category not in `categoryRatings`).
+   */
+  guestReview(
+    id: string | number,
+    body: GuestReviewSubmit,
+  ): Promise<{ id: string; externalReviewId: string; submitted: boolean }> {
+    return this.client.request('POST', `/v1/reviews/${encodeURIComponent(String(id))}/guest-review`, { body });
   }
 }
 
