@@ -111,7 +111,7 @@ import { RepullError } from './errors.js';
 import { KvNamespace } from './kv.js';
 
 const DEFAULT_BASE_URL = 'https://api.repull.dev';
-const DEFAULT_USER_AGENT = '@repull/sdk/0.2.25';
+const DEFAULT_USER_AGENT = '@repull/sdk/0.2.26';
 
 export type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
@@ -405,6 +405,13 @@ class ConnectNamespace {
     /** Pin the hosted pages' language (`en`, `fr`). */
     locale?: string;
     /**
+     * What the connection may do. `'messaging'` (Airbnb, Vrbo) connects next to
+     * the host's existing PMS or channel manager and never writes listings or
+     * the calendar; `'full_access'` makes Repull the channel manager. Omit it to
+     * let the host choose on the hosted page.
+     */
+    accessType?: 'full_access' | 'messaging' | 'read_only';
+    /**
      * `'migrate'` starts a Repull Migrate session: the property manager's data
      * lands in a workspace of their own, returned as `workspaceId`.
      */
@@ -422,6 +429,7 @@ class ConnectNamespace {
         ...(opts.allowedProviders ? { allowedProviders: opts.allowedProviders } : {}),
         ...(opts.state ? { state: opts.state } : {}),
         ...(opts.locale ? { locale: opts.locale } : {}),
+        ...(opts.accessType ? { accessType: opts.accessType } : {}),
         ...(opts.purpose ? { purpose: opts.purpose } : {}),
         ...(opts.workspace ? { workspace: opts.workspace } : {}),
         ...(opts.copy ? { copy: opts.copy } : {}),
