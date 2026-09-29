@@ -54,6 +54,8 @@ import type {
   ConnectProvider,
   ConnectSession,
   ConnectStatus,
+  PmsWritePolicyPatch,
+  PmsWritePolicyResponse,
   Connection,
   Conversation,
   ConversationPreApproval,
@@ -109,7 +111,7 @@ import { RepullError } from './errors.js';
 import { KvNamespace } from './kv.js';
 
 const DEFAULT_BASE_URL = 'https://api.repull.dev';
-const DEFAULT_USER_AGENT = '@repull/sdk/0.2.24';
+const DEFAULT_USER_AGENT = '@repull/sdk/0.2.25';
 
 export type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
@@ -444,6 +446,24 @@ class ConnectNamespace {
   /** Generic provider status. */
   status(provider: string): Promise<ConnectStatus> {
     return this.client.request<ConnectStatus>('GET', `/v1/connect/${encodeURIComponent(provider)}`);
+  }
+
+  /**
+   * GET /v1/connect/{provider}/write-policy — what your app may change in a
+   * connected PMS (calendar + bookings). PMS connections only.
+   */
+  getWritePolicy(provider: string): Promise<PmsWritePolicyResponse> {
+    return this.client.request<PmsWritePolicyResponse>('GET', `/v1/connect/${encodeURIComponent(provider)}/write-policy`);
+  }
+
+  /**
+   * PATCH /v1/connect/{provider}/write-policy — turn individual write switches
+   * on or off. Only the switches you send change.
+   *
+   *   await repull.connect.updateWritePolicy('cloudbeds', { calendar: { rates: true } })
+   */
+  updateWritePolicy(provider: string, patch: PmsWritePolicyPatch): Promise<PmsWritePolicyResponse> {
+    return this.client.request<PmsWritePolicyResponse>('PATCH', `/v1/connect/${encodeURIComponent(provider)}/write-policy`, { body: patch });
   }
 
   /**

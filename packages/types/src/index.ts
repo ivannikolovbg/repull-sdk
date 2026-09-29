@@ -419,7 +419,46 @@ export interface ConnectStatus {
    * `disconnect()` to disconnect one account.
    */
   accounts?: ConnectAccount[];
+  /** PMS connections only: what your app may change in the PMS. */
+  writePolicy?: PmsWritePolicy;
   [key: string]: unknown;
+}
+
+/**
+ * What your app may change in a connected PMS. Hotel PMSs (Cloudbeds, Mews)
+ * start with every `calendar` switch off; other PMSs start with everything on.
+ */
+export interface PmsWritePolicy {
+  calendar: {
+    /** Open and close nights. */
+    availability: boolean;
+    /** Nightly prices. */
+    rates: boolean;
+    /** Minimum stay and other stay restrictions. */
+    restrictions: boolean;
+  };
+  reservations: {
+    /** Create bookings from booking websites. */
+    website: boolean;
+    /** Change and cancel bookings from the dashboard. */
+    dashboard: boolean;
+    /** Create, change and cancel bookings through the reservations API. */
+    api: boolean;
+  };
+}
+
+/** Only the switches you send change. */
+export interface PmsWritePolicyPatch {
+  calendar?: Partial<PmsWritePolicy['calendar']>;
+  reservations?: Partial<PmsWritePolicy['reservations']>;
+}
+
+/** Response of `GET/PATCH /v1/connect/{provider}/write-policy`. */
+export interface PmsWritePolicyResponse {
+  provider: string;
+  writePolicy: PmsWritePolicy;
+  /** What this provider starts with. */
+  defaults: PmsWritePolicy;
 }
 
 /** One entry of {@link ConnectStatus.accounts}. */
