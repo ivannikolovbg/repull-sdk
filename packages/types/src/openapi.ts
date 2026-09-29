@@ -503,7 +503,7 @@ export interface paths {
          *
          *     Booking.com: pass `redirectUrl` (no `accessType`). The response returns a hosted `url` — send the user there to designate FantasticStay in their Booking.com Extranet and paste their Hotel ID. Same response shape as Airbnb (`url`, `sessionId`, `expiresAt`).
          *
-         *     PMS providers (api-key based) pass `apiKey` instead; Plumguide passes `clientId`/`clientSecret`.
+         *     Plumguide passes `clientId`/`clientSecret`. PMS providers are not connected by this call: send their credentials to `POST /v1/connect/{provider}/credentials`, or start a hosted session with `POST /v1/connect`.
          */
         post: operations["create_connection"];
         /**
@@ -2928,7 +2928,7 @@ export interface paths {
         };
         /**
          * List VRBO listings
-         * @description List VRBO listings this workspace owns. VRBO is agency-model — Repull reads listings via the public iCal/HTTP feeds.
+         * @description List the Vrbo units linked to this workspace's listings, from the host's connected Vrbo account (host sign-in, beta).
          *
          *     Inactive listings are left out; they keep syncing and reappear once activated. Use `GET /v1/listings?status=inactive` to find them.
          */
@@ -2950,7 +2950,7 @@ export interface paths {
         };
         /**
          * List VRBO reservations
-         * @description Cursor-paginated list of VRBO reservations sourced from the public booking feed. Lag is typically 5-10 minutes vs. Airbnb / Booking.com. `?offset=` is accepted as a first-class alias for `?cursor=` (mutually exclusive; offset capped at 10000).
+         * @description Cursor-paginated list of Vrbo reservations imported from the host's connected Vrbo account (host sign-in, beta). The full normalised record — guest, price breakdown, policy — is on `GET /v1/reservations?platform=vrbo`. `?offset=` is accepted as a first-class alias for `?cursor=` (mutually exclusive; offset capped at 10000).
          *
          *     Reservations on inactive listings are left out (counts and cursors included); they keep syncing and reappear once the listing is activated.
          */
@@ -4737,9 +4737,11 @@ export interface components {
          *     - `channels` is returned by the list endpoint (`GET /v1/properties`) only.
          *     - `latitude`, `longitude`, `createdAt`, and `amenities` are returned by the detail endpoint (`GET /v1/properties/{id}`) only. `amenities` requires `?include=amenities`.
          *
-         *     An **inactive** property (`status: inactive`) appears only in the list endpoint, and only when `?status=inactive|all` asks for it. Such a row carries identity fields only — `id`, `name`, `status`, `lifecycleStatus`, `channels`, `updatedAt` — so every other field is absent until the property is activated. Every other endpoint answers `403 listing_inactive` for it.
+         *     An **inactive** property (`status: inactive`) appears only in the list endpoint, and only when `?status=inactive|all` asks for it. Such a row carries identity fields only — `id`, `name`, `status`, `lifecycleStatus`, `channels`, `accounts`, `updatedAt` — so every other field is absent until the property is activated. Every other endpoint answers `403 listing_inactive` for it.
          */
         Property: {
+            /** @description The connected account the property belongs to on each channel it is on. List endpoint. */
+            accounts?: components["schemas"]["RecordAccount"][];
             /** @description Internal Repull property ID. Equal to the listing id (`listings.id`); the same integer is used as `listingId` on reservations and `propertyId` on availability. */
             id?: string;
             /**
@@ -4983,6 +4985,8 @@ export interface components {
          *     The canonical (post-2026-05) shape uses nested `primaryGuest`, `occupancy`, `financials` blocks. The legacy flat fields (`guestId`, `totalPrice`, `currency`, `guestDetails`) remain populated for back-compat and are marked `deprecated` here. New consumers should read from the nested blocks; existing consumers continue to work unchanged.
          */
         Reservation: {
+            /** @description The connected account this reservation belongs to. List endpoint. */
+            account?: components["schemas"]["RecordAccount"];
             /** @description Internal Repull reservation ID */
             id: string;
             /** @description Internal Repull listing ID this reservation is on. */
@@ -5225,6 +5229,8 @@ export interface components {
         };
         /** @description Channel-agnostic message thread between the host workspace and a guest. Returned by `GET /v1/conversations`. The `id` is the internal Repull thread id (integer) — pass it back as the `{id}` path param on detail / messages calls. */
         Conversation: {
+            /** @description The connected account this conversation belongs to. List endpoint. */
+            account?: components["schemas"]["RecordAccount"];
             id?: string;
             /**
              * @example airbnb
@@ -5380,6 +5386,8 @@ export interface components {
         };
         /** @description A guest or host review unified across channels. Returned by `GET /v1/reviews` and `GET /v1/reviews/{id}`. Includes every channel's reviews once they have been imported. */
         Review: {
+            /** @description The connected account this review belongs to. List endpoint. */
+            account?: components["schemas"]["RecordAccount"];
             /** @description Internal Repull review id — pass back to `/v1/reviews/{id}`. */
             id?: string;
             /** @description ID in the source channel (Airbnb review id, Booking review id, etc.). Pass as `review_id` to the provider reply endpoint. */
@@ -5915,7 +5923,7 @@ export interface components {
          * @description Canonical event type identifier. Every webhook delivery declares one of these in its `type` field; SDKs key the discriminated `WebhookEvent` union on this value.
          * @enum {string}
          */
-        WebhookEventType: "reservation.created" | "reservation.updated" | "reservation.cancelled" | "reservation.message.received" | "reservation.message.sent" | "reservation.message.updated" | "reservation.alteration.created" | "reservation.alteration.responded" | "reservation.request.created" | "reservation.request.updated" | "inquiry.created" | "inquiry.updated" | "listing.created" | "listing.updated" | "listing.deleted" | "listing.suspended" | "listing.reactivated" | "calendar.updated" | "account.created" | "account.disconnected" | "review.created" | "review.responded" | "ai.operation.completed" | "ai.operation.failed" | "payment.completed" | "payment.refunded" | "payout.completed" | "migration.completed" | "migration.failed" | "repull.ping" | "usage.quota.warning";
+        WebhookEventType: "reservation.created" | "reservation.updated" | "reservation.cancelled" | "reservation.message.received" | "reservation.message.sent" | "reservation.message.updated" | "reservation.alteration.created" | "reservation.alteration.responded" | "reservation.request.created" | "reservation.request.updated" | "inquiry.created" | "inquiry.updated" | "listing.created" | "listing.updated" | "listing.deleted" | "listing.suspended" | "listing.reactivated" | "calendar.updated" | "account.created" | "connect.session.completed" | "account.disconnected" | "review.created" | "review.responded" | "ai.operation.completed" | "ai.operation.failed" | "payment.completed" | "payment.refunded" | "payout.completed" | "migration.completed" | "migration.failed" | "repull.ping" | "usage.quota.warning";
         /**
          * @description Lightweight reservation snapshot delivered as `data.object` on every reservation webhook event. Stable across `reservation.created`, `reservation.updated`, and `reservation.cancelled`. Fetch the full reservation via `GET /v1/reservations/{id}` if you need pricing, guest contact info, or audit history — those are deliberately omitted to keep deliveries small.
          *
@@ -6536,6 +6544,32 @@ export interface components {
              */
             createdAt?: string;
         };
+        /** @description Payload for `connect.session.completed`. A user finished a Connect session, on any channel or PMS. Use `state` (your token from session creation) or `sessionId` to tie the connection to your own user; the account it names is keyed the same way as every other event's `account` block. */
+        ConnectSessionCompletedPayload: {
+            /** @example cs_abc123 */
+            sessionId?: string;
+            /**
+             * @description The `state` you passed when creating the session.
+             * @example user_8421
+             */
+            state?: string | null;
+            /**
+             * @description Channel or PMS: airbnb, booking, booking_extranet, vrbo, plumguide, hostaway, …
+             * @example vrbo
+             */
+            provider?: string | null;
+            /**
+             * @description The provider's own account id — Airbnb host id, Booking.com hotel id, Vrbo account id, or the PMS account.
+             * @example 36
+             */
+            externalAccountId?: string | null;
+            /** @description Repull connection id, when the account has one (the `X-Account-Id` value). */
+            connectionId?: number | null;
+            /** @enum {string} */
+            purpose?: "connect" | "migrate";
+            /** Format: date-time */
+            completedAt?: string;
+        };
         /** @description Payload for `account.disconnected`. A PMS or channel connection was revoked, expired, or rejected by the upstream provider. */
         AccountDisconnectedPayload: {
             /**
@@ -6746,6 +6780,24 @@ export interface components {
                 sharePercent?: number;
             } | null;
         };
+        /** @description The connected account a record belongs to — keyed exactly like the webhook `account` block and `connect.session.completed`, so one `provider:externalAccountId` key routes reads and events to the same user. `null` when it cannot be resolved (never guessed). */
+        RecordAccount: {
+            /**
+             * @description airbnb, booking, booking_extranet, vrbo, or the PMS id (hostaway, cloudbeds, …).
+             * @example airbnb
+             */
+            provider?: string;
+            /**
+             * @description The provider's own account id — Airbnb host id, Booking.com hotel id, Extranet login, Vrbo account, or the PMS account.
+             * @example 79730216
+             */
+            externalAccountId?: string;
+            /**
+             * @description Repull connection id (`X-Account-Id`), when the account has one. A string, like every id in API responses.
+             * @example 126
+             */
+            connectionId?: string | null;
+        } | null;
         /** @description Which connected account produced this event. Null when it cannot be resolved — present-but-null rather than omitted, so a receiver can tell "unresolvable" from "an old event". */
         WebhookEventAccount: {
             /** @description Repull connection id. */
@@ -7157,6 +7209,27 @@ export interface components {
             account?: components["schemas"]["WebhookEventAccount"];
             data: components["schemas"]["AccountCreatedPayload"];
         };
+        ConnectSessionCompletedEvent: {
+            /**
+             * @description The event name. This field is `event`, not `type`. (enum property replaced by openapi-typescript)
+             * @enum {string}
+             */
+            event: "connect.session.completed";
+            /**
+             * Format: uuid
+             * @description Stable across every delivery and replay of this logical event — dedupe on it.
+             */
+            eventId: string;
+            /** @example 2026-04 */
+            apiVersion: string;
+            /**
+             * Format: date-time
+             * @description When this delivery was built.
+             */
+            timestamp: string;
+            account?: components["schemas"]["WebhookEventAccount"];
+            data: components["schemas"]["ConnectSessionCompletedPayload"];
+        };
         AccountDisconnectedEvent: {
             /**
              * @description The event name. This field is `event`, not `type`. (enum property replaced by openapi-typescript)
@@ -7437,7 +7510,7 @@ export interface components {
             data: components["schemas"]["MigrationImportPayload"];
         };
         /** @description The full event envelope POSTed to your webhook URL. Discriminated on `type` — narrow `event.data` by switching on `event.type`. Use the matching `*Event` variant directly if your SDK lacks discriminator support. Events about an inactive listing (reservations, messages, alterations, reviews, payments, calendar and listing events) are not delivered. The data keeps syncing while the listing is inactive, but its events are never sent — including after you reactivate it; webhooks resume for events that happen from reactivation on. Account-level events are always delivered. */
-        WebhookEvent: components["schemas"]["ReservationCreatedEvent"] | components["schemas"]["ReservationUpdatedEvent"] | components["schemas"]["ReservationCancelledEvent"] | components["schemas"]["ReservationMessageReceivedEvent"] | components["schemas"]["ReservationMessageSentEvent"] | components["schemas"]["ReservationMessageUpdatedEvent"] | components["schemas"]["ReservationAlterationCreatedEvent"] | components["schemas"]["ReservationAlterationRespondedEvent"] | components["schemas"]["ReservationRequestCreatedEvent"] | components["schemas"]["ReservationRequestUpdatedEvent"] | components["schemas"]["InquiryCreatedEvent"] | components["schemas"]["InquiryUpdatedEvent"] | components["schemas"]["ListingCreatedEvent"] | components["schemas"]["ListingUpdatedEvent"] | components["schemas"]["ListingDeletedEvent"] | components["schemas"]["ListingSuspendedEvent"] | components["schemas"]["ListingReactivatedEvent"] | components["schemas"]["CalendarUpdatedEvent"] | components["schemas"]["AccountCreatedEvent"] | components["schemas"]["AccountDisconnectedEvent"] | components["schemas"]["ReviewCreatedEvent"] | components["schemas"]["ReviewRespondedEvent"] | components["schemas"]["AiOperationCompletedEvent"] | components["schemas"]["AiOperationFailedEvent"] | components["schemas"]["PaymentCompletedEvent"] | components["schemas"]["PaymentRefundedEvent"] | components["schemas"]["PayoutCompletedEvent"] | components["schemas"]["RepullPingEvent"] | components["schemas"]["UsageQuotaWarningEvent"] | components["schemas"]["MigrationCompletedEvent"] | components["schemas"]["MigrationFailedEvent"];
+        WebhookEvent: components["schemas"]["ReservationCreatedEvent"] | components["schemas"]["ReservationUpdatedEvent"] | components["schemas"]["ReservationCancelledEvent"] | components["schemas"]["ReservationMessageReceivedEvent"] | components["schemas"]["ReservationMessageSentEvent"] | components["schemas"]["ReservationMessageUpdatedEvent"] | components["schemas"]["ReservationAlterationCreatedEvent"] | components["schemas"]["ReservationAlterationRespondedEvent"] | components["schemas"]["ReservationRequestCreatedEvent"] | components["schemas"]["ReservationRequestUpdatedEvent"] | components["schemas"]["InquiryCreatedEvent"] | components["schemas"]["InquiryUpdatedEvent"] | components["schemas"]["ListingCreatedEvent"] | components["schemas"]["ListingUpdatedEvent"] | components["schemas"]["ListingDeletedEvent"] | components["schemas"]["ListingSuspendedEvent"] | components["schemas"]["ListingReactivatedEvent"] | components["schemas"]["CalendarUpdatedEvent"] | components["schemas"]["AccountCreatedEvent"] | components["schemas"]["ConnectSessionCompletedEvent"] | components["schemas"]["AccountDisconnectedEvent"] | components["schemas"]["ReviewCreatedEvent"] | components["schemas"]["ReviewRespondedEvent"] | components["schemas"]["AiOperationCompletedEvent"] | components["schemas"]["AiOperationFailedEvent"] | components["schemas"]["PaymentCompletedEvent"] | components["schemas"]["PaymentRefundedEvent"] | components["schemas"]["PayoutCompletedEvent"] | components["schemas"]["RepullPingEvent"] | components["schemas"]["UsageQuotaWarningEvent"] | components["schemas"]["MigrationCompletedEvent"] | components["schemas"]["MigrationFailedEvent"];
         /** @description A listing paired with its Airbnb connections. The list endpoint groups every Airbnb connection of the same `listingId` under a single `connections[]` array. */
         AirbnbListing: {
             /**
@@ -11293,6 +11366,8 @@ export interface components {
          *     **Watermark.** The bound is inclusive (`updatedAt >= value`), so the last row of the final page is the watermark for the next poll — re-polling with it re-emits that row. Delivery is at-least-once; upsert by `id`.
          */
         UpdatedSince: string;
+        /** @description Only the records of one connected account, as `provider:externalAccountId` — the pair from a webhook `account` block, `connect.session.completed`, or `GET /v1/connect/{provider}` → `accounts`. A record belongs to an account when it is on that account's listings and on its channel (a PMS account: came in through that PMS). An account with no listings returns an empty page. */
+        Account: string;
         /** @description First-class alias for cursor-based pagination. Mutually exclusive with `cursor` — passing both returns 422. Accepts integers in `[0, 10000]`; deeper walks must use `cursor` (constant per-page cost). The response always includes `pagination.nextCursor` so consumers can switch from offset → cursor mid-walk for deep pagination without re-keying. */
         Offset: number;
     };
@@ -11330,6 +11405,8 @@ export interface operations {
     list_properties: {
         parameters: {
             query?: {
+                /** @description Only the records of one connected account, as `provider:externalAccountId` — the pair from a webhook `account` block, `connect.session.completed`, or `GET /v1/connect/{provider}` → `accounts`. A record belongs to an account when it is on that account's listings and on its channel (a PMS account: came in through that PMS). An account with no listings returns an empty page. */
+                account?: components["parameters"]["Account"];
                 /** @description Page size (max 100). Requests over the cap return 422. */
                 limit?: number;
                 /** @description Opaque cursor returned in the previous response's `pagination.nextCursor`. Omit to fetch the first page. */
@@ -11479,6 +11556,8 @@ export interface operations {
     list_reservations: {
         parameters: {
             query?: {
+                /** @description Only the records of one connected account, as `provider:externalAccountId` — the pair from a webhook `account` block, `connect.session.completed`, or `GET /v1/connect/{provider}` → `accounts`. A record belongs to an account when it is on that account's listings and on its channel (a PMS account: came in through that PMS). An account with no listings returns an empty page. */
+                account?: components["parameters"]["Account"];
                 /** @description Page size (max 100). Requests over the cap return 422. */
                 limit?: number;
                 /** @description Opaque cursor returned in the previous response's `pagination.nextCursor`. Omit to fetch the first page. */
@@ -11836,6 +11915,8 @@ export interface operations {
     listConversations: {
         parameters: {
             query?: {
+                /** @description Only the records of one connected account, as `provider:externalAccountId` — the pair from a webhook `account` block, `connect.session.completed`, or `GET /v1/connect/{provider}` → `accounts`. A record belongs to an account when it is on that account's listings and on its channel (a PMS account: came in through that PMS). An account with no listings returns an empty page. */
+                account?: components["parameters"]["Account"];
                 /** @description Opaque cursor returned in the previous response's `pagination.nextCursor`. Omit to fetch the first page. */
                 cursor?: string;
                 /** @description First-class alias for cursor-based pagination. Mutually exclusive with `cursor` — passing both returns 422. Accepts integers in `[0, 10000]`; deeper walks must use `cursor` (constant per-page cost). The response always includes `pagination.nextCursor` so consumers can switch from offset → cursor mid-walk for deep pagination without re-keying. */
@@ -12043,6 +12124,8 @@ export interface operations {
     listReviews: {
         parameters: {
             query?: {
+                /** @description Only the records of one connected account, as `provider:externalAccountId` — the pair from a webhook `account` block, `connect.session.completed`, or `GET /v1/connect/{provider}` → `accounts`. A record belongs to an account when it is on that account's listings and on its channel (a PMS account: came in through that PMS). An account with no listings returns an empty page. */
+                account?: components["parameters"]["Account"];
                 /** @description Opaque cursor returned in the previous response's `pagination.nextCursor`. */
                 cursor?: string;
                 /** @description First-class alias for cursor-based pagination. Mutually exclusive with `cursor` — passing both returns 422. Accepts integers in `[0, 10000]`; deeper walks must use `cursor` (constant per-page cost). The response always includes `pagination.nextCursor` so consumers can switch from offset → cursor mid-walk for deep pagination without re-keying. */
@@ -12165,7 +12248,7 @@ export interface operations {
                      * @description Where to send the user after they finish (or cancel). Status query params are appended.
                      */
                     redirectUrl: string;
-                    /** @description Opaque pass-through correlation token. Echoed back in the response. */
+                    /** @description Your own correlation token, e.g. your user id (at most 500 characters). Echoed in this response, on the redirect back (`&state=`), in the popup message, and in the `connect.session.completed` webhook. */
                     state?: string | null;
                     /**
                      * @description What the connection may do. Airbnb: the OAuth scope tier. Vrbo: `messaging` (or `read_only`) imports bookings and messages and never pushes the calendar; `full_access` also pushes prices and availability. Setting it locks the choice; omit it to let the host choose on the hosted page (default `full_access`).
@@ -12319,8 +12402,8 @@ export interface operations {
                      * @enum {string}
                      */
                     accessType?: "read_only" | "full_access" | "messaging";
-                    /** @description PMS providers — API key. */
-                    apiKey?: string;
+                    /** @description Airbnb + Booking.com — your own correlation token, e.g. your user id (at most 500 characters). Echoed on the redirect back (`&state=`) and in the `connect.session.completed` webhook. */
+                    state?: string;
                     /** @description Plumguide — client ID. */
                     clientId?: string;
                     /** @description Plumguide — client secret. */

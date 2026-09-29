@@ -111,7 +111,7 @@ import { RepullError } from './errors.js';
 import { KvNamespace } from './kv.js';
 
 const DEFAULT_BASE_URL = 'https://api.repull.dev';
-const DEFAULT_USER_AGENT = '@repull/sdk/0.2.26';
+const DEFAULT_USER_AGENT = '@repull/sdk/0.2.27';
 
 export type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
@@ -620,6 +620,8 @@ class ReservationsNamespace {
    */
   list(
     query: {
+      /** One connected account's records: `provider:externalAccountId`, e.g. `airbnb:79730216`. */
+      account?: string;
       limit?: number;
       cursor?: string;
       status?: 'confirmed' | 'pending' | 'cancelled' | 'completed' | string;
@@ -778,7 +780,14 @@ class ConversationsNamespace {
    * walk forward; stop when `pagination.hasMore` is `false`.
    */
   list(
-    query: { limit?: number; cursor?: string; channel?: string; include_total?: boolean } = {},
+    query: {
+      limit?: number;
+      cursor?: string;
+      channel?: string;
+      include_total?: boolean;
+      /** One connected account's threads: `provider:externalAccountId`, e.g. `airbnb:79730216`. */
+      account?: string;
+    } = {},
     opts: { xSchema?: string } = {},
   ): Promise<ListResponse<Conversation>> {
     return this.client.request<ListResponse<Conversation>>('GET', '/v1/conversations', {
@@ -999,6 +1008,8 @@ class ReviewsNamespace {
   /** GET /v1/reviews — cursor-paginated review stream across channels. */
   list(
     query: {
+      /** One connected account's records: `provider:externalAccountId`, e.g. `airbnb:79730216`. */
+      account?: string;
       limit?: number;
       cursor?: string;
       channel?: string;
@@ -1067,6 +1078,8 @@ class PropertiesNamespace {
    */
   list(
     query: {
+      /** One connected account's records: `provider:externalAccountId`, e.g. `airbnb:79730216`. */
+      account?: string;
       limit?: number;
       cursor?: string;
       /** Defaults to `active`. `inactive` properties carry identity fields only. */
