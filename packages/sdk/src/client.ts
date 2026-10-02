@@ -89,6 +89,8 @@ import type {
   Reservation,
   ReservationCreateRequest,
   ReservationCreateResponse,
+  ReservationQuoteRequest,
+  ReservationQuoteResponse,
   ReservationDeclineRequest,
   ReservationRequestResponse,
   ReservationCancelRequest,
@@ -111,7 +113,7 @@ import { RepullError } from './errors.js';
 import { KvNamespace } from './kv.js';
 
 const DEFAULT_BASE_URL = 'https://api.repull.dev';
-const DEFAULT_USER_AGENT = '@repull/sdk/0.2.27';
+const DEFAULT_USER_AGENT = '@repull/sdk/0.2.28';
 
 export type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
@@ -651,12 +653,30 @@ class ReservationsNamespace {
   }
 
   /**
-   * POST /v1/reservations — create a direct reservation. New in v0.2.12.
+   * POST /v1/reservations/quote — price a stay and check its availability in
+   * the PMS that manages the listing, without booking anything. New in v0.2.28.
+   *
+   * `available: false` is an answer, not an error — the PMS's reasons are in
+   * `restrictions`. A listing not managed in a PMS is `422 pms_not_linked`; a
+   * PMS without a quote API (Mews, Cloudbeds, iGMS) is
+   * `422 pms_write_unsupported`. `listings.get(id)` →
+   * `capabilities.reservations.quote` says whether a listing can be quoted.
+   */
+  quote(body: ReservationQuoteRequest): Promise<ReservationQuoteResponse> {
+    return this.client.request<ReservationQuoteResponse>('POST', '/v1/reservations/quote', { body });
+  }
+
+  /**
+   * POST /v1/reservations — create a reservation. New in v0.2.12.
    *
    * `platform` is limited to `direct` / `website` / `owner`: OTA reservations
    * are owned by the channel and arrive through sync, so they cannot be
-   * created here. The stay is priced by the pricing engine, not from the
-   * request — read `totalPrice` back off the response.
+   * created here. On a listing managed in a PMS the booking is written to the
+   * PMS: pass `adults` / `children`, `totalPrice` (otherwise the PMS's own
+   * quote is used), `notes`, `unitId`, `status: 'tentative'` and
+   * `sendConfirmationEmail` as needed, and read the `pms` block on the
+   * response. Otherwise the stay is priced by the pricing engine — read
+   * `totalPrice` back off the response.
    *
    * Pass `opts.idempotencyKey` (a UUID generated where you build the request)
    * to make a retry safe. The same key replays the stored response for 24

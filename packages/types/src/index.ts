@@ -213,6 +213,16 @@ export type ReservationCreateResponse = components['schemas']['ReservationCreate
 export type ReservationUpdateRequest = components['schemas']['ReservationUpdateRequest'];
 /** Returned by `PATCH /v1/reservations/{id}`. `changed` lists the fields actually written. */
 export type ReservationUpdateResponse = components['schemas']['ReservationUpdateResponse'];
+/** Request body for `POST /v1/reservations/quote` — price and check a stay in the PMS without booking. */
+export type ReservationQuoteRequest = components['schemas']['ReservationQuoteRequest'];
+/** Returned by `POST /v1/reservations/quote`. `available: false` is an answer — read `restrictions`. */
+export type ReservationQuoteResponse = components['schemas']['ReservationQuoteResponse'];
+/** The `pms` block on reservation write responses — what the PMS did with the write. */
+export type ReservationPmsOutcome = components['schemas']['ReservationPmsOutcome'];
+/** `capabilities.reservations` on listing and connection responses. */
+export type ReservationCapabilities = components['schemas']['ReservationCapabilities'];
+/** A connection's next step (`action`), alongside `fixUrl`. */
+export type ConnectionAction = components['schemas']['ConnectionAction'];
 /** Guest identity accepted inline by `POST /v1/reservations`. */
 export type ReservationGuestInput = components['schemas']['ReservationGuestInput'];
 /** Request body for `POST /v1/conversations/{id}/messages`. */

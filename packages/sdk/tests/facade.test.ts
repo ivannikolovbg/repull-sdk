@@ -419,3 +419,53 @@ describe('reviews writes', () => {
     expect(calls[0].body).toEqual(body);
   });
 });
+
+describe('reservations.quote / create on a PMS listing', () => {
+  it('quote POSTs the stay to /v1/reservations/quote and returns the PMS answer', async () => {
+    const answer = {
+      listingId: '4118',
+      provider: 'hostaway',
+      checkIn: '2026-10-01',
+      checkOut: '2026-10-05',
+      available: true,
+      total: 880,
+      currency: 'USD',
+      breakdown: { accommodation: 720, cleaningFee: 100, taxes: 60 },
+      restrictions: [],
+    };
+    const { repull, calls } = client(answer);
+    const res = await repull.reservations.quote({
+      listingId: 4118,
+      checkIn: '2026-10-01',
+      checkOut: '2026-10-05',
+      adults: 2,
+      children: 1,
+    });
+    expect(calls[0].method).toBe('POST');
+    expect(calls[0].url.pathname).toBe('/v1/reservations/quote');
+    expect(calls[0].body).toEqual({ listingId: 4118, checkIn: '2026-10-01', checkOut: '2026-10-05', adults: 2, children: 1 });
+    expect(res.available).toBe(true);
+    expect(res.total).toBe(880);
+  });
+
+  it('create forwards the PMS booking fields unchanged', async () => {
+    const { repull, calls } = client({ id: '91', listingId: '4118', status: 'confirmed' }, 201);
+    const body = {
+      listingId: 4118,
+      checkIn: '2026-10-01',
+      checkOut: '2026-10-05',
+      guest: { firstName: 'Ada', email: 'ada@example.com' },
+      adults: 2,
+      children: 1,
+      totalPrice: 880,
+      notes: 'Late arrival',
+      unitId: 'u-1',
+      status: 'tentative' as const,
+      sendConfirmationEmail: false,
+    };
+    const res = await repull.reservations.create(body, { idempotencyKey: 'k-1' });
+    expect(calls[0].url.pathname).toBe('/v1/reservations');
+    expect(calls[0].body).toEqual(body);
+    expect(res.id).toBe('91');
+  });
+});

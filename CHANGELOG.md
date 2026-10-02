@@ -3,6 +3,19 @@
 All notable changes to `@repull/sdk` and `@repull/types` are recorded here.
 This project follows [Semantic Versioning](https://semver.org/).
 
+## [0.2.28] - 2026-10-02
+
+Regenerated against the live `https://api.repull.dev/openapi.json`:
+
+- `repull.reservations.quote(body)` — `POST /v1/reservations/quote`: price a stay and check availability in the PMS that manages the listing, without booking. `available: false` is an answer; read `restrictions`.
+- `repull.reservations.create` — new PMS booking fields `adults`, `children`, `notes`, `totalPrice`, `unitId`, `status` (`confirmed` / `tentative`), `sendConfirmationEmail`.
+- Reservation write responses (create / update / cancel) carry a `pms` block describing what the PMS did.
+- `capabilities.reservations` on listing and connection responses (`create`, `change`, `cancel`, `quote`…).
+- Connections expose `action` and `fixUrl`; Smoobu credentials accept `apiSecret`; new error codes (`pms_not_linked`, `pms_write_unsupported`, …).
+- New type aliases: `ReservationQuoteRequest`, `ReservationQuoteResponse`, `ReservationPmsOutcome`, `ReservationCapabilities`, `ConnectionAction`.
+
+**Type change (patch release):** reservation, listing and guest `id`s on reservation write responses (`id`, `listingId`, `guestId`) are now typed as `string`, where they were `number`. The API has always returned them as strings; code that compared them to numbers needs a `String(...)`/`Number(...)`.
+
 ## [0.2.21] - 2026-09-25
 
 Regenerated against the live `https://api.repull.dev/openapi.json`:
