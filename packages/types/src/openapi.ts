@@ -274,6 +274,8 @@ export interface paths {
          *
          *     Field names are camelCase, and an unrecognised field is rejected by name rather than silently dropped.
          *
+         *     **Creating the guest in a connected PMS too:** send `provider` (e.g. `guesty`). The guest is created in the PMS first and its id there comes back as `pms.externalId`; a PMS whose API cannot create guest profiles returns `422 pms_write_unsupported` naming it (Hostaway today) and nothing is created. `GET /v1/connect/{provider}` → `capabilities.pms.guests.create` says so beforehand.
+         *
          *     Send `Idempotency-Key` to make a retry safe.
          */
         post: operations["createGuest"];
@@ -302,7 +304,15 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * Update a guest
+         * @description Change a guest's name, email, phone or language. Email and phone are added as the guest's newest contact; earlier ones are kept.
+         *
+         *     **Guests linked to a connected PMS** (created with `provider`, or imported from one) are changed in that PMS first. A PMS whose API cannot change guest profiles returns `422 pms_write_unsupported` naming it (Hostaway today) and nothing is written; `GET /v1/connect/{provider}` → `capabilities.pms.guests.update` says so beforehand. A revoked PMS connection is `403 connection_reauth_required`.
+         *
+         *     Send `Idempotency-Key` to make a retry safe.
+         */
+        patch: operations["updateGuest"];
         trace?: never;
     };
     "/v1/conversations": {
@@ -982,6 +992,8 @@ export interface paths {
          * @description Resolves the review, reads its channel and dispatches the reply. Channel-neutral: you do not need to know where the review came from.
          *
          *     Replies work on Airbnb, Booking.com and VRBO. Each channel accepts one reply per review (VRBO: a second is `409 already_replied`; a review VRBO no longer takes a response to is `409 reply_not_allowed`). On VRBO the response is signed with a name — the connected account's host name, or `name` if you send it. A review from a channel without a reply API returns `422 unsupported_channel` naming the channels that do work.
+         *
+         *     **Reviews read from a PMS** (`pms` set on the review — Guesty, Hostaway, …) are answered through that PMS. A PMS whose API has no reply returns `422 pms_write_unsupported` naming it (Hostaway today); `GET /v1/connect/{provider}` → `capabilities.pms.reviews.reply` says so beforehand. A revoked PMS connection is `403 connection_reauth_required`.
          *
          *     To review a guest (Airbnb only), use `POST /v1/reviews/{id}/guest-review`.
          *
@@ -2296,6 +2308,8 @@ export interface paths {
         /**
          * Update canonical listing content
          * @description Write your PMS's canonical listing content — title, description, amenities, address, occupancy, and policies — into a Repull listing, making it the source of truth. This is the flagship "the PMS owns listing content, Repull distributes it" enabler.
+         *
+         *     **Listings managed in a connected PMS** (Guesty, Hostaway, …): the PMS owns their content, so title, descriptions, check-in/out times, capacity, amenities, house rules, address and added photos are written to the PMS first; Repull keeps only what it accepted (refused sections are in `deferred`, its per-section outcome in `pms`). A section that PMS cannot write returns `422 pms_write_unsupported` naming it when nothing was applied (or is listed in `deferred` when other sections were); `GET /v1/listings/{id}` → `capabilities.pms.listings` says which sections it takes. A PMS whose connector writes no listing content at all (Mews, Cloudbeds, Lodgify, …) keeps today's behaviour: the content is written to Repull only. Send photos with `photosMode: "append"` — replacing a PMS listing's photo set needs the PMS's own photo ids. A revoked PMS connection is `403 connection_reauth_required`.
          *
          *     **Partial update:** every field is optional. Only the fields you send are written; absent fields are left untouched. `amenities` is a FULL replacement of the amenity set (omit to leave untouched, send `[]` to clear).
          *
@@ -3902,7 +3916,9 @@ export interface paths {
          *
          *     Find inquiries that need an answer with `GET /v1/inquiries` (default `status=open`); each carries the `conversationId` to use here.
          *
-         *     One endpoint for every channel with pre-approvals: **Airbnb** (listings connected directly) and **VRBO**. A Booking.com or direct-booking conversation, or an Airbnb one relayed through a PMS (Hostaway, Guesty), returns `422 channel_not_supported` and nothing is sent — `GET /v1/conversations/{id}` → `capabilities.canPreApprove` says where it works.
+         *     One endpoint for every channel with pre-approvals: **Airbnb** (listings connected directly) and **VRBO**. A Booking.com or direct-booking conversation returns `422 channel_not_supported` and nothing is sent — `GET /v1/conversations/{id}` → `capabilities.canPreApprove` says where it works.
+         *
+         *     **An inquiry relayed by a PMS** (Guesty, Hostaway, …) is pre-approved in that PMS. A PMS whose API cannot returns `422 pms_write_unsupported` naming it (Hostaway today); `GET /v1/connect/{provider}` → `capabilities.pms.reservations.preapprove` says so beforehand. The response then carries `pms`.
          *
          *     `blockInstantBooking` is Airbnb only (VRBO has no such switch: `422 invalid_params`). `message` is sent to the guest with a VRBO pre-approval (a friendly default otherwise).
          *
@@ -4024,7 +4040,7 @@ export interface paths {
          *
          *     Airbnb confirms asynchronously: the reservation’s status moves to confirmed, and a `reservation.updated` webhook fires, when Airbnb’s notification lands (usually within seconds). The response reports what Airbnb was asked to do.
          *
-         *     **Airbnb only**, and only for listings connected to Airbnb directly: other channels have no request step (`422 channel_not_supported`). A reservation that is not pending is refused before Airbnb is contacted (`409 reservation_not_pending`); one Airbnb says already moved on is `409 request_no_longer_pending`. Neither is worth retrying.
+         *     **Airbnb**, for listings connected to Airbnb directly; other channels have no request step (`422 channel_not_supported`). **A request relayed by a PMS** (Guesty, Hostaway, …) is answered in that PMS, whatever channel it came from; a PMS whose API cannot answer requests returns `422 pms_write_unsupported` naming it (Hostaway today), and `GET /v1/connect/{provider}` → `capabilities.pms.reservations.respond` says so beforehand. The response then carries `pms`. A reservation that is not pending is refused before Airbnb is contacted (`409 reservation_not_pending`); one Airbnb says already moved on is `409 request_no_longer_pending`. Neither is worth retrying.
          *
          *     Takes no body.
          *
@@ -5589,6 +5605,11 @@ export interface components {
             externalId?: string;
             /** @enum {string|null} */
             platform?: "airbnb" | "booking" | "vrbo" | null;
+            /**
+             * @description The PMS this review was read from (`guesty`, `hostaway`, …) when it came through one — `platform` is still the channel the guest wrote it on. A reply (`POST /v1/reviews/{id}/reply`) goes through this PMS; `GET /v1/connect/{provider}` → `capabilities.pms.reviews.reply` says whether it can. `null` for a review from a directly connected channel.
+             * @example guesty
+             */
+            pms?: string | null;
             /** @description Internal Repull listing id the review is attached to. */
             listingId?: string | null;
             /** @description The source channel's own listing/property id for this review (Booking.com hotel/property id, Airbnb listing id, …). Pass this as `property_id` to `POST /v1/channels/booking/reviews` to post a host reply — it is the bridge from a unified review straight to the provider-specific reply call. `null` when the source listing id has not been mirrored yet. */
@@ -5965,9 +5986,10 @@ export interface components {
             }[];
             /** @description PMS connections only: what the app may change in the PMS. Change it with `PATCH /v1/connect/{provider}/write-policy`. */
             writePolicy?: components["schemas"]["PmsWritePolicy"];
-            /** @description PMS providers only. `reservations`: which reservation writes the API performs on this connection's listings — the connector's support combined with `writePolicy`. When `connected` is false, what the connector supports once connected. */
+            /** @description PMS providers only. `reservations`: which reservation writes the API performs on this connection's listings — the connector's support combined with `writePolicy`. `pms`: everything else the API does through this PMS (review replies, request answers, listing content, guests, message channel/attachments, calendar). When `connected` is false, what the connector supports once connected. */
             capabilities?: {
                 reservations?: components["schemas"]["ReservationCapabilities"];
+                pms?: components["schemas"]["PmsCapabilities"];
             };
             /** @description Vrbo only: the same freshness envelope the Airbnb read endpoints return, per account and in aggregate. Its reason is never_synced until a mapping is confirmed and importing while upcoming bookings come in. */
             dataFreshness?: Record<string, never>;
@@ -9050,8 +9072,22 @@ export interface components {
             id?: string;
             /** @description Content slabs that were actually written, e.g. ["title","occupancy","amenities"]. A non-English write also reports `locale:<tag>` so you can see which row was written. A rate change reports `pricing`, and `calendar` as well when nights on the calendar moved to the new rate. */
             changed?: string[];
-            /** @description Provided-but-not-applied fields — e.g. "photos" when a non-empty photos array carried no valid http(s) URL. */
+            /** @description Provided-but-not-applied fields — e.g. "photos" when a non-empty photos array carried no valid http(s) URL. On a listing a PMS manages, also the content sections the PMS refused (`title`, `descriptions`, `times`, `capacity`, `amenities`, `houseRules`, `address`, `photos`), which are then not written here either. */
             deferred?: string[];
+            /** @description Present when the listing is managed in a PMS: the PMS-owned fields were written there first, and this is its per-section outcome. */
+            pms?: {
+                /** @example guesty */
+                provider?: string;
+                /** @description Sections the PMS applied. */
+                applied?: string[];
+                /** @description Sections the PMS refused, with its reason. */
+                errors?: {
+                    section?: string;
+                    /** @enum {string} */
+                    code?: "rejected" | "unavailable" | "unsupported" | "not_found" | "reauth_required" | "duplicate";
+                    message?: string;
+                }[];
+            } | null;
         };
         ListingGenerateContentRequest: {
             /** @description Up to 8 reference photos. When present, Repull AI vision is used for grounded copy. */
@@ -9421,9 +9457,10 @@ export interface components {
          *     An **inactive** listing appears only in `GET /v1/listings`, and only when `?status=` asks for it. Such a row carries identity fields only — `id`, `name`, `status`, `inactiveReason`, `address.city`, `channels` — so the street, `content`, `details`, `createdAt` and `updatedAt` are absent until the listing is activated. `inactiveReason` is `plan_limit` (held back by the plan; activating needs a free slot or an upgrade), `unlisted_on_airbnb`, or `deactivated` (switched off by you). `GET /v1/listings/{id}` and every other listing endpoint answer `403 listing_inactive` for it. The one field you can add back is `thumbnailUrl`, by passing `?include=thumbnail` — enough to render an activate/deactivate picker with pictures from a single request.
          */
         Listing: {
-            /** @description `GET /v1/listings/{id}` only. What the API can do with this listing. */
+            /** @description `GET /v1/listings/{id}` only. What the API can do with this listing. `pms` is present when a connected PMS manages it. */
             capabilities?: {
                 reservations?: components["schemas"]["ReservationCapabilities"];
+                pms?: components["schemas"]["PmsCapabilities"];
             };
             /** @description `GET /v1/listings/{id}` only. The physical rooms under a hotel-model listing (a Mews or Cloudbeds room type); empty for a single home. Same items as `GET /v1/listings/{id}/units`. */
             units?: {
@@ -10767,6 +10804,68 @@ export interface components {
              */
             verifiedAgainst?: "sandbox" | "vendor_docs" | null;
         };
+        /** @description What the API does through a connected PMS beyond reservation writes, read from the same connector table the router uses — a `false` flag is a `422 pms_write_unsupported` naming the PMS. */
+        PmsCapabilities: {
+            /** @example guesty */
+            provider?: string;
+            /** @description `false`: what the connector supports once connected (on a listing: a dead link — every write answers `409 no_connection`). */
+            connected?: boolean;
+            reservations?: {
+                /** @description `POST /v1/reservations/{id}/accept|decline` on requests this PMS relays. */
+                respond?: boolean;
+                /** @description `POST /v1/conversations/{id}/pre-approval` on inquiries this PMS relays. */
+                preapprove?: boolean;
+            };
+            reviews?: {
+                /** @description Its reviews appear in `GET /v1/reviews` (with `pms` set). */
+                read?: boolean;
+                /** @description `POST /v1/reviews/{id}/reply`. */
+                reply?: boolean;
+            };
+            /** @description Sections `PUT /v1/listings/{id}/content` writes to the PMS. */
+            listings?: {
+                title?: boolean;
+                descriptions?: boolean;
+                times?: boolean;
+                capacity?: boolean;
+                amenities?: boolean;
+                houseRules?: boolean;
+                address?: boolean;
+                photosAdd?: boolean;
+                photosDelete?: boolean;
+                photosReorder?: boolean;
+                photoCaptions?: boolean;
+            };
+            guests?: {
+                /** @description `POST /v1/guests` with `provider`. */
+                create?: boolean;
+                /** @description `PATCH /v1/guests/{id}` on a guest linked to this PMS. */
+                update?: boolean;
+            };
+            conversations?: {
+                send?: boolean;
+                /** @description `attachments` on `POST /v1/conversations/{id}/messages`. */
+                attachments?: boolean;
+                /** @description `channel` on `POST /v1/conversations/{id}/messages`. */
+                channelSelect?: boolean;
+            };
+            calendar?: {
+                /** @description `PUT /v1/availability/{propertyId}` reaches the PMS. */
+                write?: boolean;
+            };
+            payments?: {
+                /** @description Payments recorded in the PMS are imported onto the reservation. */
+                read?: boolean;
+            };
+            tasks?: {
+                read?: boolean;
+                write?: boolean;
+            };
+            /** @description The connector's own notes per family (limits, required access). */
+            notes?: {
+                [key: string]: string;
+            };
+        };
         GuestCreateRequest: {
             /** @example Ada */
             firstName: string;
@@ -10791,6 +10890,43 @@ export interface components {
             currency?: string;
             /** @default false */
             isBusinessTraveler: boolean;
+            /**
+             * @description A connected PMS to create the guest in as well. The guest is created there FIRST; a PMS that cannot create guest profiles returns `422 pms_write_unsupported` and nothing is created. The PMS's guest id comes back as `pms.externalId`, and later `PATCH /v1/guests/{id}` changes reach it.
+             * @example guesty
+             */
+            provider?: string;
+        };
+        GuestUpdateRequest: {
+            firstName?: string;
+            lastName?: string;
+            /**
+             * Format: email
+             * @description Added as the guest's newest email; earlier ones are kept.
+             */
+            email?: string;
+            /** @description E.164 preferred. Added as the guest's newest phone; earlier ones are kept. */
+            phone?: string;
+            /** @description BCP-47 tag. */
+            language?: string;
+        };
+        GuestUpdateResponse: {
+            id?: number;
+            firstName?: string;
+            lastName?: string | null;
+            language?: string | null;
+            contacts?: {
+                /** @enum {string} */
+                type?: "email" | "phone";
+                value?: string;
+                isPrimary?: boolean;
+            }[];
+            /** Format: date-time */
+            updatedAt?: string | null;
+            /** @description Each PMS the change was written to first (the guest's linked PMSs), with the sections it applied. */
+            pms?: {
+                provider?: string;
+                applied?: string[];
+            }[];
         };
         GuestCreateResponse: {
             /**
@@ -10814,6 +10950,11 @@ export interface components {
             }[];
             /** Format: date-time */
             createdAt?: string;
+            /** @description Set when `provider` was sent: the PMS the guest was also created in, and its id there. */
+            pms?: {
+                provider?: string;
+                externalId?: string | null;
+            } | null;
         };
         /** @description A file to send, by URL. Repull downloads it (public `https://` only — no credentials in the URL, no private or internal addresses; redirects are followed and re-checked; 20 s timeout), reads its real type from the file's bytes, and keeps a durable copy. Nothing is sent to the guest until every file in the request has passed. */
         SendMessageAttachment: {
@@ -10850,11 +10991,11 @@ export interface components {
              */
             message?: string;
             /**
-             * @description Force a channel. Omit to send on whichever channel the conversation already uses, which is the right default.
-             * @enum {string}
+             * @description Force a channel. Omit to send on whichever channel the conversation already uses, which is the right default. One of `airbnb`, `booking`, `vrbo`, `sms`, `email`, `website` — except on a conversation a connected PMS relays (Guesty, Hostaway, …), where the message is sent through the PMS and `channel` is passed to it: the PMS's own channel/module name (Guesty `airbnb2`, `bookingCom`, `email`, `sms`, …) or one of Repull's names, which the PMS maps. A PMS that cannot choose a channel returns `422 pms_write_unsupported`; `GET /v1/connect/{provider}` → `capabilities.pms.conversations.channelSelect` says so beforehand.
+             * @example email
              */
-            channel?: "airbnb" | "booking" | "vrbo" | "sms" | "email" | "website";
-            /** @description Files to send. See the per-channel table above. */
+            channel?: string;
+            /** @description Files to send. See the per-channel table above. On a conversation a connected PMS relays, files go through the PMS — `422 pms_write_unsupported` when its API cannot send them (`capabilities.pms.conversations.attachments` on `GET /v1/connect/{provider}`). */
             attachments?: components["schemas"]["SendMessageAttachment"][];
         };
         /** @description A file as delivered. */
@@ -12451,6 +12592,45 @@ export interface operations {
             500: components["responses"]["InternalError"];
         };
     };
+    updateGuest: {
+        parameters: {
+            query?: never;
+            header?: {
+                /**
+                 * @description Makes a retry of this request safe. Send a unique string (a UUID generated at the point you build the request) and the response is stored for 24 hours: a repeat with the SAME key replays that stored response — tagged `Idempotency-Status: cached` — without running the operation again, so no duplicate reservation, guest or guest message is created.
+                 *
+                 *     - Same key while the first request is still in flight → `409 idempotency_key_in_use`.
+                 *     - Same key with a DIFFERENT payload → `422 idempotency_key_reused`. Generate a new key per distinct request; reuse one only when retrying that exact request.
+                 *     - Retryable outcomes are deliberately not stored, so a retry with the same key runs for real: any status >= 500, `408`, `425` and `429`, and the refusals that happen before anything is done and tell you to fix something outside the request first — `connection_reauth_required`, `listing_inactive`, and the rate/daily limits. Every other answer, including a final refusal such as `422 airbnb_rejected`, is stored and replayed.
+                 */
+                "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GuestUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Guest updated (and in its PMS, when linked to one). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GuestUpdateResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["UnprocessableEntity"];
+        };
+    };
     listConversations: {
         parameters: {
             query?: {
@@ -13651,6 +13831,8 @@ export interface operations {
                     "application/json": {
                         id?: string;
                         platform?: string;
+                        /** @description The PMS the reply went through, when the review came from one. */
+                        pms?: string | null;
                         response?: string;
                     };
                 };

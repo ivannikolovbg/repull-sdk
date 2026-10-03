@@ -509,3 +509,28 @@ describe('connect.track', () => {
     expect(calls[0].url.pathname).toBe('/v1/connect/track');
   });
 });
+
+describe('guests.update / reviews.reply through a PMS', () => {
+  it('update PATCHes /v1/guests/{id} with only the changed fields', async () => {
+    const answer = {
+      id: 42,
+      firstName: 'Ana',
+      lastName: 'Lopez',
+      contacts: [{ type: 'email' as const, value: 'ana@example.com', isPrimary: true }],
+      pms: [{ provider: 'guesty', applied: ['guest'] }],
+    };
+    const { repull, calls } = client(answer);
+    const res = await repull.guests.update(42, { lastName: 'Lopez' }, { idempotencyKey: 'idem-1' });
+    expect(calls[0].method).toBe('PATCH');
+    expect(calls[0].url.pathname).toBe('/v1/guests/42');
+    expect(calls[0].body).toEqual({ lastName: 'Lopez' });
+    expect(res.pms?.[0]?.provider).toBe('guesty');
+  });
+
+  it('reply returns the PMS the reply went through', async () => {
+    const { repull, calls } = client({ id: 'r1', platform: 'airbnb', pms: 'guesty', response: 'Thanks!' });
+    const res = await repull.reviews.reply('r1', { message: 'Thanks!' });
+    expect(calls[0].url.pathname).toBe('/v1/reviews/r1/reply');
+    expect(res.pms).toBe('guesty');
+  });
+});

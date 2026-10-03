@@ -205,6 +205,10 @@ export type ListingPullResponse = components['schemas']['ListingPullResponse'];
 export type GuestCreateRequest = components['schemas']['GuestCreateRequest'];
 /** Returned by `POST /v1/guests`. Read `created` — a 2xx does not mean a new record. */
 export type GuestCreateResponse = components['schemas']['GuestCreateResponse'];
+/** Request body for `PATCH /v1/guests/{id}`. At least one field is required. */
+export type GuestUpdateRequest = components['schemas']['GuestUpdateRequest'];
+/** Returned by `PATCH /v1/guests/{id}`. `pms` lists each connected PMS the change was written to first. */
+export type GuestUpdateResponse = components['schemas']['GuestUpdateResponse'];
 /** Request body for `POST /v1/reservations`. */
 export type ReservationCreateRequest = components['schemas']['ReservationCreateRequest'];
 /** Returned by `POST /v1/reservations` (201). */
@@ -221,6 +225,12 @@ export type ReservationQuoteResponse = components['schemas']['ReservationQuoteRe
 export type ReservationPmsOutcome = components['schemas']['ReservationPmsOutcome'];
 /** `capabilities.reservations` on listing and connection responses. */
 export type ReservationCapabilities = components['schemas']['ReservationCapabilities'];
+/**
+ * `capabilities.pms` on `GET /v1/listings/{id}` and `GET /v1/connect/{provider}` —
+ * what the API does through a connected PMS beyond reservation writes. A `false`
+ * flag is a `422 pms_write_unsupported` naming the PMS.
+ */
+export type PmsCapabilities = components['schemas']['PmsCapabilities'];
 /** A connection's next step (`action`), alongside `fixUrl`. */
 export type ConnectionAction = components['schemas']['ConnectionAction'];
 /** Guest identity accepted inline by `POST /v1/reservations`. */

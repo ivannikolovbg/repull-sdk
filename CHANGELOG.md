@@ -3,6 +3,16 @@
 All notable changes to `@repull/sdk` and `@repull/types` are recorded here.
 This project follows [Semantic Versioning](https://semver.org/).
 
+## [0.2.30] - 2026-10-03
+
+Regenerated against the live `https://api.repull.dev/openapi.json` — the PMS API surface for connected Guesty and Hostaway accounts:
+
+- `repull.guests.update(id, body, { idempotencyKey? })` — new, calls `PATCH /v1/guests/{id}`: change a guest's `firstName`, `lastName`, `email`, `phone` or `language`. A guest linked to a connected PMS is changed there first; `pms` on the response lists each PMS written to. Hostaway has no guest API and answers `422 pms_write_unsupported`.
+- `repull.guests.create` accepts `provider` to also create the guest in a connected PMS; the response's `pms.externalId` is its id there.
+- `repull.reviews.reply` returns `pms` — the PMS the reply went through, for reviews read from one.
+- New type aliases: `GuestUpdateRequest`, `GuestUpdateResponse`, `PmsCapabilities` (`capabilities.pms` on `GET /v1/listings/{id}` and `GET /v1/connect/{provider}`).
+- `Review.pms`, `ListingContentUpdateResponse.pms` (per-section PMS outcome), and `SendMessageRequest.channel` widened to `string` (a PMS's own channel names on PMS-relayed conversations).
+
 ## [0.2.29] - 2026-10-03
 
 Regenerated against the live `https://api.repull.dev/openapi.json`:

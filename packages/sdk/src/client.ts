@@ -69,6 +69,8 @@ import type {
   Guest,
   GuestCreateRequest,
   GuestCreateResponse,
+  GuestUpdateRequest,
+  GuestUpdateResponse,
   HealthResponse,
   InquiryListResponse,
   Listing,
@@ -1051,6 +1053,34 @@ class GuestsNamespace {
       xSchema: opts.xSchema,
     });
   }
+
+  /**
+   * PATCH /v1/guests/{id} — change a guest's name, email, phone or language.
+   * New in v0.2.30.
+   *
+   * Email and phone are added as the guest's newest contact; earlier ones are
+   * kept. A guest linked to a connected PMS (created with `provider`, or
+   * imported from one) is changed in that PMS first, and `pms` on the response
+   * lists each PMS written to. A PMS whose API cannot change guest profiles
+   * (Hostaway) answers `422 pms_write_unsupported` and nothing is written —
+   * `capabilities.pms.guests.update` on `GET /v1/connect/{provider}` says so
+   * beforehand.
+   *
+   * ```ts
+   * await repull.guests.update(42, { lastName: 'Lopez' }, { idempotencyKey: crypto.randomUUID() });
+   * ```
+   */
+  update(
+    id: string | number,
+    body: GuestUpdateRequest,
+    opts: { idempotencyKey?: string; xSchema?: string } = {},
+  ): Promise<GuestUpdateResponse> {
+    return this.client.request<GuestUpdateResponse>('PATCH', `/v1/guests/${encodeURIComponent(String(id))}`, {
+      body,
+      idempotencyKey: opts.idempotencyKey,
+      xSchema: opts.xSchema,
+    });
+  }
 }
 
 /**
@@ -1098,12 +1128,16 @@ class ReviewsNamespace {
   }
   /**
    * POST /v1/reviews/{id}/reply — public reply under a guest's review, on
-   * whichever channel it came from (Airbnb, Booking.com). One per review.
+   * whichever channel it came from (Airbnb, Booking.com, VRBO). One per review.
+   *
+   * A review read from a connected PMS (`pms` set on the review — Guesty,
+   * Hostaway) is answered through that PMS, and `pms` on the response names it.
+   * A PMS with no reply API (Hostaway) answers `422 pms_write_unsupported`.
    */
   reply(
     id: string | number,
     body: { message: string },
-  ): Promise<{ id: string; platform: string; response: string }> {
+  ): Promise<{ id: string; platform: string; pms?: string | null; response: string }> {
     return this.client.request('POST', `/v1/reviews/${encodeURIComponent(String(id))}/reply`, { body });
   }
 
