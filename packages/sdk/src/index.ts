@@ -160,6 +160,8 @@ export type {
   ReservationPmsOutcome,
   ReservationCapabilities,
   ConnectionAction,
+  TrackCredentialsRequest,
+  TrackCredentialsResponse,
   Inquiry,
   InquiryListResponse,
   WebhookEvent,

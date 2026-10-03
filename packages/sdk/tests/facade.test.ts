@@ -469,3 +469,43 @@ describe('reservations.quote / create on a PMS listing', () => {
     expect(res.id).toBe('91');
   });
 });
+
+describe('connect.track', () => {
+  it('submitCredentials POSTs the Track domain + key to /v1/connect/track/credentials', async () => {
+    const answer = {
+      provider: 'track',
+      connected: true,
+      pmsConnectionId: 'pc_1',
+      created: true,
+      sessionId: null,
+      accountInfo: { domain: 'acme.trackhs.com', keyType: 'server' as const, authMode: 'hmac' as const, accountName: 'Acme' },
+      firstSync: { queued: true },
+    };
+    const { repull, calls } = client(answer);
+    const body = {
+      credentials: {
+        domain: 'acme.trackhs.com',
+        apiKey: 'trk_live_x',
+        apiSecret: 'c2VjcmV0',
+        keyType: 'server' as const,
+        authMode: 'hmac' as const,
+        hmacRealm: 'Acquia',
+        secretIsBase64: true,
+        paymentTypeId: 7,
+        moveReasonId: 3,
+      },
+    };
+    const res = await repull.connect.track.submitCredentials(body);
+    expect(calls[0].method).toBe('POST');
+    expect(calls[0].url.pathname).toBe('/v1/connect/track/credentials');
+    expect(calls[0].body).toEqual(body);
+    expect(res.accountInfo?.domain).toBe('acme.trackhs.com');
+  });
+
+  it('status hits GET /v1/connect/track', async () => {
+    const { repull, calls } = client({ provider: 'track', connected: false });
+    await repull.connect.track.status();
+    expect(calls[0].method).toBe('GET');
+    expect(calls[0].url.pathname).toBe('/v1/connect/track');
+  });
+});

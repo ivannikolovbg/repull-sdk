@@ -99,6 +99,8 @@ import type {
   MewsCredentialsRequest,
   CloudbedsCredentialsRequest,
   HotelPmsCredentialsResponse,
+  TrackCredentialsRequest,
+  TrackCredentialsResponse,
   ReservationUpdateRequest,
   ReservationUpdateResponse,
   Review,
@@ -374,6 +376,8 @@ class ConnectNamespace {
   readonly mews: HotelPmsConnectNamespace<MewsCredentialsRequest>;
   /** Cloudbeds (hotel PMS). New in v0.2.22. */
   readonly cloudbeds: HotelPmsConnectNamespace<CloudbedsCredentialsRequest>;
+  /** Track (TRACK Hospitality Software). New in v0.2.29. */
+  readonly track: TrackConnectNamespace;
 
   constructor(private readonly client: Repull) {
     this.airbnb = new AirbnbConnectNamespace(client);
@@ -382,6 +386,7 @@ class ConnectNamespace {
     this.vrbo = new ProviderConnectNamespace(client, 'vrbo');
     this.mews = new HotelPmsConnectNamespace(client, 'mews');
     this.cloudbeds = new HotelPmsConnectNamespace(client, 'cloudbeds');
+    this.track = new TrackConnectNamespace(client);
   }
 
   /** GET /v1/connect — list every connection on this workspace. */
@@ -607,6 +612,36 @@ class HotelPmsConnectNamespace<Req> extends ProviderConnectNamespace {
       `/v1/connect/${this.hotelProvider}/credentials`,
       { body },
     );
+  }
+}
+
+/**
+ * Track (TRACK Hospitality Software) — credentials pattern. Units become
+ * listings; reservations and guest threads sync by polling (Track has no
+ * webhooks).
+ */
+class TrackConnectNamespace extends ProviderConnectNamespace {
+  constructor(private readonly trackClient: Repull) {
+    super(trackClient, 'track');
+  }
+
+  /**
+   * POST /v1/connect/track/credentials — validate the Track key against
+   * Track, store the connection and queue the first sync.
+   *
+   * ```ts
+   * await repull.connect.track.submitCredentials({
+   *   credentials: { domain: 'acme.trackhs.com', apiKey, apiSecret },
+   * });
+   * ```
+   *
+   * `credentials.keyType` is `'server'` (default, full access) or
+   * `'channel'` (booking only); `authMode` (`'hmac'` default / `'basic'`),
+   * `hmacRealm`, `secretIsBase64`, `paymentTypeId` and `moveReasonId` are
+   * optional. Pass `sessionId` to complete a Connect session without an API key.
+   */
+  submitCredentials(body: TrackCredentialsRequest): Promise<TrackCredentialsResponse> {
+    return this.trackClient.request<TrackCredentialsResponse>('POST', '/v1/connect/track/credentials', { body });
   }
 }
 

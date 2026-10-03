@@ -277,6 +277,12 @@ export type CloudbedsCredentialsRequest =
 /** Returned by `POST /v1/connect/{mews,cloudbeds}/credentials`. */
 export type HotelPmsCredentialsResponse =
   operations['submitMewsCredentials']['responses'][200]['content']['application/json'];
+/** Body of `POST /v1/connect/track/credentials` — Track domain plus an API key + secret. */
+export type TrackCredentialsRequest =
+  operations['submitTrackCredentials']['requestBody']['content']['application/json'];
+/** Returned by `POST /v1/connect/track/credentials`. */
+export type TrackCredentialsResponse =
+  operations['submitTrackCredentials']['responses'][200]['content']['application/json'];
 /** Returned by `GET /v1/inquiries`. */
 export type InquiryListResponse =
   operations['list_inquiries']['responses'][200]['content']['application/json'];
@@ -493,6 +499,7 @@ export type RepullProvider =
   | 'guesty'
   | 'lodgify'
   | 'hostfully'
+  | 'track'
   | (string & {});
 
 /**

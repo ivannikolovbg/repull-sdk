@@ -3,6 +3,15 @@
 All notable changes to `@repull/sdk` and `@repull/types` are recorded here.
 This project follows [Semantic Versioning](https://semver.org/).
 
+## [0.2.29] - 2026-10-03
+
+Regenerated against the live `https://api.repull.dev/openapi.json`:
+
+- `repull.connect.track` — new Track (TRACK Hospitality Software) connect namespace. `submitCredentials({ credentials: { domain, apiKey, apiSecret, keyType?, authMode?, hmacRealm?, secretIsBase64?, paymentTypeId?, moveReasonId? } })` calls `POST /v1/connect/track/credentials`; `status()` and `disconnect()` as on other providers.
+- New type aliases: `TrackCredentialsRequest`, `TrackCredentialsResponse`; `'track'` added to `RepullProvider`.
+- New spec operations in `@repull/types`: `recheckBookingExtranetLogin` (`POST /v1/connect/booking-extranet-login/recheck`) and `resumeConnect` (`GET /v1/connect/resume`).
+- Track listed in the per-PMS reservation write tables; `starter` tier documented as unlimited active listings.
+
 ## [0.2.28] - 2026-10-02
 
 Regenerated against the live `https://api.repull.dev/openapi.json`:

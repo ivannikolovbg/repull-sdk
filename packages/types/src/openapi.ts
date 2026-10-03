@@ -141,7 +141,7 @@ export interface paths {
          *
          *     ### Where the booking is made
          *
-         *     - **A listing managed in a connected PMS** (Mews, Cloudbeds, Hostaway, Guesty, Beds24, BookingSync, Lodgify, Smoobu, Hospitable, iGMS, OwnerRez): the booking is created **in the PMS first**, then recorded in Repull from the PMS's own record, so the next sync lands on the same confirmation code and nothing is duplicated. A booking is **never** created only in Repull for such a listing — the PMS would keep selling the dates. What the PMS cannot do is refused (`422 pms_write_unsupported`), never faked. The PMS checks availability: taken dates answer `409 pms_unavailable`.
+         *     - **A listing managed in a connected PMS** (Mews, Cloudbeds, Hostaway, Guesty, Beds24, BookingSync, Lodgify, Smoobu, Hospitable, iGMS, OwnerRez, Track): the booking is created **in the PMS first**, then recorded in Repull from the PMS's own record, so the next sync lands on the same confirmation code and nothing is duplicated. A booking is **never** created only in Repull for such a listing — the PMS would keep selling the dates. What the PMS cannot do is refused (`422 pms_write_unsupported`), never faked. The PMS checks availability: taken dates answer `409 pms_unavailable`.
          *     - **Any other listing**: a direct booking made in Repull, with everything that hangs off one — the guest, the conversation, the calendar block and the `reservation.created` fan-out that issues the door code and starts the messaging automations. Priced by the listing's own rates; **availability is NOT checked** (call `GET /v1/availability/{propertyId}` first if that matters).
          *
          *     `GET /v1/listings/{id}` → `capabilities.reservations` says which applies to a listing and exactly what it supports (`create`, `modify`, `cancel`, `quote`, `customPrice`, plus `notes`).
@@ -174,6 +174,7 @@ export interface paths {
          *     | Hospitable | ✓ | ✓ | ✓ | ✓ (Direct plan) | ✓ | Manual reservations only; needs `reservation:write`; adds no fees or taxes. |
          *     | iGMS | ✓ | ✓ | ✓ | – | ✓ (required) | iGMS direct bookings only; a price is required; no tentative holds. |
          *     | OwnerRez | ✓ | ✓ | – | ✓ | – | No cancel through OwnerRez's API; priced by the property's own rates; needs the `full` scope. |
+         *     | Track | ✓ | ✓ | ✓ | ✓ | ✓ | Track decides Hold vs Confirmed from the property's channel mode; a set price on a Channel Key needs "Allow Custom Pricing"; a unit change needs `moveReasonId` on the connection; a date change re-prices at Track's current rates. |
          *
          *     Every PMS except Cloudbeds refuses group bookings, and every vacation-rental PMS refuses to change or cancel a booking that came from a channel (Airbnb, Booking.com, Vrbo…) — that is done on the channel.
          *
@@ -4822,6 +4823,7 @@ export interface paths {
          *     | Hospitable | ✓ | ✓ | ✓ | ✓ (Direct plan) | ✓ | Manual reservations only; needs `reservation:write`; adds no fees or taxes. |
          *     | iGMS | ✓ | ✓ | ✓ | – | ✓ (required) | iGMS direct bookings only; a price is required; no tentative holds. |
          *     | OwnerRez | ✓ | ✓ | – | ✓ | – | No cancel through OwnerRez's API; priced by the property's own rates; needs the `full` scope. |
+         *     | Track | ✓ | ✓ | ✓ | ✓ | ✓ | Track decides Hold vs Confirmed from the property's channel mode; a set price on a Channel Key needs "Allow Custom Pricing"; a unit change needs `moveReasonId` on the connection; a date change re-prices at Track's current rates. |
          *
          *     Every PMS except Cloudbeds refuses group bookings, and every vacation-rental PMS refuses to change or cancel a booking that came from a channel (Airbnb, Booking.com, Vrbo…) — that is done on the channel.
          *
@@ -4830,6 +4832,84 @@ export interface paths {
          *     `X-Account-Id` restricts the listing to one connected account. Returns `403 listing_inactive` when the listing is inactive.
          */
         post: operations["quote_reservation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/connect/booking-extranet-login/recheck": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Re-check Booking.com direct-login permissions
+         * @description Re-runs the account import for a Booking.com direct-login connection after the host has granted the invited user full access in the Booking.com extranet (the `needs_permissions` state). Permissions are probed again and, once full access is in place, the connection continues to property details and room mapping — no new invitation is sent. Poll `GET /v1/connect/booking-extranet-login/status` for the result.
+         *
+         *     Called by the hosted Connect page. No API key — the session ID is the capability token.
+         */
+        post: operations["recheckBookingExtranetLogin"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/connect/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Open a connection's fix link
+         * @description The target of a connection's `fixUrl`. Open it in the host's browser to send them back into Connect for an EXISTING connection — for example to grant the Booking.com extranet user full access after a `needs_permissions` state, or to reconnect a Smoobu account that still uses a legacy single API key with an API key + secret.
+         *
+         *     Each open starts a fresh, short-lived Connect session bound to that connection and redirects (302) to the hosted Connect page, which shows the connection's current state. The link itself does not expire on its own schedule — store `fixUrl` and open it whenever the connection needs attention.
+         *
+         *     No API key — the signed `t` token is the capability. Supported for Booking.com extranet login and Smoobu connections.
+         */
+        get: operations["resumeConnect"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/connect/track/credentials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Submit Track credentials for a Connect session
+         * @description Completes a credentials-pattern connection for Track (TRACK Hospitality Software) with the property manager's Track domain and an API key + secret.
+         *
+         *     **What syncs.** Units become listings; reservations (with their fee and tax breakdown) and guest message threads are imported, then polled for changes. Bookings can be created, quoted, changed and cancelled in Track — see `capabilities.reservations` on `GET /v1/connect/track`.
+         *
+         *     **Which key.** A **Server Key** — created in Track under Configuration → Company Setup → API Keys — has full access and is recommended. A **Channel Key** — under Configuration → PMS Setup → Distribution Channels — only allows booking. `keyType` defaults to `server`.
+         *
+         *     The key is validated against Track before anything is stored, so an invalid key returns `invalid_credentials` rather than creating a dead connection. On success only the credential fields below are stored, and the first sync of listings and reservations is queued.
+         *
+         *     Track has no webhooks: after the first sync, reservation and message changes are picked up by polling about once a minute.
+         *
+         *     Reconnecting replaces the stored credentials on the workspace's existing Track connection — the `pmsConnectionId` stays the same.
+         *
+         *     No API key required when called with a `sessionId` — the session is the capability token.
+         */
+        post: operations["submitTrackCredentials"];
         delete?: never;
         options?: never;
         head?: never;
@@ -22394,6 +22474,224 @@ export interface operations {
                 };
             };
             /** @description The PMS could not be reached (`pms_error`) — retry. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    recheckBookingExtranetLogin: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description The Connect session ID (capability token). */
+                    sessionId: string;
+                    /** @description The Booking.com direct-login connection id returned when the sign-in started. */
+                    accountId: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Re-check queued */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @description Whether the re-check was queued. */
+                        ok: boolean;
+                        /** @description Id of the queued import job, when one was queued. */
+                        jobId: string | null;
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            /** @description The Connect session has expired (`session_expired`). Start a new session. */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            500: components["responses"]["InternalError"];
+        };
+    };
+    resumeConnect: {
+        parameters: {
+            query: {
+                /** @description The signed resume token, exactly as it appears in the connection's `fixUrl`. */
+                t: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Redirect to the hosted Connect page for a fresh session bound to the connection. */
+            302: {
+                headers: {
+                    /** @description Hosted Connect page URL for the new session. */
+                    Location?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The link cannot be used: the token is missing, malformed or its signature does not verify (`invalid_resume_token`), the connection's channel has no hosted fix flow (`unsupported_channel`), or the connection id in the token is not valid (`bad_account`). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        error: "invalid_resume_token" | "unsupported_channel" | "bad_account";
+                        /** @description Why the token was rejected (only with `invalid_resume_token`). */
+                        reason?: string;
+                        /** @description The token's channel (only with `unsupported_channel`). */
+                        channel?: string;
+                    };
+                };
+            };
+            /** @description The Connect session could not be started. Open the link again. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        error: "internal_error";
+                    };
+                };
+            };
+        };
+    };
+    submitTrackCredentials: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "credentials": {
+                 *         "domain": "acme.trackhs.com",
+                 *         "apiKey": "trk_live_…",
+                 *         "apiSecret": "…"
+                 *       }
+                 *     }
+                 */
+                "application/json": {
+                    /** @description Connect session id from `POST /v1/connect/track`. Omit when calling with your API key. */
+                    sessionId?: string;
+                    /**
+                     * @description Optional: what the app may change in Track, set before the first sync. Same shape as `PATCH /v1/connect/{provider}/write-policy`; switches you leave out keep the provider default (everything on).
+                     * @example {
+                     *       "reservations": {
+                     *         "api": false
+                     *       }
+                     *     }
+                     */
+                    writePolicy?: Record<string, never>;
+                    /** @description The Track domain and an API key + secret. */
+                    credentials: {
+                        /**
+                         * @description Your Track domain: `acme.trackhs.com`, or just the subdomain `acme`. A full URL is accepted; only the host is kept.
+                         * @example acme.trackhs.com
+                         */
+                        domain: string;
+                        /** @description Track API key. */
+                        apiKey: string;
+                        /** @description Track API secret, shown next to the key in Track. */
+                        apiSecret: string;
+                        /**
+                         * @description `server` — a Server Key (Company Setup → API Keys), full access, recommended. `channel` — a Channel Key (PMS Setup → Distribution Channels), booking only.
+                         * @default server
+                         * @enum {string}
+                         */
+                        keyType?: "server" | "channel";
+                        /**
+                         * @description How requests to Track are signed. Leave the default unless Track support told you otherwise.
+                         * @default hmac
+                         * @enum {string}
+                         */
+                        authMode?: "hmac" | "basic";
+                        /** @description HMAC realm. Defaults to `Acquia`, the realm Track's HMAC signing uses. */
+                        hmacRealm?: string;
+                        /**
+                         * @description Whether `apiSecret` is base64-encoded, as Track issues it. Set false to sign with the secret's raw text.
+                         * @default true
+                         */
+                        secretIsBase64?: boolean;
+                        /** @description The Track payment type that payments recorded through this connection are posted to. */
+                        paymentTypeId?: number;
+                        /** @description The Track move reason used when a reservation is moved to another unit. Without it, unit changes are refused. */
+                        moveReasonId?: number;
+                    };
+                };
+            };
+        };
+        responses: {
+            /** @description Credentials accepted, the connection stored and its first sync queued */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @example track */
+                        provider?: string;
+                        connected?: boolean;
+                        /** @description Id of the stored connection. */
+                        pmsConnectionId?: string;
+                        /** @description False when an existing connection was updated. */
+                        created?: boolean;
+                        sessionId?: string | null;
+                        accountInfo?: {
+                            /**
+                             * @description The Track host the connection calls.
+                             * @example acme.trackhs.com
+                             */
+                            domain?: string;
+                            /** @enum {string} */
+                            keyType?: "server" | "channel";
+                            /** @enum {string} */
+                            authMode?: "hmac" | "basic";
+                            accountName?: string | null;
+                        };
+                        /** @description Whether the first import of listings and reservations was queued. When it was not, the connection still stands and polling syncs it. */
+                        firstSync?: {
+                            queued?: boolean;
+                            error?: string;
+                        };
+                        writePolicy?: components["schemas"]["PmsWritePolicy"];
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["UnprocessableEntity"];
+            /** @description Track could not be reached (`network_error`). Nothing was stored. */
             502: {
                 headers: {
                     [name: string]: unknown;
