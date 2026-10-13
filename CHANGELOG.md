@@ -3,6 +3,16 @@
 All notable changes to `@repull/sdk` and `@repull/types` are recorded here.
 This project follows [Semantic Versioning](https://semver.org/).
 
+## [0.2.31] - 2026-10-13
+
+Regenerated against the live `https://api.repull.dev/openapi.json`:
+
+- `repull.hotels.list()` / `repull.hotels.get(id)` — new, call `GET /v1/hotels` and `GET /v1/hotels/{id}`: hotels and their room types, with room counts. Listings carry `kind`, `hotel` and `unitCount`.
+- `repull.workspaces.list({ externalRef?, limit?, cursor? })` — new, calls `GET /v1/workspaces`: the customer workspaces your account has opened.
+- `repull.billing.get()` — new, calls `GET /v1/billing`: plan, request limits, usage this period and `manageUrl`.
+- New type aliases: `Hotel`, `HotelListResponse`, `HotelDetail`, `Workspace`, `WorkspaceListResponse`, `Billing`.
+- `POST /v1/connect` accepts `includeRequestOnly`; Zeevou and RentalReady Connect callbacks.
+
 ## [0.2.30] - 2026-10-03
 
 Regenerated against the live `https://api.repull.dev/openapi.json` — the PMS API surface for connected Guesty and Hostaway accounts:

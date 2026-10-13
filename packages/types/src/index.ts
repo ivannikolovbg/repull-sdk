@@ -631,6 +631,18 @@ export type MigrationImportRun = components['schemas']['MigrationImportRun'];
 export type MigrationReport = components['schemas']['MigrationReport'];
 export type MigrationChannelMap = components['schemas']['MigrationChannelMap'];
 export type MigrationCutoverCheck = components['schemas']['MigrationCutoverCheck'];
+
+// ─── Hotels, workspaces, billing ───────────────────────────────────────
+/** `GET /v1/hotels` — hotels and their room types, with room counts. */
+export type HotelListResponse = operations['listHotels']['responses'][200]['content']['application/json'];
+export type Hotel = NonNullable<HotelListResponse['data']>[number];
+/** `GET /v1/hotels/{id}` — one hotel and its room types. */
+export type HotelDetail = operations['getHotel']['responses'][200]['content']['application/json'];
+/** A customer workspace opened by `POST /v1/connect` with `workspace`, or by Repull Migrate. */
+export type Workspace = components['schemas']['Workspace'];
+export type WorkspaceListResponse = operations['listWorkspaces']['responses'][200]['content']['application/json'];
+/** `GET /v1/billing` — plan, request limits, usage this period and `manageUrl`. */
+export type Billing = operations['get_billing']['responses'][200]['content']['application/json'];
 export type MigrationReservationRef = components['schemas']['MigrationReservationRef'];
 export type MigrationImportPayload = components['schemas']['MigrationImportPayload'];
 export type MigrationCompletedEvent = components['schemas']['MigrationCompletedEvent'];

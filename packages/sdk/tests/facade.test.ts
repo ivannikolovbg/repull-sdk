@@ -534,3 +534,29 @@ describe('guests.update / reviews.reply through a PMS', () => {
     expect(res.pms).toBe('guesty');
   });
 });
+
+describe('hotels / workspaces / billing', () => {
+  it('hotels.list and hotels.get read /v1/hotels', async () => {
+    const { repull, calls } = client({ data: [{ id: 'booking:123', name: 'Lakeview Inn', source: 'booking', roomTypeCount: 2, unitCount: 12 }] });
+    const res = await repull.hotels.list();
+    expect(calls[0].method).toBe('GET');
+    expect(calls[0].url.pathname).toBe('/v1/hotels');
+    expect(res.data?.[0]?.unitCount).toBe(12);
+    await repull.hotels.get('booking:123');
+    expect(calls[1].url.pathname).toBe('/v1/hotels/booking%3A123');
+  });
+
+  it('workspaces.list filters by externalRef', async () => {
+    const { repull, calls } = client({ data: [], pagination: { nextCursor: null, hasMore: false, total: 0 } });
+    await repull.workspaces.list({ externalRef: 'acct_8812' });
+    expect(calls[0].url.pathname).toBe('/v1/workspaces');
+    expect(calls[0].url.searchParams.get('externalRef')).toBe('acct_8812');
+  });
+
+  it('billing.get reads /v1/billing', async () => {
+    const { repull, calls } = client({ plan: 'free' });
+    const res = await repull.billing.get();
+    expect(calls[0].url.pathname).toBe('/v1/billing');
+    expect(res.plan).toBe('free');
+  });
+});

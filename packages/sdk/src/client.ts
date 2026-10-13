@@ -112,6 +112,10 @@ import type {
   SpecialOffer,
   SpecialOfferCreateRequest,
   SpecialOfferWithdrawResponse,
+  Billing,
+  HotelDetail,
+  HotelListResponse,
+  WorkspaceListResponse,
 } from '@repull/types';
 import { RepullError } from './errors.js';
 import { KvNamespace } from './kv.js';
@@ -161,6 +165,12 @@ export class Repull {
   readonly schemas: SchemasNamespace;
   readonly kv: KvNamespace;
   readonly migrations: MigrationsNamespace;
+  /** Hotels and their room types, with room counts. New in v0.2.31. */
+  readonly hotels: HotelsNamespace;
+  /** Customer workspaces your account has opened. New in v0.2.31. */
+  readonly workspaces: WorkspacesNamespace;
+  /** Plan, request limits and usage this period. New in v0.2.31. */
+  readonly billing: BillingNamespace;
 
   private readonly opts: {
     apiKey?: string;
@@ -216,6 +226,9 @@ export class Repull {
     this.schemas = new SchemasNamespace(this);
     this.kv = new KvNamespace(this);
     this.migrations = new MigrationsNamespace(this);
+    this.hotels = new HotelsNamespace(this);
+    this.workspaces = new WorkspacesNamespace(this);
+    this.billing = new BillingNamespace(this);
   }
 
   /**
@@ -316,6 +329,38 @@ export class Repull {
  * own. Start one with `connect.createSession({ purpose: 'migrate', … })`,
  * track it here, and read its data with `repull.workspace(workspaceId)`.
  */
+class HotelsNamespace {
+  constructor(private readonly client: Repull) {}
+
+  /** GET /v1/hotels — hotels with their room-type and room counts. */
+  list(): Promise<HotelListResponse> {
+    return this.client.request('GET', '/v1/hotels');
+  }
+
+  /** GET /v1/hotels/{id} — one hotel and its room types. `id` may be `booking:<hotelId>`. */
+  get(id: string | number): Promise<HotelDetail> {
+    return this.client.request('GET', `/v1/hotels/${encodeURIComponent(String(id))}`);
+  }
+}
+
+class WorkspacesNamespace {
+  constructor(private readonly client: Repull) {}
+
+  /** GET /v1/workspaces — newest first, cursor-paginated; filter by your own `externalRef`. */
+  list(query: { limit?: number; cursor?: string; externalRef?: string } = {}): Promise<WorkspaceListResponse> {
+    return this.client.request('GET', '/v1/workspaces', { query });
+  }
+}
+
+class BillingNamespace {
+  constructor(private readonly client: Repull) {}
+
+  /** GET /v1/billing — the workspace's plan, request limits, usage this period and `manageUrl`. */
+  get(): Promise<Billing> {
+    return this.client.request('GET', '/v1/billing');
+  }
+}
+
 class MigrationsNamespace {
   constructor(private readonly client: Repull) {}
 
