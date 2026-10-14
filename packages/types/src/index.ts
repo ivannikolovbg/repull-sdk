@@ -61,6 +61,7 @@ export type WebhookSubscription = components['schemas']['WebhookSubscription'];
 export type AIOperation = components['schemas']['AIOperation'];
 export type RepullErrorPayload = components['schemas']['Error'];
 export type Review = components['schemas']['Review'];
+export type Transaction = components['schemas']['Transaction'];
 /** Body of `POST /v1/reviews/{id}/guest-review` (and `PUT /v1/channels/airbnb/reviews/{id}`). */
 export type GuestReviewSubmit = components['schemas']['AirbnbHostReviewSubmit'];
 

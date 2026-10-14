@@ -5044,6 +5044,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/channels/booking/transactions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Booking.com transactions (settlement ledger)
+         * @description The Booking.com settlement ledger for this workspace: every payout (Payments by Booking.com → bank transfer) and reservation charge, with the gross the guest paid, Booking's commission and payments service fee, and the net paid out, each tied to its reservation. Official Connectivity-API and extranet-connected accounts are returned together as one Booking.com — there is no `booking_extranet` distinction and nothing extra to request. Cursor-paginated, newest first. (For all channels at once, use `/v1/transactions`.)
+         */
+        get: operations["list_booking_transactions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/transactions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List transactions & payments (unified ledger)
+         * @description Every channel's money in one ledger: payouts that reached the host, reservation charges, refunds and adjustments, across Airbnb, Booking.com and Vrbo. Each row carries a normalized `platform` — `booking` always means Booking.com however the account was connected (official API or extranet); there is no `booking_extranet`, and `?platform=booking` matches all of them. A payout row's `amount` is the net the host received; `grossAmount` is what the guest paid and `fees` the deductions (commission, payments service fee, processing fee). Cursor-paginated, newest first.
+         */
+        get: operations["list_transactions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -8812,6 +8852,80 @@ export interface components {
             reference?: string | null;
             /** @description What Airbnb's transaction history does not carry, so it is never filled in: `taxes` (those Airbnb remits itself; pass-through tax paid to the host arrives as `Pass Through Tot` lines), `guest_paid_total`, `original_transaction_id`, `currency_conversion`, `management_fee`. */
             unavailableFields: string[];
+            /** Format: date-time */
+            syncedAt?: string | null;
+        };
+        /** @description One row of the unified transactions & payments ledger: a payout (`isPayout: true`) or a reservation charge / refund, on any channel. `platform` is normalized — `booking` is Booking.com however the account was connected (never `booking_extranet`). For a payout, `amount` is the net the host received, `grossAmount` the guest-paid gross, and `fees` the deductions (commission, payments service fee, processing fee). */
+        Transaction: {
+            /**
+             * @description Stable id of the transaction (the underlying payment id). Upsert on it.
+             * @example booking_payout_5463377687_bank_transfer
+             */
+            transactionId: string | null;
+            /**
+             * @description Normalized channel: `airbnb`, `booking` (Booking.com, however connected — never `booking_extranet`), or `vrbo`.
+             * @example booking
+             */
+            platform: string | null;
+            /**
+             * @description Transaction type: `Payout`, `Reservation`, `Refund`, …
+             * @example Payout
+             */
+            type?: string | null;
+            /** @description `true` when this is money that reached the host (a payout). */
+            isPayout: boolean;
+            /**
+             * @description Normalized settlement status (`COMPLETED` / `UPCOMING`; the raw value passes through when it maps to neither).
+             * @example COMPLETED
+             */
+            status?: string | null;
+            /**
+             * @description Transaction / payout date (the channel's display form or ISO).
+             * @example 27 Aug 2026
+             */
+            date?: string | null;
+            /** @example NOK */
+            currency?: string | null;
+            /**
+             * @description Net amount; for a payout, what the host received.
+             * @example 18597.12
+             */
+            amount?: number | null;
+            /**
+             * @description Guest-paid gross (payouts).
+             * @example 22272
+             */
+            grossAmount?: number | null;
+            fees: {
+                /**
+                 * @description Channel commission deducted.
+                 * @example 3340.8
+                 */
+                commission: number | null;
+                /**
+                 * @description Payments service fee deducted.
+                 * @example 334.08
+                 */
+                serviceFee: number | null;
+                processingFee: number | null;
+            };
+            payout: {
+                /**
+                 * @description Reference of the payout this row belongs to.
+                 * @example gkvDj0Jm9ZaA6IiO
+                 */
+                payoutId: string | null;
+                payoutDate: string | null;
+                /**
+                 * @description On a payout row: the net paid out to the host.
+                 * @example 18597.12
+                 */
+                paidOutAmount: number | null;
+            };
+            /** @example 5463377687 */
+            confirmationCode?: string | null;
+            reservationId?: number | null;
+            listingId?: number | null;
             /** Format: date-time */
             syncedAt?: string | null;
         };
@@ -23353,6 +23467,76 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    list_booking_transactions: {
+        parameters: {
+            query?: {
+                /** @description Filter by transaction type, e.g. `Payout`, `Reservation`, `Refund`. */
+                type?: string;
+                /** @description Filter by raw status. */
+                status?: string;
+                /** @description When `true`, only payout rows (money that reached the host). */
+                is_payout?: boolean;
+                /** @description Page size (default 100, max 500). */
+                limit?: number;
+                /** @description Opaque pagination cursor from a previous `pagination.nextCursor`. */
+                cursor?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of Booking.com transactions. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data?: components["schemas"]["Transaction"][];
+                        pagination?: components["schemas"]["CursorPagination"];
+                    };
+                };
+            };
+        };
+    };
+    list_transactions: {
+        parameters: {
+            query?: {
+                /** @description Filter to one channel: `airbnb`, `booking` (Booking.com, however connected), or `vrbo`. Omit for all channels. */
+                platform?: "airbnb" | "booking" | "vrbo";
+                /** @description Filter by transaction type, e.g. `Payout`, `Reservation`, `Refund`. */
+                type?: string;
+                /** @description Filter by raw status. */
+                status?: string;
+                /** @description When `true`, only payout rows (money that reached the host). */
+                is_payout?: boolean;
+                /** @description Page size (default 100, max 500). */
+                limit?: number;
+                /** @description Opaque pagination cursor from a previous `pagination.nextCursor`. */
+                cursor?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of transactions. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data?: components["schemas"]["Transaction"][];
+                        pagination?: components["schemas"]["CursorPagination"];
+                    };
+                };
             };
         };
     };

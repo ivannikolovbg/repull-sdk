@@ -106,6 +106,7 @@ import type {
   ReservationUpdateRequest,
   ReservationUpdateResponse,
   Review,
+  Transaction,
   GuestReviewSubmit,
   SendMessageRequest,
   SendMessageResponse,
@@ -158,6 +159,7 @@ export class Repull {
   readonly inquiries: InquiriesNamespace;
   readonly guests: GuestsNamespace;
   readonly reviews: ReviewsNamespace;
+  readonly transactions: TransactionsNamespace;
   readonly health: HealthNamespace;
   readonly channels: ChannelsNamespace;
   readonly markets: MarketsNamespace;
@@ -219,6 +221,7 @@ export class Repull {
     this.inquiries = new InquiriesNamespace(this);
     this.guests = new GuestsNamespace(this);
     this.reviews = new ReviewsNamespace(this);
+    this.transactions = new TransactionsNamespace(this);
     this.health = new HealthNamespace(this);
     this.channels = new ChannelsNamespace(this);
     this.markets = new MarketsNamespace(this);
@@ -1272,9 +1275,42 @@ class ChannelsNamespace {
 
 class BookingChannelNamespace {
   readonly properties: BookingPropertiesNamespace;
+  /** Booking.com settlement ledger (official + extranet). New in v0.2.32. */
+  readonly transactions: BookingTransactionsNamespace;
 
   constructor(client: Repull) {
     this.properties = new BookingPropertiesNamespace(client);
+    this.transactions = new BookingTransactionsNamespace(client);
+  }
+}
+
+/** GET /v1/channels/booking/transactions — the Booking.com settlement ledger (official API + extranet, as one). */
+class BookingTransactionsNamespace {
+  constructor(private readonly client: Repull) {}
+
+  list(
+    query: { limit?: number; cursor?: string; type?: string; status?: string; is_payout?: boolean } = {},
+  ): Promise<ListResponse<Transaction>> {
+    return this.client.request<ListResponse<Transaction>>('GET', '/v1/channels/booking/transactions', { query });
+  }
+}
+
+/** Unified transactions & payments ledger across channels. New in v0.2.32. */
+class TransactionsNamespace {
+  constructor(private readonly client: Repull) {}
+
+  /** GET /v1/transactions — cursor-paginated. `platform: 'booking'` covers Booking.com however it was connected. */
+  list(
+    query: {
+      limit?: number;
+      cursor?: string;
+      platform?: 'airbnb' | 'booking' | 'vrbo';
+      type?: string;
+      status?: string;
+      is_payout?: boolean;
+    } = {},
+  ): Promise<ListResponse<Transaction>> {
+    return this.client.request<ListResponse<Transaction>>('GET', '/v1/transactions', { query });
   }
 }
 
