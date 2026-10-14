@@ -601,6 +601,30 @@
             "description": "Local check-out time for this stay, `HH:MM` on a 24-hour clock in the property's own timezone. Pair with `checkOut` to schedule the turnover clean. `null` when unknown. This is the same field `PATCH /v1/reservations/{id}` writes.",
             "example": "10:00"
           },
+          "guestNotes": {
+            "type": "string",
+            "nullable": true,
+            "description": "What the guest wrote with the booking, as the channel sent it. Booking.com puts the estimated arrival time and special requests here. Free text, never parsed. `null` when the guest left none.",
+            "example": "Approximate time of arrival: between 15:00 and 16:00"
+          },
+          "conversationId": {
+            "type": "string",
+            "nullable": true,
+            "description": "The conversation with this guest — pass it to `GET /v1/conversations/{id}` and `/v1/conversations/{id}/messages`. It is the same conversation from inquiry through pre-approval to the confirmed booking, and the same id the message webhooks carry, so a booking links straight to the messages that led to it. `null` when the channel has no conversation for this booking.",
+            "example": "164743"
+          },
+          "externalThreadId": {
+            "type": "string",
+            "nullable": true,
+            "description": "The channel's own id for that conversation (Airbnb thread id, Booking.com conversation id, …). `null` when there is none.",
+            "example": "2680544213"
+          },
+          "inquiryId": {
+            "type": "string",
+            "nullable": true,
+            "description": "The inquiry this booking came from (`GET /v1/inquiries`), when the guest asked before booking. When an inquiry turns into a booking, `inquiry.updated` fires with `status: \"booked\"` and this reservation's id. `null` for bookings with no inquiry.",
+            "example": "25173"
+          },
           "status": {
             "type": "string",
             "enum": [
@@ -2897,6 +2921,30 @@
             "nullable": true,
             "description": "Local check-out time, `HH:MM` on a 24-hour clock in the property's own timezone. Pair it with `checkoutDate` to schedule the turnover. `null` when unknown.",
             "example": "10:00"
+          },
+          "guestNotes": {
+            "type": "string",
+            "nullable": true,
+            "description": "What the guest wrote with the booking — on Booking.com, the estimated arrival time and special requests. Free text. `null` when there were none.",
+            "example": "Approximate time of arrival: between 15:00 and 16:00"
+          },
+          "conversationId": {
+            "type": "string",
+            "nullable": true,
+            "description": "The conversation with this guest — pass it to `GET /v1/conversations/{id}` and `/v1/conversations/{id}/messages`. It is the same conversation from inquiry through pre-approval to the confirmed booking, and the same id the message webhooks carry, so a booking links straight to the messages that led to it. `null` when the channel has no conversation for this booking.",
+            "example": "164743"
+          },
+          "externalThreadId": {
+            "type": "string",
+            "nullable": true,
+            "description": "The channel's own id for that conversation (Airbnb thread id, Booking.com conversation id, …). `null` when there is none.",
+            "example": "2680544213"
+          },
+          "inquiryId": {
+            "type": "string",
+            "nullable": true,
+            "description": "The inquiry this booking came from (`GET /v1/inquiries`), when the guest asked before booking. When an inquiry turns into a booking, `inquiry.updated` fires with `status: \"booked\"` and this reservation's id. `null` for bookings with no inquiry.",
+            "example": "25173"
           }
         }
       },
@@ -7737,6 +7785,17 @@
                 "nullable": true,
                 "description": "On a payout row: the net paid out to the host.",
                 "example": 18597.12
+              },
+              "bankDestination": {
+                "type": "string",
+                "nullable": true,
+                "description": "Masked destination bank account the payout was sent to (Booking.com payouts, from the statement PDF). Null on channels/rows without one.",
+                "example": "NO***********404"
+              },
+              "statementUrl": {
+                "type": "string",
+                "nullable": true,
+                "description": "Link to the channel's original payout statement PDF — the authoritative settlement record (Booking.com). Null when none."
               }
             }
           },

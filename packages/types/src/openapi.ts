@@ -5380,6 +5380,26 @@ export interface components {
              */
             checkOutTime?: string | null;
             /**
+             * @description What the guest wrote with the booking, as the channel sent it. Booking.com puts the estimated arrival time and special requests here. Free text, never parsed. `null` when the guest left none.
+             * @example Approximate time of arrival: between 15:00 and 16:00
+             */
+            guestNotes?: string | null;
+            /**
+             * @description The conversation with this guest — pass it to `GET /v1/conversations/{id}` and `/v1/conversations/{id}/messages`. It is the same conversation from inquiry through pre-approval to the confirmed booking, and the same id the message webhooks carry, so a booking links straight to the messages that led to it. `null` when the channel has no conversation for this booking.
+             * @example 164743
+             */
+            conversationId?: string | null;
+            /**
+             * @description The channel's own id for that conversation (Airbnb thread id, Booking.com conversation id, …). `null` when there is none.
+             * @example 2680544213
+             */
+            externalThreadId?: string | null;
+            /**
+             * @description The inquiry this booking came from (`GET /v1/inquiries`), when the guest asked before booking. When an inquiry turns into a booking, `inquiry.updated` fires with `status: "booked"` and this reservation's id. `null` for bookings with no inquiry.
+             * @example 25173
+             */
+            inquiryId?: string | null;
+            /**
              * @description Lifecycle status. The API normalises a multi-decade internal taxonomy down to these four buckets, so the value you receive is always one of the enum constants. `completed` is derived from `checkOut < today`. A `pending` booking request the channel already let lapse — Airbnb expires an unanswered request 24 hours after the guest asks, and no request can be answered once its check-in has passed — is reported as `cancelled` with `statusDetail: "request_expired"`, even when the channel never told us. Every `cancelled` reservation says how it ended in `statusDetail` when the channel tells us.
              * @example confirmed
              * @enum {string}
@@ -6416,6 +6436,26 @@ export interface components {
              * @example 10:00
              */
             checkOutTime?: string | null;
+            /**
+             * @description What the guest wrote with the booking — on Booking.com, the estimated arrival time and special requests. Free text. `null` when there were none.
+             * @example Approximate time of arrival: between 15:00 and 16:00
+             */
+            guestNotes?: string | null;
+            /**
+             * @description The conversation with this guest — pass it to `GET /v1/conversations/{id}` and `/v1/conversations/{id}/messages`. It is the same conversation from inquiry through pre-approval to the confirmed booking, and the same id the message webhooks carry, so a booking links straight to the messages that led to it. `null` when the channel has no conversation for this booking.
+             * @example 164743
+             */
+            conversationId?: string | null;
+            /**
+             * @description The channel's own id for that conversation (Airbnb thread id, Booking.com conversation id, …). `null` when there is none.
+             * @example 2680544213
+             */
+            externalThreadId?: string | null;
+            /**
+             * @description The inquiry this booking came from (`GET /v1/inquiries`), when the guest asked before booking. When an inquiry turns into a booking, `inquiry.updated` fires with `status: "booked"` and this reservation's id. `null` for bookings with no inquiry.
+             * @example 25173
+             */
+            inquiryId?: string | null;
         };
         /** @description Payload for `reservation.created`. A new reservation arrived from any connected channel or direct booking. Stripe-pattern envelope: `data.object` carries the reservation snapshot. */
         ReservationCreatedPayload: {
@@ -8921,6 +8961,13 @@ export interface components {
                  * @example 18597.12
                  */
                 paidOutAmount: number | null;
+                /**
+                 * @description Masked destination bank account the payout was sent to (Booking.com payouts, from the statement PDF). Null on channels/rows without one.
+                 * @example NO***********404
+                 */
+                bankDestination?: string | null;
+                /** @description Link to the channel's original payout statement PDF — the authoritative settlement record (Booking.com). Null when none. */
+                statementUrl?: string | null;
             };
             /** @example 5463377687 */
             confirmationCode?: string | null;
