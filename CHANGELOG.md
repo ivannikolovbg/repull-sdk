@@ -3,6 +3,10 @@
 All notable changes to `@repull/sdk` and `@repull/types` are recorded here.
 This project follows [Semantic Versioning](https://semver.org/).
 
+## [0.2.34] - 2026-10-15
+
+- Docs, type comments and the components' empty-state copy: Repull-only branding.
+
 ## [0.2.33] - 2026-10-14
 
 Regenerated against the live `https://api.repull.dev/openapi.json`:
