@@ -11,7 +11,7 @@ import { PricingCard } from './pricing-card';
  *   - `GET /v1/markets`           (Atlas market overview)
  *   - `GET /v1/listings/{id}/pricing`  (Atlas pricing recommendations)
  *
- * Both surfaces are powered by Atlas, Vanio's market-intelligence fleet
+ * Both surfaces are powered by Atlas, Repull's market-intelligence data
  * (660 live workers as of 2026-04-22). The section sits between the
  * channel grid and the connections list so it shows up immediately after
  * a user pastes a key — no extra clicks needed.

@@ -1773,7 +1773,7 @@ class AirbnbSafetyDisclosuresNamespace {
 /**
  * Atlas market intelligence — every market the workspace operates in plus
  * KPIs (own ADR vs market ADR, occupancy, ratings, share). Backed by Atlas,
- * Vanio's market-intelligence fleet.
+ * Repull's market-intelligence data.
  */
 class MarketsNamespace {
   constructor(private readonly client: Repull) {}

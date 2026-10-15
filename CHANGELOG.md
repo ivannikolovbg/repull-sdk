@@ -424,7 +424,7 @@ Regenerated `@repull/types` from the live spec (89 → 124 tracked paths); 49 pr
 ### Notes
 
 - Regenerated via `pnpm codegen` (`scripts/pull-openapi.ts` + `openapi-typescript`) against `https://api.repull.dev/openapi.json`.
-- Two spec defects were found and fixed upstream (prepared on `vanio-repull-api` branch `fix/reviews-reply-path-param`, not yet merged/deployed at the time of this release): (1) `POST /v1/reviews/{id}/reply` was missing its `{id}` path-parameter declaration, which fails `openapi-typescript`'s `$ref`/path validation outright; (2) 14 operations' `422` responses referenced a non-existent `#/components/responses/ValidationError` (should be `UnprocessableEntity`), a dangling `$ref` that also hard-fails codegen. This release's `openapi/v1.json` is untouched and matches the live spec byte-for-byte; `src/openapi.ts` was generated from a locally-patched copy carrying both corrections so the SDK types compile cleanly today, ahead of the upstream fix landing.
+- Two spec defects were found and fixed upstream (prepared on `repull-api` branch `fix/reviews-reply-path-param`, not yet merged/deployed at the time of this release): (1) `POST /v1/reviews/{id}/reply` was missing its `{id}` path-parameter declaration, which fails `openapi-typescript`'s `$ref`/path validation outright; (2) 14 operations' `422` responses referenced a non-existent `#/components/responses/ValidationError` (should be `UnprocessableEntity`), a dangling `$ref` that also hard-fails codegen. This release's `openapi/v1.json` is untouched and matches the live spec byte-for-byte; `src/openapi.ts` was generated from a locally-patched copy carrying both corrections so the SDK types compile cleanly today, ahead of the upstream fix landing.
 
 ## v0.2.10 — 2026-07-26
 
@@ -450,7 +450,7 @@ Regenerated `@repull/types` from the live spec (89 → 124 tracked paths); 49 pr
 
 ### Added
 
-- **`PaymentRequired` (402) response component in `@repull/types`.** New `components.responses.PaymentRequired` surfaced via `openapi-typescript` regen. The API now returns `402 Payment Required` with `error.code = "listings_limit_exceeded"` when a customer is over their tier's active-listing cap (free=5, starter=50, custom=unlimited). Unlike 429, 402 is NOT a "wait and retry" condition — `Retry-After` is not set. Recovery: `DELETE` listings to fall under the cap, or upgrade at `repull.dev/dashboard/billing`. `/v1/health`, `/v1/usage/*`, and any `DELETE` are exempt. The 402 envelope mirrors `rate_limit_exceeded` and adds `tier`, `limit`, `active_listings`, `upgrade_url`. Tracks vanio-repull-api PR #66.
+- **`PaymentRequired` (402) response component in `@repull/types`.** New `components.responses.PaymentRequired` surfaced via `openapi-typescript` regen. The API now returns `402 Payment Required` with `error.code = "listings_limit_exceeded"` when a customer is over their tier's active-listing cap (free=5, starter=50, custom=unlimited). Unlike 429, 402 is NOT a "wait and retry" condition — `Retry-After` is not set. Recovery: `DELETE` listings to fall under the cap, or upgrade at `repull.dev/dashboard/billing`. `/v1/health`, `/v1/usage/*`, and any `DELETE` are exempt. The 402 envelope mirrors `rate_limit_exceeded` and adds `tier`, `limit`, `active_listings`, `upgrade_url`. Tracks repull-api PR #66.
 
 ## v0.2.1 — 2026-05-04
 

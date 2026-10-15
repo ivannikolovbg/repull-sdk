@@ -66,7 +66,7 @@ export type Transaction = components['schemas']['Transaction'];
 export type GuestReviewSubmit = components['schemas']['AirbnbHostReviewSubmit'];
 
 /**
- * A Vanio listing paired with its Airbnb connection rows. Returned by
+ * A Repull listing paired with its Airbnb connection rows. Returned by
  * `GET /v1/channels/airbnb/listings/{id}` and as the element type of
  * {@link AirbnbListingListResponse}.
  */

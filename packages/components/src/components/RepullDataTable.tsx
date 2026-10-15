@@ -77,7 +77,7 @@ const EMPTY_STATE: Record<DataTableResource, string> = {
   listings: 'No listings to show. Connect a channel or import a property to get started.',
   guests: 'No guests yet. Once a reservation is created, the guest will show up here.',
   payments: 'No payments yet. Connect Stripe and process a booking to populate this list.',
-  tasks: 'No tasks. Tasks created by your team or by Vanio AI will appear here.',
+  tasks: 'No tasks. Tasks created by your team will appear here.',
 };
 
 interface FilterChipProps {
