@@ -14,6 +14,7 @@
  */
 
 import type {
+  AccountImport,
   AirbnbAccessType,
   AirbnbAmenitiesResult,
   AirbnbAmenitiesUpdateRequest,
@@ -442,6 +443,17 @@ class ConnectNamespace {
   /** GET /v1/connect — list every connection on this workspace. */
   list(): Promise<Connection[]> {
     return this.client.request<Connection[]>('GET', '/v1/connect');
+  }
+
+  /**
+   * GET /v1/connections/{id}/imports — one connected account's import runs, newest first: the first
+   * sync after connecting, a room or unit mapped later, a reconnect, a re-sync. `handle` is
+   * `{provider}:{externalAccountId}` from a connection on `list()` (e.g. `booking_extranet:36`).
+   * The account's first sync is done when the newest run's `status` is no longer `running`; the
+   * `account.import.completed` webhook announces the same moment. New in v0.2.35.
+   */
+  imports(handle: string, query: { limit?: number } = {}): Promise<{ data: AccountImport[]; pagination: { next_cursor: string | null; has_more: boolean; total?: number } }> {
+    return this.client.request('GET', `/v1/connections/${encodeURIComponent(handle)}/imports`, { query });
   }
 
   /**

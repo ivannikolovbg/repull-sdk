@@ -5084,6 +5084,94 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/transactions/{id}/statement": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Download the original payout statement
+         * @description Downloads the channel's ORIGINAL payout statement — the authoritative settlement record a host reconciles against — for a payout transaction. `{id}` is the payout `transactionId` (e.g. `booking_payout_5463377687_bank_transfer`). Repull serves the stored bytes itself (no channel session), so unlike the channel's own link it never expires or leaks a session. PDF by default; pass `?format=csv` for the CSV remittance. Returns `404` when no statement was captured for the payout (e.g. an upcoming payout, or a channel that has none).
+         */
+        get: operations["get_transaction_statement"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/airbnb/resolutions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Airbnb Resolution Center cases
+         * @description The host's Airbnb Resolution Center cases (AirCover / damage, extra-guest, refund and change requests), open and closed. Served from the database; `POST` this path to refresh from Airbnb. READ-ONLY upstream — Airbnb's Resolutions API is read-only; a claim is created, evidence added and status changed only in Airbnb's Resolution Center UI, not via API. Use this for visibility and action tracking (`suggestedActionText`). The money a resolution moved is in the transactions ledger as `Resolution Payout` / `Resolution Adjustment` rows sharing the same reference — join on `resolutionId`. Cursor-paginated, newest first.
+         */
+        get: operations["list_airbnb_resolutions"];
+        put?: never;
+        /**
+         * Refresh Airbnb resolutions from Airbnb
+         * @description Pulls the latest Resolution Center cases from Airbnb (read-only) and stores them, then read with GET. Optionally scope to one `account_id` and/or `status`.
+         */
+        post: operations["refresh_airbnb_resolutions"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/airbnb/resolutions/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get an Airbnb Resolution Center case
+         * @description One Airbnb Resolution Center case. `{id}` is the Airbnb resolution id (the `resolutionId` from the list, also a transaction's `reference`). Read-only (see the list endpoint). The amounts moved are in the transactions ledger — join `resolutionId` to a transaction's `reference`. 404 when it isn't in this workspace (POST the list endpoint to refresh first).
+         */
+        get: operations["get_airbnb_resolution"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/connections/{id}/imports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List a connection's imports
+         * @description The import runs of one connected account, newest first: the first sync after connecting, a room or unit mapped later, a reconnect, a re-sync. Each run says where it stands (`running`, `completed`, `failed`), its stages and what it imported.
+         *
+         *     To know when an account's first sync is done, wait for the `account.import.completed` webhook, or poll this endpoint (or `GET /v1/connect`, whose connections carry their latest `import`) until the newest run is no longer `running`.
+         *
+         *     Auth: a Repull API key, or a Connect session token (`sessionId`).
+         */
+        get: operations["listConnectionImports"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -5843,6 +5931,8 @@ export interface components {
              * @description Durable link that reopens the hosted Connect flow bound to this account on the fix screen — send the host here to resolve `action`. Present only when `action.required` is true; `null` otherwise.
              */
             fixUrl?: string | null;
+            /** @description The account's latest import — `status: running` while the first sync (or a later one) is going, then `completed` or `failed`. `null` when no import has been recorded. The same run is announced by the `account.import.*` webhooks; the history is on `GET /v1/connections/{id}/imports`. */
+            import?: components["schemas"]["AccountImport"] | null;
         };
         /** @description A host action a connection needs before it can work. */
         ConnectionAction: {
@@ -6365,7 +6455,7 @@ export interface components {
          * @description Canonical event type identifier. Every webhook delivery declares one of these in its `type` field; SDKs key the discriminated `WebhookEvent` union on this value.
          * @enum {string}
          */
-        WebhookEventType: "reservation.created" | "reservation.updated" | "reservation.cancelled" | "reservation.message.received" | "reservation.message.sent" | "reservation.message.updated" | "reservation.alteration.created" | "reservation.alteration.responded" | "reservation.request.created" | "reservation.request.updated" | "inquiry.created" | "inquiry.updated" | "listing.created" | "listing.updated" | "listing.deleted" | "listing.suspended" | "listing.reactivated" | "calendar.updated" | "account.created" | "connect.session.completed" | "account.disconnected" | "review.created" | "review.responded" | "ai.operation.completed" | "ai.operation.failed" | "payment.completed" | "payment.refunded" | "payout.completed" | "migration.completed" | "migration.failed" | "repull.ping" | "usage.quota.warning";
+        WebhookEventType: "reservation.created" | "reservation.updated" | "reservation.cancelled" | "reservation.message.received" | "reservation.message.sent" | "reservation.message.updated" | "reservation.alteration.created" | "reservation.alteration.responded" | "reservation.request.created" | "reservation.request.updated" | "inquiry.created" | "inquiry.updated" | "listing.created" | "listing.updated" | "listing.deleted" | "listing.suspended" | "listing.reactivated" | "calendar.updated" | "account.created" | "connect.session.completed" | "account.disconnected" | "account.import.started" | "account.import.completed" | "account.import.failed" | "review.created" | "review.responded" | "ai.operation.completed" | "ai.operation.failed" | "payment.completed" | "payment.refunded" | "payout.completed" | "migration.completed" | "migration.failed" | "repull.ping" | "usage.quota.warning";
         /**
          * @description Lightweight reservation snapshot delivered as `data.object` on every reservation webhook event. Stable across `reservation.created`, `reservation.updated`, and `reservation.cancelled`. Fetch the full reservation via `GET /v1/reservations/{id}` if you need pricing, guest contact info, or audit history — those are deliberately omitted to keep deliveries small.
          *
@@ -7691,6 +7781,145 @@ export interface components {
             account?: components["schemas"]["WebhookEventAccount"];
             data: components["schemas"]["AccountCreatedPayload"];
         };
+        /** @description One stage of an account import (e.g. `reservations`). The stage is done when `done + failed` reaches `expected`. */
+        AccountImportStage: {
+            /** @example reservations */
+            name?: string;
+            /** @description Units of work in this stage (one per page, chunk, listing or thread, depending on the channel). `null` until the stage knows its size. */
+            expected?: number | null;
+            done?: number;
+            failed?: number;
+        };
+        /** @description What the import brought in. A channel reports the keys it imports. */
+        AccountImportCounts: {
+            listings?: number;
+            reservations?: number;
+            conversations?: number;
+            messages?: number;
+            reviews?: number;
+            payments?: number;
+        };
+        /** @description One import run of a connected account: the first sync after connecting, a room or unit mapped later, a reconnect or a re-sync. */
+        AccountImport: {
+            /**
+             * Format: uuid
+             * @description The import id — the `importId` on `account.import.*` webhooks.
+             */
+            id?: string;
+            /** @enum {string} */
+            status?: "running" | "completed" | "failed";
+            /** @enum {string} */
+            trigger?: "connect" | "mapping" | "reconnect" | "resync";
+            /**
+             * @description `completed` imports only: `partial` when some units failed (see `stages`).
+             * @enum {string|null}
+             */
+            outcome?: "complete" | "partial" | null;
+            /** @description `failed` imports only: why it stopped — e.g. `needs_permissions`, `duplicate_account`, `stalled`. */
+            reason?: string | null;
+            /** Format: date-time */
+            startedAt?: string;
+            /** Format: date-time */
+            lastActivityAt?: string;
+            /** Format: date-time */
+            completedAt?: string | null;
+            stages?: components["schemas"]["AccountImportStage"][];
+            counts?: components["schemas"]["AccountImportCounts"];
+        };
+        AccountImportStartedPayload: {
+            /** Format: uuid */
+            importId?: string;
+            /** @enum {string} */
+            trigger?: "connect" | "mapping" | "reconnect" | "resync";
+            /** Format: date-time */
+            startedAt?: string;
+            /** @description The stages this import will run. */
+            stages?: string[];
+        };
+        AccountImportFinishedPayload: {
+            /** Format: uuid */
+            importId?: string;
+            /** @enum {string} */
+            trigger?: "connect" | "mapping" | "reconnect" | "resync";
+            /** @enum {string} */
+            status?: "completed" | "failed";
+            /** @enum {string|null} */
+            outcome?: "complete" | "partial" | null;
+            /** Format: date-time */
+            startedAt?: string;
+            /** Format: date-time */
+            completedAt?: string;
+            stages?: components["schemas"]["AccountImportStage"][];
+            counts?: components["schemas"]["AccountImportCounts"];
+            /** @description `account.import.failed` only. */
+            reason?: string | null;
+        };
+        /** @description An account import began. */
+        AccountImportStartedEvent: {
+            /**
+             * @description The event name. This field is `event`, not `type`. (enum property replaced by openapi-typescript)
+             * @enum {string}
+             */
+            event: "account.import.started";
+            /**
+             * Format: uuid
+             * @description Stable across every delivery and replay of this logical event — dedupe on it.
+             */
+            eventId: string;
+            /** @example 2026-04 */
+            apiVersion: string;
+            /**
+             * Format: date-time
+             * @description When this delivery was built.
+             */
+            timestamp: string;
+            account?: components["schemas"]["WebhookEventAccount"];
+            data: components["schemas"]["AccountImportStartedPayload"];
+        };
+        /** @description Every stage of an account import finished. Its data is readable through the API. */
+        AccountImportCompletedEvent: {
+            /**
+             * @description The event name. This field is `event`, not `type`. (enum property replaced by openapi-typescript)
+             * @enum {string}
+             */
+            event: "account.import.completed";
+            /**
+             * Format: uuid
+             * @description Stable across every delivery and replay of this logical event — dedupe on it.
+             */
+            eventId: string;
+            /** @example 2026-04 */
+            apiVersion: string;
+            /**
+             * Format: date-time
+             * @description When this delivery was built.
+             */
+            timestamp: string;
+            account?: components["schemas"]["WebhookEventAccount"];
+            data: components["schemas"]["AccountImportFinishedPayload"];
+        };
+        /** @description An account import stopped before finishing; `data.reason` says why. */
+        AccountImportFailedEvent: {
+            /**
+             * @description The event name. This field is `event`, not `type`. (enum property replaced by openapi-typescript)
+             * @enum {string}
+             */
+            event: "account.import.failed";
+            /**
+             * Format: uuid
+             * @description Stable across every delivery and replay of this logical event — dedupe on it.
+             */
+            eventId: string;
+            /** @example 2026-04 */
+            apiVersion: string;
+            /**
+             * Format: date-time
+             * @description When this delivery was built.
+             */
+            timestamp: string;
+            account?: components["schemas"]["WebhookEventAccount"];
+            data: components["schemas"]["AccountImportFinishedPayload"];
+        };
         ConnectSessionCompletedEvent: {
             /**
              * @description The event name. This field is `event`, not `type`. (enum property replaced by openapi-typescript)
@@ -7992,7 +8221,7 @@ export interface components {
             data: components["schemas"]["MigrationImportPayload"];
         };
         /** @description The full event envelope POSTed to your webhook URL. Discriminated on `type` — narrow `event.data` by switching on `event.type`. Use the matching `*Event` variant directly if your SDK lacks discriminator support. Events about an inactive listing (reservations, messages, alterations, reviews, payments, calendar and listing events) are not delivered. The data keeps syncing while the listing is inactive, but its events are never sent — including after you reactivate it; webhooks resume for events that happen from reactivation on. Account-level events are always delivered. */
-        WebhookEvent: components["schemas"]["ReservationCreatedEvent"] | components["schemas"]["ReservationUpdatedEvent"] | components["schemas"]["ReservationCancelledEvent"] | components["schemas"]["ReservationMessageReceivedEvent"] | components["schemas"]["ReservationMessageSentEvent"] | components["schemas"]["ReservationMessageUpdatedEvent"] | components["schemas"]["ReservationAlterationCreatedEvent"] | components["schemas"]["ReservationAlterationRespondedEvent"] | components["schemas"]["ReservationRequestCreatedEvent"] | components["schemas"]["ReservationRequestUpdatedEvent"] | components["schemas"]["InquiryCreatedEvent"] | components["schemas"]["InquiryUpdatedEvent"] | components["schemas"]["ListingCreatedEvent"] | components["schemas"]["ListingUpdatedEvent"] | components["schemas"]["ListingDeletedEvent"] | components["schemas"]["ListingSuspendedEvent"] | components["schemas"]["ListingReactivatedEvent"] | components["schemas"]["CalendarUpdatedEvent"] | components["schemas"]["AccountCreatedEvent"] | components["schemas"]["ConnectSessionCompletedEvent"] | components["schemas"]["AccountDisconnectedEvent"] | components["schemas"]["ReviewCreatedEvent"] | components["schemas"]["ReviewRespondedEvent"] | components["schemas"]["AiOperationCompletedEvent"] | components["schemas"]["AiOperationFailedEvent"] | components["schemas"]["PaymentCompletedEvent"] | components["schemas"]["PaymentRefundedEvent"] | components["schemas"]["PayoutCompletedEvent"] | components["schemas"]["RepullPingEvent"] | components["schemas"]["UsageQuotaWarningEvent"] | components["schemas"]["MigrationCompletedEvent"] | components["schemas"]["MigrationFailedEvent"];
+        WebhookEvent: components["schemas"]["ReservationCreatedEvent"] | components["schemas"]["ReservationUpdatedEvent"] | components["schemas"]["ReservationCancelledEvent"] | components["schemas"]["ReservationMessageReceivedEvent"] | components["schemas"]["ReservationMessageSentEvent"] | components["schemas"]["ReservationMessageUpdatedEvent"] | components["schemas"]["ReservationAlterationCreatedEvent"] | components["schemas"]["ReservationAlterationRespondedEvent"] | components["schemas"]["ReservationRequestCreatedEvent"] | components["schemas"]["ReservationRequestUpdatedEvent"] | components["schemas"]["InquiryCreatedEvent"] | components["schemas"]["InquiryUpdatedEvent"] | components["schemas"]["ListingCreatedEvent"] | components["schemas"]["ListingUpdatedEvent"] | components["schemas"]["ListingDeletedEvent"] | components["schemas"]["ListingSuspendedEvent"] | components["schemas"]["ListingReactivatedEvent"] | components["schemas"]["CalendarUpdatedEvent"] | components["schemas"]["AccountCreatedEvent"] | components["schemas"]["ConnectSessionCompletedEvent"] | components["schemas"]["AccountDisconnectedEvent"] | components["schemas"]["AccountImportStartedEvent"] | components["schemas"]["AccountImportCompletedEvent"] | components["schemas"]["AccountImportFailedEvent"] | components["schemas"]["ReviewCreatedEvent"] | components["schemas"]["ReviewRespondedEvent"] | components["schemas"]["AiOperationCompletedEvent"] | components["schemas"]["AiOperationFailedEvent"] | components["schemas"]["PaymentCompletedEvent"] | components["schemas"]["PaymentRefundedEvent"] | components["schemas"]["PayoutCompletedEvent"] | components["schemas"]["RepullPingEvent"] | components["schemas"]["UsageQuotaWarningEvent"] | components["schemas"]["MigrationCompletedEvent"] | components["schemas"]["MigrationFailedEvent"];
         /** @description A listing paired with its Airbnb connections. The list endpoint groups every Airbnb connection of the same `listingId` under a single `connections[]` array. */
         AirbnbListing: {
             /**
@@ -8966,14 +9195,64 @@ export interface components {
                  * @example NO***********404
                  */
                 bankDestination?: string | null;
-                /** @description Link to the channel's original payout statement PDF — the authoritative settlement record (Booking.com). Null when none. */
+                /** @description Repull-hosted download link for the original payout statement PDF (the authoritative settlement record). Add `?format=csv` for the CSV. Served by `GET /v1/transactions/{id}/statement` — no channel session needed. Null when none is stored. */
                 statementUrl?: string | null;
+                /**
+                 * @description The channel's own numeric statement id (Booking.com, e.g. "010747030095"). Null when none.
+                 * @example 010747030095
+                 */
+                statementId?: string | null;
             };
             /** @example 5463377687 */
             confirmationCode?: string | null;
             reservationId?: number | null;
             listingId?: number | null;
             /** Format: date-time */
+            syncedAt?: string | null;
+        };
+        /** @description An Airbnb Resolution Center case (AirCover / damage, extra-guest, refund or change request). Read-only — Airbnb exposes no create/evidence/status API. The money a resolution moved rides in the transactions ledger as `Resolution Payout` / `Resolution Adjustment` rows sharing the same reference; join on `resolutionId`. */
+        Resolution: {
+            /**
+             * @description Airbnb's resolution id — the `{id}` path value and the join key to a transaction's `reference`.
+             * @example CLSF-06464054
+             */
+            resolutionId: string;
+            /**
+             * @description Airbnb confirmation code of the reservation the case is on.
+             * @example HMZKMYCBC5
+             */
+            confirmationCode?: string | null;
+            /** @description Repull's internal reservation id, when the reservation is in this workspace. */
+            reservationId?: number | null;
+            listingName?: string | null;
+            /**
+             * @description OPEN or CLOSED, as Airbnb reports it.
+             * @example OPEN
+             */
+            status: string | null;
+            /** @description Why the resolution was opened. */
+            reason?: string | null;
+            /** @description Airbnb's case-status label. */
+            caseStatus?: string | null;
+            /** @description Human-readable status detail. */
+            statusText?: string | null;
+            /** @description Airbnb's hint on whose turn it is to act next — track progress with it. */
+            suggestedActionText?: string | null;
+            /** @description True when Airbnb Customer Support (not the host/guest) opened the case. */
+            customerSupportInitiated?: boolean | null;
+            productType?: string | null;
+            /** @description Who opened the case (id + name). */
+            initiator?: Record<string, never> | null;
+            /** @description Who responds (id + name). */
+            responder?: Record<string, never> | null;
+            /** Format: date-time */
+            createdAt?: string | null;
+            /** Format: date-time */
+            updatedAt?: string | null;
+            /**
+             * Format: date-time
+             * @description When Repull last refreshed this case from Airbnb.
+             */
             syncedAt?: string | null;
         };
         /** @description One Airbnb host record under the workspace, decorated with its most recent disconnect reason from `airbnb_host_events` (backfill events excluded). */
@@ -23585,6 +23864,189 @@ export interface operations {
                     };
                 };
             };
+        };
+    };
+    get_transaction_statement: {
+        parameters: {
+            query?: {
+                /** @description Statement format. */
+                format?: "pdf" | "csv";
+            };
+            header?: {
+                /** @description Apply a custom or built-in schema to transform the response. Built-in: `native` (default), `calry`, `calry-v1`. Custom: any schema name created via `POST /v1/schema/custom`. Unknown / inactive schema names fall back to `native`. */
+                "X-Schema"?: components["parameters"]["XSchemaHeader"];
+            };
+            path: {
+                /** @description The payout transaction id (`transactionId`). */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The statement file (PDF by default, or CSV). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/pdf": string;
+                    "text/csv": string;
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    list_airbnb_resolutions: {
+        parameters: {
+            query?: {
+                /** @description Filter by lifecycle: `open` (still needs action) or `closed` (settled). Omit for all. */
+                status?: "open" | "closed";
+                /** @description Page size (default 50, max 200). */
+                limit?: number;
+                /** @description Opaque pagination cursor from a previous `pagination.nextCursor`. */
+                cursor?: string;
+            };
+            header?: {
+                /** @description Apply a custom or built-in schema to transform the response. Built-in: `native` (default), `calry`, `calry-v1`. Custom: any schema name created via `POST /v1/schema/custom`. Unknown / inactive schema names fall back to `native`. */
+                "X-Schema"?: components["parameters"]["XSchemaHeader"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Resolutions */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["Resolution"][];
+                        pagination: components["schemas"]["Pagination"];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            422: components["responses"]["UnprocessableEntity"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    refresh_airbnb_resolutions: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Apply a custom or built-in schema to transform the response. Built-in: `native` (default), `calry`, `calry-v1`. Custom: any schema name created via `POST /v1/schema/custom`. Unknown / inactive schema names fall back to `native`. */
+                "X-Schema"?: components["parameters"]["XSchemaHeader"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @description Limit the refresh to one Airbnb host id. Omit for all connected accounts. */
+                    account_id?: string;
+                    /**
+                     * @description Limit the refresh to one lifecycle. Omit for all.
+                     * @enum {string}
+                     */
+                    status?: "OPEN" | "CLOSED";
+                };
+            };
+        };
+        responses: {
+            /** @description Refresh outcome. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        synced: boolean;
+                        /** @description Resolutions upserted across all accounts. */
+                        count: number;
+                        accounts: {
+                            account_id: string;
+                            count: number;
+                            error?: {
+                                code?: string;
+                                message?: string;
+                            } | null;
+                        }[];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["UnprocessableEntity"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    get_airbnb_resolution: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Apply a custom or built-in schema to transform the response. Built-in: `native` (default), `calry`, `calry-v1`. Custom: any schema name created via `POST /v1/schema/custom`. Unknown / inactive schema names fall back to `native`. */
+                "X-Schema"?: components["parameters"]["XSchemaHeader"];
+            };
+            path: {
+                /** @description The Airbnb resolution id. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Resolution */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Resolution"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    listConnectionImports: {
+        parameters: {
+            query?: {
+                /** @description How many runs to return, newest first. */
+                limit?: number;
+                /** @description The Connect session ID (capability token). */
+                sessionId?: string;
+            };
+            header?: never;
+            path: {
+                /** @description Connection handle `{provider}:{externalAccountId}`, e.g. `booking_extranet:36`, `vrbo:12`, `airbnb:1234567`, `hostaway:27434` — the `provider` and `externalAccountId` of a connection on `GET /v1/connect`, or the account of an `account.*` webhook. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Imports, newest first. Empty when the account has none recorded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data?: components["schemas"]["AccountImport"][];
+                        pagination?: components["schemas"]["Pagination"];
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
         };
     };
 }

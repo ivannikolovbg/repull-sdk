@@ -3,6 +3,14 @@
 All notable changes to `@repull/sdk` and `@repull/types` are recorded here.
 This project follows [Semantic Versioning](https://semver.org/).
 
+## [0.2.35] - 2026-10-16
+
+### Added
+- `connect.imports(handle)` — `GET /v1/connections/{id}/imports`, an account's import runs. `Connection.import` carries the latest run. New types `AccountImport`, `AccountImportStage`, `AccountImportCounts`; webhook events `account.import.started`, `account.import.completed`, `account.import.failed`.
+- Types for Airbnb resolutions (`/v1/channels/airbnb/resolutions`) and `GET /v1/transactions/{id}/statement`.
+
+Regenerated from the live spec.
+
 ## [0.2.34] - 2026-10-15
 
 - Docs, type comments and the components' empty-state copy: Repull-only branding.

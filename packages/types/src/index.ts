@@ -57,6 +57,10 @@ export type CalendarDay = components['schemas']['CalendarDay'];
 export type Conversation = components['schemas']['Conversation'];
 export type Message = components['schemas']['Message'];
 export type Connection = components['schemas']['Connection'];
+/** One import run of a connected account. New in v0.2.35. */
+export type AccountImport = components['schemas']['AccountImport'];
+export type AccountImportStage = components['schemas']['AccountImportStage'];
+export type AccountImportCounts = components['schemas']['AccountImportCounts'];
 export type WebhookSubscription = components['schemas']['WebhookSubscription'];
 export type AIOperation = components['schemas']['AIOperation'];
 export type RepullErrorPayload = components['schemas']['Error'];
