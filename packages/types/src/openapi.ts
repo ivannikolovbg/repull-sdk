@@ -5172,6 +5172,144 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/listings/promotions/bulk": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Add or remove a promotion on many listings
+         * @description Applies one promotion to up to 100 listings — `add` it, or `remove` the listing's running promotion of that channel and type. Each listing gets its own result with the channel's reason when refused, so one refusal doesn't stop the rest. Returns `403 listing_inactive` before doing anything when any listing is inactive.
+         */
+        post: operations["bulk_listing_promotions"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/listings/{id}/promotions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List a listing's promotions
+         * @description Airbnb and Booking.com promotions on the listing, in one model. Includes Airbnb promotions running or available (the new listing promotion shows as `eligible` when the listing qualifies), Airbnb Custom promotions seen on bookings (read-only — they override your prices on Airbnb), and Booking.com promotions covering the listing's room, including deactivated ones.
+         *
+         *     Pass `refresh=true` to re-read the channels first; otherwise the stored copy is returned (kept current by Airbnb's notifications and a sync every 30 minutes).
+         *
+         *     Returns `403 listing_inactive` when the listing is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
+         */
+        get: operations["list_listing_promotions"];
+        put?: never;
+        /**
+         * Add a promotion to a listing
+         * @description Adds an Airbnb or Booking.com promotion. Read `GET /v1/listings/{id}/promotions/catalog` first for the types and fields the listing's channels accept.
+         *
+         *     **Airbnb:** send `channel` and `type` only (`top_rated_guests`, `mobile`, `new_listing`) — Airbnb sets the discount. **Booking.com:** a listing's promotion covers that listing's room; send `discountPercent` and the rules the type takes, and `hotelId` when the listing is on several properties.
+         *
+         *     A request a channel can't take is refused with `422` and a `promotion_*` code; the message names the channel and the field and says what to do, and `channel` / `field` are set. Booking.com writes return once Booking.com shows the change (it lags its own writes by a few seconds).
+         *
+         *     Returns `403 listing_inactive` when the listing is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
+         */
+        post: operations["create_listing_promotion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/listings/{id}/promotions/catalog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Promotion types a listing can use
+         * @description Per channel: whether the listing is connected, and each promotion type with a short description for hosts, whether it is new, whether it is available to this listing (and why not), and every field — supported or not — with its limits and any value the channel fixes. Booking.com's types and limits come from the property itself; seasonal campaigns appear while Booking.com runs them.
+         *
+         *     Airbnb asks partners to show newly available discounts with a “New” badge and to grey out fields a discount does not support rather than hide them; `isNew` and `fields` carry what that needs.
+         *
+         *     Returns `403 listing_inactive` when the listing is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
+         */
+        get: operations["get_listing_promotion_catalog"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/listings/{id}/promotions/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Re-read a listing's promotions now
+         * @description Reads the listing's promotions from Airbnb and Booking.com and returns them. Booking.com promotions belong to the property, so the property's other listings are refreshed too. `errors` lists any channel that could not be read.
+         *
+         *     Returns `403 listing_inactive` when the listing is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
+         */
+        post: operations["refresh_listing_promotions"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/listings/{id}/promotions/{promotionId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get one promotion
+         * @description One promotion on the listing.
+         *
+         *     Returns `403 listing_inactive` when the listing is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
+         */
+        get: operations["get_listing_promotion"];
+        put?: never;
+        post?: never;
+        /**
+         * Remove a promotion from a listing
+         * @description Airbnb: ends the listing's enrolment. Booking.com: takes the listing's room off the promotion — it keeps running for any other rooms it covers, and is deactivated when none are left. Airbnb Custom promotions can only be ended in Airbnb.
+         *
+         *     A request a channel can't take is refused with `422` and a `promotion_*` code; the message names the channel and the field and says what to do, and `channel` / `field` are set. Booking.com writes return once Booking.com shows the change (it lags its own writes by a few seconds).
+         *
+         *     Returns `403 listing_inactive` when the listing is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
+         */
+        delete: operations["delete_listing_promotion"];
+        options?: never;
+        head?: never;
+        /**
+         * Change a promotion
+         * @description Booking.com promotions only — Airbnb's have nothing to change. `rules`, when sent, replaces the promotion's rules whole. A promotion that also covers other listings' rooms changes for them too, so it needs `confirmShared: true` (otherwise `409 promotion_shared_promotion`). Promotions that come from the listing's weekly or monthly discount are changed in its pricing settings.
+         *
+         *     A request a channel can't take is refused with `422` and a `promotion_*` code; the message names the channel and the field and says what to do, and `channel` / `field` are set. Booking.com writes return once Booking.com shows the change (it lags its own writes by a few seconds).
+         *
+         *     Returns `403 listing_inactive` when the listing is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
+         */
+        patch: operations["update_listing_promotion"];
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -5364,6 +5502,11 @@ export interface components {
              * @example 0
              */
             vat?: number;
+            /**
+             * @description Discount lines only: the listing promotion that produced the discount, named as in `GET /v1/listings/{id}/promotions` (Airbnb reports each applied promotion as its own line). `custom` is an Airbnb Custom promotion.
+             * @enum {string}
+             */
+            promotionType?: "top_rated_guests" | "mobile" | "new_listing" | "custom";
         };
         /**
          * @description HOST-side view of the stay — what it looks like on the host ledger. Projected from the reservation's own stored price breakdown, so it is available on every channel (Airbnb, Booking.com, VRBO, direct, owner), not just Airbnb.
@@ -7031,15 +7174,15 @@ export interface components {
             /** @description Emitted only where the source carries it. */
             netAmount?: string | null;
         };
-        /** @description Payload for `listing.updated`. Something about the listing changed on the channel — content, pricing, booking settings, house rules, availability or sync settings. */
+        /** @description Payload for `listing.updated`. Something about the listing changed on the channel — content, pricing, booking settings, house rules, availability, sync settings or promotions. */
         ListingUpdatedPayload: {
             object: components["schemas"]["ListingWebhookObject"];
             /**
-             * @description Which part moved. Airbnb sends one notification per area rather than a diff, so this is the signal for what to re-read.
+             * @description Which part moved. Airbnb sends one notification per area rather than a diff, so this is the signal for what to re-read. `promotions`: the listing’s Airbnb or Booking.com promotions changed — re-read `GET /v1/listings/{id}/promotions`.
              * @example content
              * @enum {string}
              */
-            area?: "content" | "pricing" | "booking_settings" | "rules" | "availability" | "sync_settings";
+            area?: "content" | "pricing" | "booking_settings" | "rules" | "availability" | "sync_settings" | "promotions";
             /** @description Fields that changed and their prior values, when the source reports them. */
             previousAttributes?: {
                 [key: string]: unknown;
@@ -10158,6 +10301,231 @@ export interface components {
             modelVersion?: string;
             /** Format: date-time */
             generatedAt?: string;
+        };
+        /** @description One promotion on one listing. Airbnb sets the discount for its promotions (`discount.setBy: channel`); Booking.com promotions belong to the property and list the rooms they cover in `appliesTo`. */
+        Promotion: {
+            /** @description Repull id of this promotion on this listing (use it in `/promotions/{promotionId}`). */
+            id?: string;
+            listingId?: string;
+            /** @enum {string} */
+            channel?: "airbnb" | "booking";
+            type?: components["schemas"]["PromotionType"];
+            /** @description The channel’s own name, e.g. `HIGH_RATED_GUEST_DISCOUNT`, `basic`, `campaign_getaway`. */
+            channelType?: string;
+            /** @description The channel’s promotion id. Booking.com may issue a new one when a promotion is changed; the Repull `id` stays the same. */
+            externalId?: string;
+            /** @description Airbnb listing id, or the Booking.com property (hotel id) the promotion belongs to. */
+            channelPropertyId?: string;
+            name?: string | null;
+            /**
+             * @description `eligible`: the listing qualifies but is not enrolled (Airbnb new listing promotion). `inactive`: switched off; Booking.com keeps deactivated promotions.
+             * @enum {string}
+             */
+            status?: "active" | "scheduled" | "eligible" | "inactive" | "expired";
+            /**
+             * @description `channel`: created in the channel’s own tools and read-only here (Airbnb Custom promotions).
+             * @enum {string}
+             */
+            managedBy?: "api" | "channel";
+            /**
+             * @description Set when it comes from the listing’s weekly or monthly discount in its pricing settings — change those instead.
+             * @enum {string|null}
+             */
+            managedKey?: "weekly_discount" | "monthly_discount" | null;
+            editable?: boolean;
+            removable?: boolean;
+            discount?: {
+                percent?: number | null;
+                /** @enum {string} */
+                setBy?: "host" | "channel";
+            };
+            rules?: components["schemas"]["PromotionRules"];
+            /** @description Booking.com only. An empty `rooms` list means every room on the property. */
+            appliesTo?: {
+                rooms?: string[];
+                ratePlans?: string[];
+            } | null;
+            usage?: {
+                bookings?: number;
+                roomNights?: number;
+                cancellations?: number;
+                revenue?: {
+                    amount?: number;
+                    currency?: string;
+                };
+                /**
+                 * Format: date-time
+                 * @description Airbnb Custom promotion: when it was last applied to a booking.
+                 */
+                lastAppliedAt?: string;
+                lastAppliedAmount?: {
+                    amount?: number;
+                    currency?: string;
+                };
+            } | null;
+            /** Format: date-time */
+            expiresAt?: string | null;
+            /** Format: date-time */
+            syncedAt?: string;
+        };
+        /**
+         * @description The same idea on both channels shares a type: `mobile` is Airbnb’s mobile-only discount or Booking.com’s mobile rate; `new_listing` is Airbnb’s new listing promotion or Booking.com’s new property deal. `top_rated_guests` is Airbnb only; the deal, last-minute, early-booker, country and campaign types are Booking.com only; `custom` (Airbnb Custom promotion) is read-only.
+         * @enum {string}
+         */
+        PromotionType: "new_listing" | "mobile" | "top_rated_guests" | "deal" | "last_minute" | "early_booker" | "country" | "campaign" | "custom";
+        /** @description Which rules a type supports depends on the channel — see the catalog. */
+        PromotionRules: {
+            /** @description Booking.com campaigns: `black_friday`, `getaway`, `late_escape`, `early_year`. */
+            campaign?: string;
+            /** @description `public`, `subscribers` (members only, at least 10%), `app`, `all` (app and mobile web), or a country id from the catalog (e.g. `united_kingdom_pos`). */
+            audience?: string;
+            stayWindow?: {
+                /** Format: date */
+                start?: string;
+                /** Format: date */
+                end?: string;
+                weekdays?: ("mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun")[];
+                excludedDates?: string[];
+                additionalDates?: string[];
+            };
+            bookingWindow?: {
+                /** Format: date */
+                start?: string;
+                /** Format: date */
+                end?: string;
+                startHour?: number;
+                endHour?: number;
+            };
+            lastMinute?: {
+                /** @enum {string} */
+                unit?: "day" | "hour";
+                value?: number;
+            };
+            earlyBookerDays?: number;
+            minNights?: number;
+            nonRefundable?: boolean;
+            /** @description Airbnb — not yet available. */
+            blackoutDates?: string[];
+            blackoutDatesQuota?: {
+                used?: number;
+                available?: number;
+            };
+        };
+        PromotionInput: {
+            /** @enum {string} */
+            channel: "airbnb" | "booking";
+            type: components["schemas"]["PromotionType"];
+            /** @description Booking.com only; only you see it. */
+            name?: string;
+            /** @description Booking.com only — Airbnb sets its own rates. Limits per type are in the catalog. */
+            discountPercent?: number;
+            rules?: components["schemas"]["PromotionRules"];
+        };
+        PromotionCreateRequest: components["schemas"]["PromotionInput"] & {
+            /** @description Booking.com: required when the listing has a room on more than one property (see `properties` in the catalog). */
+            hotelId?: string;
+        };
+        PromotionUpdateRequest: {
+            name?: string;
+            discountPercent?: number;
+            rules?: components["schemas"]["PromotionRules"];
+            /** @description Required when the promotion also covers other listings’ rooms — the change applies to them too. */
+            confirmShared?: boolean;
+        };
+        PromotionCatalogField: {
+            supported?: boolean;
+            /** @description Shown but not yet usable on this channel. */
+            comingSoon?: boolean;
+            required?: boolean;
+            min?: number;
+            max?: number;
+            /** @description Value the channel sets (e.g. Airbnb’s 15% top-rated-guests discount). */
+            fixed?: number;
+            options?: {
+                id?: string;
+                label?: string;
+            }[];
+        };
+        PromotionCatalogEntry: {
+            /** @enum {string} */
+            channel?: "airbnb" | "booking";
+            type?: components["schemas"]["PromotionType"];
+            channelType?: string;
+            campaign?: string;
+            label?: string;
+            /** @description One or two sentences to show hosts. */
+            description?: string;
+            /** @description Newly available — show a “New” badge. */
+            isNew?: boolean;
+            available?: boolean;
+            unavailableReason?: string;
+            /** @description Only one at a time (Airbnb types; Booking.com mobile and country rates per property). */
+            single?: boolean;
+            /** @description Every field, supported or not, so a UI can grey out what a type does not take. */
+            fields?: {
+                [key: string]: components["schemas"]["PromotionCatalogField"];
+            };
+        };
+        PromotionCatalog: {
+            listingId?: string;
+            channels?: {
+                /** @enum {string} */
+                channel?: "airbnb" | "booking";
+                connected?: boolean;
+                reason?: string;
+                /** @description Booking.com properties the listing has a room on. */
+                properties?: string[];
+                entries?: components["schemas"]["PromotionCatalogEntry"][];
+            }[];
+        };
+        PromotionListResponse: {
+            data?: components["schemas"]["Promotion"][];
+            /**
+             * Format: date-time
+             * @description When the channels were last read for this listing.
+             */
+            syncedAt?: string | null;
+            syncError?: string | null;
+        };
+        PromotionResponse: {
+            data?: components["schemas"]["Promotion"];
+        };
+        PromotionDeleteResponse: {
+            data?: {
+                removed?: boolean;
+                promotionId?: string;
+            };
+        };
+        PromotionCatalogResponse: {
+            data?: components["schemas"]["PromotionCatalog"];
+        };
+        PromotionRefreshResponse: {
+            data?: components["schemas"]["Promotion"][];
+            /** Format: date-time */
+            syncedAt?: string | null;
+            errors?: string[];
+        };
+        PromotionBulkRequest: {
+            listingIds: number[];
+            /** @enum {string} */
+            action: "add" | "remove";
+            promotion: components["schemas"]["PromotionInput"];
+        };
+        PromotionBulkResponse: {
+            data?: {
+                listingId?: string;
+                ok?: boolean;
+                promotion?: components["schemas"]["Promotion"];
+                error?: {
+                    message?: string;
+                    code?: string;
+                    field?: string;
+                };
+            }[];
+            summary?: {
+                succeeded?: number;
+                failed?: number;
+            };
         };
         ListingPricingResponse: {
             listingId?: string;
@@ -24047,6 +24415,266 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+        };
+    };
+    bulk_listing_promotions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PromotionBulkRequest"];
+            };
+        };
+        responses: {
+            /** @description A result per listing */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PromotionBulkResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
+        };
+    };
+    list_listing_promotions: {
+        parameters: {
+            query?: {
+                /** @description Re-read Airbnb and Booking.com before answering. */
+                refresh?: boolean;
+            };
+            header?: never;
+            path: {
+                /** @description Listing ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The listing's promotions */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PromotionListResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    create_listing_promotion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Listing ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PromotionCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description The new promotion */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PromotionResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["UnprocessableEntity"];
+            /** @description The channel didn't answer */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_listing_promotion_catalog: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Listing ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The catalog */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PromotionCatalogResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    refresh_listing_promotions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Listing ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The listing's promotions after the read */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PromotionRefreshResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    get_listing_promotion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Listing ID */
+                id: number;
+                /** @description Promotion ID (from the list) */
+                promotionId: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The promotion */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PromotionResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    delete_listing_promotion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Listing ID */
+                id: number;
+                /** @description Promotion ID (from the list) */
+                promotionId: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Removed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PromotionDeleteResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["UnprocessableEntity"];
+            /** @description The channel didn't answer */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    update_listing_promotion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Listing ID */
+                id: number;
+                /** @description Promotion ID (from the list) */
+                promotionId: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PromotionUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description The changed promotion */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PromotionResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["UnprocessableEntity"];
+            /** @description The channel didn't answer */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
 }

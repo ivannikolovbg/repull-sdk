@@ -15,6 +15,14 @@
 
 import type {
   AccountImport,
+  Promotion,
+  PromotionBulkRequest,
+  PromotionBulkResponse,
+  PromotionCatalog,
+  PromotionCreateRequest,
+  PromotionListResponse,
+  PromotionRefreshResponse,
+  PromotionUpdateRequest,
   AirbnbAccessType,
   AirbnbAmenitiesResult,
   AirbnbAmenitiesUpdateRequest,
@@ -1829,9 +1837,12 @@ class MarketsNamespace {
  */
 class ListingsNamespace {
   readonly pricing: ListingsPricingNamespace;
+  /** Airbnb + Booking.com promotions on a listing. New in v0.2.36. */
+  readonly promotions: ListingsPromotionsNamespace;
 
   constructor(private readonly client: Repull) {
     this.pricing = new ListingsPricingNamespace(client);
+    this.promotions = new ListingsPromotionsNamespace(client);
   }
 
   /**
@@ -2026,6 +2037,69 @@ class ListingsNamespace {
       `/v1/listings/${encodeURIComponent(String(id))}/online`,
       { body },
     );
+  }
+}
+
+/**
+ * Listing promotions — Airbnb's discount programmes and Booking.com deals in
+ * one model. Read `catalog()` first: it says, per channel, which types the
+ * listing can use and which fields each supports. A refusal is a
+ * `RepullError` whose code starts with `promotion_` and whose message names
+ * the channel, the field and the fix. Guide: https://repull.dev/docs/promotions
+ * New in v0.2.36.
+ */
+class ListingsPromotionsNamespace {
+  constructor(private readonly client: Repull) {}
+
+  private path(listingId: string | number, rest = ''): string {
+    return `/v1/listings/${encodeURIComponent(String(listingId))}/promotions${rest}`;
+  }
+
+  /** GET /v1/listings/{id}/promotions — `refresh: true` re-reads the channels first. */
+  list(listingId: string | number, query: { refresh?: boolean } = {}): Promise<PromotionListResponse> {
+    return this.client.request<PromotionListResponse>('GET', this.path(listingId), { query });
+  }
+
+  /** GET /v1/listings/{id}/promotions/catalog — types, descriptions, `isNew` and field support per channel. */
+  catalog(listingId: string | number): Promise<{ data: PromotionCatalog }> {
+    return this.client.request<{ data: PromotionCatalog }>('GET', this.path(listingId, '/catalog'));
+  }
+
+  /**
+   * POST /v1/listings/{id}/promotions. Airbnb: `{ channel: 'airbnb', type }` only — Airbnb sets
+   * the rate. Booking.com: `discountPercent` + `rules`; `hotelId` when the listing is on several
+   * properties.
+   */
+  create(listingId: string | number, body: PromotionCreateRequest): Promise<{ data: Promotion }> {
+    return this.client.request<{ data: Promotion }>('POST', this.path(listingId), { body });
+  }
+
+  /** GET /v1/listings/{id}/promotions/{promotionId} */
+  get(listingId: string | number, promotionId: string | number): Promise<{ data: Promotion }> {
+    return this.client.request<{ data: Promotion }>('GET', this.path(listingId, `/${encodeURIComponent(String(promotionId))}`));
+  }
+
+  /**
+   * PATCH /v1/listings/{id}/promotions/{promotionId} — Booking.com only. `rules` replaces the
+   * promotion's rules whole; a promotion shared with other listings needs `confirmShared: true`.
+   */
+  update(listingId: string | number, promotionId: string | number, body: PromotionUpdateRequest): Promise<{ data: Promotion }> {
+    return this.client.request<{ data: Promotion }>('PATCH', this.path(listingId, `/${encodeURIComponent(String(promotionId))}`), { body });
+  }
+
+  /** DELETE /v1/listings/{id}/promotions/{promotionId} — takes the listing off the promotion. */
+  delete(listingId: string | number, promotionId: string | number): Promise<{ data: { removed: boolean; promotionId: string } }> {
+    return this.client.request('DELETE', this.path(listingId, `/${encodeURIComponent(String(promotionId))}`));
+  }
+
+  /** POST /v1/listings/{id}/promotions/refresh — re-read the channels now. */
+  refresh(listingId: string | number): Promise<PromotionRefreshResponse> {
+    return this.client.request<PromotionRefreshResponse>('POST', this.path(listingId, '/refresh'));
+  }
+
+  /** POST /v1/listings/promotions/bulk — add or remove one promotion on up to 100 listings. */
+  bulk(body: PromotionBulkRequest): Promise<PromotionBulkResponse> {
+    return this.client.request<PromotionBulkResponse>('POST', '/v1/listings/promotions/bulk', { body });
   }
 }
 

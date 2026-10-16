@@ -560,3 +560,30 @@ describe('hotels / workspaces / billing', () => {
     expect(res.plan).toBe('free');
   });
 });
+
+describe('listings.promotions', () => {
+  it('calls each promotions endpoint with the right method, path and body', async () => {
+    const { repull, calls } = client({ data: {} });
+    await repull.listings.promotions.list(30198, { refresh: true });
+    await repull.listings.promotions.catalog(30198);
+    await repull.listings.promotions.create(30198, { channel: 'airbnb', type: 'top_rated_guests' });
+    await repull.listings.promotions.get(30198, '412');
+    await repull.listings.promotions.update(30198, '413', { discountPercent: 15, confirmShared: true });
+    await repull.listings.promotions.delete(30198, '413');
+    await repull.listings.promotions.refresh(30198);
+    await repull.listings.promotions.bulk({ listingIds: [30198, 30199], action: 'add', promotion: { channel: 'airbnb', type: 'mobile' } });
+    expect(calls.map((c) => `${c.method} ${c.url.pathname}${c.url.search}`)).toEqual([
+      'GET /v1/listings/30198/promotions?refresh=true',
+      'GET /v1/listings/30198/promotions/catalog',
+      'POST /v1/listings/30198/promotions',
+      'GET /v1/listings/30198/promotions/412',
+      'PATCH /v1/listings/30198/promotions/413',
+      'DELETE /v1/listings/30198/promotions/413',
+      'POST /v1/listings/30198/promotions/refresh',
+      'POST /v1/listings/promotions/bulk',
+    ]);
+    expect(calls[2].body).toEqual({ channel: 'airbnb', type: 'top_rated_guests' });
+    expect(calls[4].body).toEqual({ discountPercent: 15, confirmShared: true });
+    expect(calls[7].body).toEqual({ listingIds: [30198, 30199], action: 'add', promotion: { channel: 'airbnb', type: 'mobile' } });
+  });
+});

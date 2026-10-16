@@ -3,6 +3,13 @@
 All notable changes to `@repull/sdk` and `@repull/types` are recorded here.
 This project follows [Semantic Versioning](https://semver.org/).
 
+## [0.2.36] - 2026-10-16
+
+### Added
+- Listing promotions — Airbnb and Booking.com in one model: `repull.listings.promotions` (`list`, `catalog`, `create`, `get`, `update`, `delete`, `refresh`, `bulk`) and the `Promotion*` types. Guide: https://repull.dev/docs/promotions
+- `listing.updated` area `promotions`.
+- `promotionType` on reservation discount lines produced by an Airbnb promotion.
+
 ## [0.2.35] - 2026-10-16
 
 ### Added
