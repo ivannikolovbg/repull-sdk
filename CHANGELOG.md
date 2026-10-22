@@ -3,6 +3,16 @@
 All notable changes to `@repull/sdk` and `@repull/types` are recorded here.
 This project follows [Semantic Versioning](https://semver.org/).
 
+## [0.2.37] - 2026-10-22
+
+### Added
+- `Property.addressDetails` (`PostalAddress`: `line1`, `line2`, `city`, `state`, `postalCode`, `countryCode`) on `properties.list` and `properties.get`. `line2` carries the apartment / unit number. `address` (string) and `city` are unchanged.
+- `Listing.address` gains `line1`, `line2`, `state`, `postalCode`, `countryCode` next to `street` and `city`.
+- `PostalAddress` type export.
+
+### Changed
+- Regenerated from the live spec (also picks up the Plum Guide channel hidden until certified, and `calendar.updated` removed from webhook events).
+
 ## [0.2.36] - 2026-10-16
 
 ### Added
