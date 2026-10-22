@@ -16,6 +16,7 @@ export type { components, operations, paths } from './openapi.js';
 
 /** Convenience aliases over the generated `components.schemas`. */
 export type Property = components['schemas']['Property'];
+export type PostalAddress = components['schemas']['PostalAddress'];
 export type Reservation = components['schemas']['Reservation'];
 export type Listing = components['schemas']['Listing'];
 export type ListingChannel = components['schemas']['ListingChannel'];
