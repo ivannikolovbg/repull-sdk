@@ -3,6 +3,15 @@
 All notable changes to `@repull/sdk` and `@repull/types` are recorded here.
 This project follows [Semantic Versioning](https://semver.org/).
 
+## [0.2.38] - 2026-10-23
+
+### Added
+- Listing expansions: `listings.list({ include: 'rooms,policies,rules,pricing,fees,taxes,photos' })` and `listings.get(id, { include: '...' })` (`get` gains an `include` option; comma-separated, combinable with `content` / `details`). `Listing` gains `rooms`, `policies`, `rules`, `pricing`, `fees`, `taxes` and `photos`. Fees and taxes carry `chargedPer` (`stay`, `night`, `guest`, `guest_night`); rules carry `allowsBookingRequests` and `instantBook`.
+- Type exports: `ListingRoom`, `ListingPolicies`, `ListingRules`, `ListingPricingSettings`, `ListingFee`, `ListingTax`, `ListingContentPhoto`, `ChargePer`.
+
+### Changed
+- Regenerated from the live spec (also picks up `POST /v1/migrations/channex` and the `booking.unacknowledged`, `channel.degraded`, `channel.sync.failed` and `reservation.thread.assigned` webhook events).
+
 ## [0.2.37] - 2026-10-22
 
 ### Added

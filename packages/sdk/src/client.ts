@@ -1865,7 +1865,9 @@ class ListingsNamespace {
       /**
        * Comma-separated optional expansions: `content`, `details`,
        * `thumbnail`. `thumbnail` guarantees `thumbnailUrl` is populated.
-       * New in v0.2.15.
+       * New in v0.2.15. `rooms`, `policies`, `rules`, `pricing`, `fees`,
+       * `taxes` and `photos` load those sections for the whole page (new in
+       * v0.2.38), e.g. `include: 'rules,fees,taxes'`.
        */
       include?: string;
     } = {},
@@ -1877,12 +1879,25 @@ class ListingsNamespace {
     });
   }
 
-  /** GET /v1/listings/{id} — single listing. New in v0.2.0. */
-  get(id: string | number, opts: { xSchema?: string } = {}): Promise<Listing> {
+  /**
+   * GET /v1/listings/{id} — single listing. New in v0.2.0.
+   *
+   * `opts.include` takes comma-separated optional expansions: `amenities`,
+   * `content`, `details`, and (new in v0.2.38) `rooms`, `policies`, `rules`,
+   * `pricing`, `fees`, `taxes`, `photos` — e.g.
+   * `get(id, { include: 'rooms,policies,fees,taxes' })`.
+   */
+  get(
+    id: string | number,
+    opts: { xSchema?: string; include?: string } = {},
+  ): Promise<Listing> {
     return this.client.request<Listing>(
       'GET',
       `/v1/listings/${encodeURIComponent(String(id))}`,
-      { xSchema: opts.xSchema },
+      {
+        query: opts.include !== undefined ? { include: opts.include } : undefined,
+        xSchema: opts.xSchema,
+      },
     );
   }
 

@@ -572,9 +572,9 @@ export interface paths {
         post: operations["create_connection"];
         /**
          * Disconnect provider
-         * @description Disconnect ONE connected account of a provider from this workspace. Supported for `airbnb` and `booking`.
+         * @description Disconnect ONE connected account of a provider from this workspace. Supported for `airbnb`, `booking` and `vrbo-login`.
          *
-         *     **Which account.** Pass `accountId` — for Airbnb the host id (`accounts[].externalAccountId` from `GET /v1/connect/airbnb`), for Booking.com the hotel id. It is optional only when the workspace has exactly one account for the provider. With several and no `accountId`, the call returns `422` with the account ids in `valid_values` instead of guessing. An `accountId` that is not connected to this workspace returns `404`. Disconnecting one account leaves the others connected.
+         *     **Which account.** Pass `accountId` — for Airbnb the host id (`accounts[].externalAccountId` from `GET /v1/connect/airbnb`), for Booking.com the hotel id, for `vrbo-login` the sign-in's `accounts[].externalAccountId` from `GET /v1/connect/vrbo-login`. It is optional only when the workspace has exactly one account for the provider. With several and no `accountId`, the call returns `422` with the account ids in `valid_values` instead of guessing. An `accountId` that is not connected to this workspace returns `404`. Disconnecting one account leaves the others connected.
          *
          *     **What happens.** The account's stored authorization is removed and it stops syncing. Its listings are **deactivated**, not deleted: they stop counting toward your plan's listing limit, their data is kept, and they are returned in `listingsDeactivated`. A listing that is still connected through another account or channel stays active. Reconnect the account, then activate the listings with `POST /v1/listings/status`.
          *
@@ -2242,7 +2242,7 @@ export interface paths {
          * List listings
          * @description Cursor-paginated list of listings owned by the authenticated workspace. Use `pagination.nextCursor` from one response as the `cursor` query param of the next request to walk the full set. `?offset=` is also accepted as a first-class alias for shallow paging (0..10000) — see the `offset` parameter below. Mutually exclusive with `cursor`. Filters: `q` (substring on name/street/city), `status`, `channel`.
          *
-         *     **Optional expansions:** Pass `?include=content` to enrich each row with the rich content slab (summary, description, space, house rules, etc. — sourced from `listings_descriptions` for the `en` locale). Pass `?include=details` for the structural slab (bedrooms, bathrooms, person capacity, check-in window, wifi, house manual, etc.). Both default to `null` per row when the underlying `listings_descriptions` / `listings_details` row is missing — distinct from the field being absent (which signals the expansion was not requested). Pass `?include=thumbnail` to guarantee `thumbnailUrl` on every returned row — including the reduced inactive ones. Combine comma-separated, e.g. `?include=content,thumbnail`. The default response stays lean; consumers must opt in.
+         *     **Optional expansions:** Pass `?include=content` to enrich each row with the rich content slab (summary, description, space, house rules, etc. — sourced from `listings_descriptions` for the `en` locale). Pass `?include=details` for the structural slab (bedrooms, bathrooms, person capacity, check-in window, wifi, house manual, etc.). Both default to `null` per row when the underlying `listings_descriptions` / `listings_details` row is missing — distinct from the field being absent (which signals the expansion was not requested). Pass `?include=thumbnail` to guarantee `thumbnailUrl` on every returned row — including the reduced inactive ones. Pass `rooms`, `policies`, `rules`, `pricing`, `fees`, `taxes` or `photos` for the same sections as `GET /v1/listings/{id}`, loaded for the whole page in one go. Combine comma-separated, e.g. `?include=content,thumbnail`. The default response stays lean; consumers must opt in.
          *
          *     **Inactive listings:** by default only active listings are returned. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated, so when `status` asks for inactive ones they carry only `id`, `name`, `status` and `channels` — enough to choose what to activate with `PATCH /v1/listings/{id}`. The `content` and `details` expansions are not applied to them. `?include=thumbnail` is the one exception: it adds `thumbnailUrl` to an inactive row so a single request can render an active/inactive selection screen with pictures, instead of one follow-up call per listing (which an inactive listing would answer with `403 listing_inactive` anyway).
          */
@@ -2270,7 +2270,7 @@ export interface paths {
          * Get a listing
          * @description Fetch a single listing by id. Returns the same shape as one element of the `GET /v1/listings` response, so you can bind the result to the same model. Cross-tenant access (a listing that belongs to a different workspace) returns 404 — never 403, never reveals the listing's existence.
          *
-         *     **Optional expansions:** Pass `?include=amenities` to enrich the response with the listing's amenity rows (`[]` when the listing has none). Pass `?include=content` for the rich content slab (summary, description, space, house rules, etc. — sourced from `listings_descriptions` for the `en` locale; `null` when no row is stored). Pass `?include=details` for the structural slab (bedrooms, bathrooms, person capacity, check-in window, wifi, house manual, etc.; `null` when no row is stored). Combine comma-separated, e.g. `?include=amenities,content,details`. The default response stays lean; consumers must opt in.
+         *     **Optional expansions:** Pass `?include=amenities` to enrich the response with the listing's amenity rows (`[]` when the listing has none). Pass `?include=content` for the rich content slab (summary, description, space, house rules, etc. — sourced from `listings_descriptions` for the `en` locale; `null` when no row is stored). Pass `?include=details` for the structural slab (bedrooms, bathrooms, person capacity, check-in window, wifi, house manual, etc.; `null` when no row is stored). Pass `?include=rooms` for rooms and beds, `policies` for cancellation, house rules, check-in/out and guest rules, `rules` for stay rules (min/max nights, booking window, notice, preparation time), `pricing` for standing prices and discounts, `fees` and `taxes` for every fee and tax in one shape whatever channel or PMS the listing comes from, and `photos`. Combine comma-separated, e.g. `?include=content,details,rooms,policies,pricing,fees,taxes`. The default response stays lean; consumers must opt in.
          *
          *     Returns `403 listing_inactive` when the listing is inactive. An inactive listing keeps syncing, but cannot be read or changed through the API until it is activated.
          */
@@ -5184,6 +5184,26 @@ export interface paths {
         patch: operations["update_listing_promotion"];
         trace?: never;
     };
+    "/v1/migrations/channex": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Import from Channex
+         * @description Move a workspace off Channex without changing a single id on your side. Pass your Channex API key: Repull reads your Channex properties, room types, rate plans, webhooks, signing keys, channels and upcoming bookings through Channex's own API (read-only — nothing is written to Channex, and the key is not stored). Each Channex property is matched to your Repull listing or hotel (by Booking.com hotel/room and Airbnb/Vrbo listing ids, then by title and address) or created; every Channex id then resolves, and is returned, unchanged on the Channex-compatible API at `/channex/api/v1`. Webhooks are recreated inactive; activate them with `POST /channex/api/v1/migration/cutover`. Safe to re-run: a run that hits its time budget returns `complete: false` and the next run continues.
+         */
+        post: operations["importFromChannex"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -6521,7 +6541,7 @@ export interface components {
          * @description Canonical event type identifier. Every webhook delivery declares one of these in its `type` field; SDKs key the discriminated `WebhookEvent` union on this value.
          * @enum {string}
          */
-        WebhookEventType: "reservation.created" | "reservation.updated" | "reservation.cancelled" | "reservation.message.received" | "reservation.message.sent" | "reservation.message.updated" | "reservation.alteration.created" | "reservation.alteration.responded" | "reservation.request.created" | "reservation.request.updated" | "inquiry.created" | "inquiry.updated" | "listing.created" | "listing.updated" | "listing.deleted" | "listing.suspended" | "listing.reactivated" | "account.created" | "connect.session.completed" | "account.disconnected" | "account.import.started" | "account.import.completed" | "account.import.failed" | "review.created" | "review.responded" | "ai.operation.completed" | "ai.operation.failed" | "payment.completed" | "payment.refunded" | "payout.completed" | "migration.completed" | "migration.failed" | "repull.ping" | "usage.quota.warning";
+        WebhookEventType: "reservation.created" | "reservation.updated" | "reservation.cancelled" | "reservation.message.received" | "reservation.message.sent" | "reservation.message.updated" | "reservation.alteration.created" | "reservation.alteration.responded" | "reservation.request.created" | "reservation.request.updated" | "booking.unacknowledged" | "channel.sync.failed" | "channel.degraded" | "reservation.thread.assigned" | "inquiry.created" | "inquiry.updated" | "listing.created" | "listing.updated" | "listing.deleted" | "listing.suspended" | "listing.reactivated" | "account.created" | "connect.session.completed" | "account.disconnected" | "account.import.started" | "account.import.completed" | "account.import.failed" | "review.created" | "review.responded" | "ai.operation.completed" | "ai.operation.failed" | "payment.completed" | "payment.refunded" | "payout.completed" | "migration.completed" | "migration.failed" | "repull.ping" | "usage.quota.warning";
         /**
          * @description Lightweight reservation snapshot delivered as `data.object` on every reservation webhook event. Stable across `reservation.created`, `reservation.updated`, and `reservation.cancelled`. Fetch the full reservation via `GET /v1/reservations/{id}` if you need pricing, guest contact info, or audit history — those are deliberately omitted to keep deliveries small.
          *
@@ -7635,6 +7655,162 @@ export interface components {
             account?: components["schemas"]["WebhookEventAccount"];
             data: components["schemas"]["ReservationRequestUpdatedPayload"];
         };
+        /** @description Payload for `channel.sync.failed`. A push of availability, rates or content to a connected channel did not land. */
+        ChannelSyncFailurePayload: {
+            object: {
+                listingId: number;
+                customerId: number;
+                /**
+                 * @description Which wire failed. A refused rate and a closed connection call for different responses.
+                 * @enum {string}
+                 */
+                operation: "availability" | "rate" | "restriction" | "content" | "reservation";
+                /** @description true when NO mapping accepted the push. false means some did — the more dangerous case, because the listing is live somewhere and inconsistent. */
+                total: boolean;
+                /**
+                 * Format: date
+                 * @description Start of the date range the push covered, when the operation is date-scoped.
+                 */
+                from?: string | null;
+                /** Format: date */
+                to?: string | null;
+            };
+            /** @description One entry per channel mapping that refused the push. */
+            failures: {
+                /** @example airbnb */
+                channel?: string;
+                /** @description The channel's own id for the room or listing. */
+                externalListingId?: string | null;
+                /**
+                 * @description `unknown` means we could not classify it — never that the channel refused.
+                 * @enum {string}
+                 */
+                kind?: "rejected" | "auth" | "not_mapped" | "unreachable" | "unknown";
+                /** @description The channel's own message, verbatim. */
+                message?: string | null;
+            }[];
+            /** @description Set when the push was blocking dates for a booking just taken. Those nights are sold on one channel and still open on another — treat as urgent. */
+            reservationId?: number | null;
+            /** Format: date-time */
+            occurredAt?: string;
+        };
+        ChannelSyncFailedEvent: {
+            /**
+             * @description The event name. This field is `event`, not `type`. (enum property replaced by openapi-typescript)
+             * @enum {string}
+             */
+            event: "channel.sync.failed";
+            /**
+             * Format: uuid
+             * @description Stable across every delivery and replay of this logical event — dedupe on it.
+             */
+            eventId: string;
+            /** @example 2026-04 */
+            apiVersion: string;
+            /** Format: date-time */
+            timestamp: string;
+            account?: components["schemas"]["WebhookEventAccount"];
+            data: components["schemas"]["ChannelSyncFailurePayload"];
+        };
+        /** @description Payload for `channel.degraded`. A connection is failing repeatedly and will stop working. Sent on the transition into degraded or down, not on every health check. */
+        ChannelDegradedPayload: {
+            object: {
+                customerId: number;
+                /** @example booking */
+                provider: string;
+                /** @description The provider's own account, host or hotel id. */
+                externalAccountId?: string | null;
+                /** @enum {string} */
+                status: "degraded" | "down";
+                /** @description What we observed, in the provider's words where possible. A bare "degraded" tells nobody what to fix. */
+                detail?: string | null;
+            };
+            /** Format: date-time */
+            occurredAt?: string;
+        };
+        ChannelDegradedEvent: {
+            /**
+             * @description The event name. This field is `event`, not `type`. (enum property replaced by openapi-typescript)
+             * @enum {string}
+             */
+            event: "channel.degraded";
+            /** Format: uuid */
+            eventId: string;
+            /** @example 2026-04 */
+            apiVersion: string;
+            /** Format: date-time */
+            timestamp: string;
+            account?: components["schemas"]["WebhookEventAccount"];
+            data: components["schemas"]["ChannelDegradedPayload"];
+        };
+        /** @description Payload for `reservation.thread.assigned`. A message thread was attached to a booking. Threads are often born orphaned — a guest messages about a booking whose import has not landed — and adopted when the reservation arrives. */
+        ReservationThreadAssignedPayload: {
+            object: {
+                reservationId: number;
+                customerId: number;
+                listingId?: number | null;
+                /** @description Repull conversation id. */
+                threadId: string;
+                /** @description The channel's own conversation id. */
+                externalThreadId?: string | null;
+                /** @description What the thread pointed at before. Null on the common orphan-adoption case; set when a thread moved between bookings. */
+                previousReservationId?: number | null;
+            };
+            /** Format: date-time */
+            occurredAt?: string;
+        };
+        ReservationThreadAssignedEvent: {
+            /**
+             * @description The event name. This field is `event`, not `type`. (enum property replaced by openapi-typescript)
+             * @enum {string}
+             */
+            event: "reservation.thread.assigned";
+            /** Format: uuid */
+            eventId: string;
+            /** @example 2026-04 */
+            apiVersion: string;
+            /** Format: date-time */
+            timestamp: string;
+            account?: components["schemas"]["WebhookEventAccount"];
+            data: components["schemas"]["ReservationThreadAssignedPayload"];
+        };
+        /** @description Payload for `booking.unacknowledged`. A booking changed and your system has not acknowledged the change through the revision feed. Sent once per outstanding revision — not once per check — so a booking that keeps waiting does not keep alerting. A booking that changes AGAIN mints a new revision and does alert again, because that is a new thing to acknowledge. Acknowledging the revision stops it. */
+        BookingUnacknowledgedPayload: {
+            object: components["schemas"]["ReservationWebhookObject"];
+            /**
+             * Format: uuid
+             * @description The outstanding revision. Acknowledge this to stop the alert.
+             */
+            revisionId: string;
+            /**
+             * Format: date-time
+             * @description When the booking actually changed — NOT when we noticed. Revisions are minted when you first poll the feed, so a mint timestamp would measure how recently you looked rather than how long the booking has waited.
+             */
+            outstandingSince: string;
+            /** @description Whole hours since `outstandingSince`, for convenience. */
+            outstandingHours?: number;
+        };
+        BookingUnacknowledgedEvent: {
+            /**
+             * @description The event name. This field is `event`, not `type`. (enum property replaced by openapi-typescript)
+             * @enum {string}
+             */
+            event: "booking.unacknowledged";
+            /**
+             * Format: uuid
+             * @description Stable across every delivery and replay of this logical event — dedupe on it.
+             */
+            eventId: string;
+            /** @example 2026-04 */
+            apiVersion: string;
+            /**
+             * Format: date-time
+             * @description When this delivery was built.
+             */
+            timestamp: string;
+            account?: components["schemas"]["WebhookEventAccount"];
+            data: components["schemas"]["BookingUnacknowledgedPayload"];
+        };
         InquiryCreatedEvent: {
             /**
              * @description The event name. This field is `event`, not `type`. (enum property replaced by openapi-typescript)
@@ -8243,7 +8419,7 @@ export interface components {
             data: components["schemas"]["MigrationImportPayload"];
         };
         /** @description The full event envelope POSTed to your webhook URL. Discriminated on `type` — narrow `event.data` by switching on `event.type`. Use the matching `*Event` variant directly if your SDK lacks discriminator support. Events about an inactive listing (reservations, messages, alterations, reviews, payments, calendar and listing events) are not delivered. The data keeps syncing while the listing is inactive, but its events are never sent — including after you reactivate it; webhooks resume for events that happen from reactivation on. Account-level events are always delivered. */
-        WebhookEvent: components["schemas"]["ReservationCreatedEvent"] | components["schemas"]["ReservationUpdatedEvent"] | components["schemas"]["ReservationCancelledEvent"] | components["schemas"]["ReservationMessageReceivedEvent"] | components["schemas"]["ReservationMessageSentEvent"] | components["schemas"]["ReservationMessageUpdatedEvent"] | components["schemas"]["ReservationAlterationCreatedEvent"] | components["schemas"]["ReservationAlterationRespondedEvent"] | components["schemas"]["ReservationRequestCreatedEvent"] | components["schemas"]["ReservationRequestUpdatedEvent"] | components["schemas"]["InquiryCreatedEvent"] | components["schemas"]["InquiryUpdatedEvent"] | components["schemas"]["ListingCreatedEvent"] | components["schemas"]["ListingUpdatedEvent"] | components["schemas"]["ListingDeletedEvent"] | components["schemas"]["ListingSuspendedEvent"] | components["schemas"]["ListingReactivatedEvent"] | components["schemas"]["AccountCreatedEvent"] | components["schemas"]["ConnectSessionCompletedEvent"] | components["schemas"]["AccountDisconnectedEvent"] | components["schemas"]["AccountImportStartedEvent"] | components["schemas"]["AccountImportCompletedEvent"] | components["schemas"]["AccountImportFailedEvent"] | components["schemas"]["ReviewCreatedEvent"] | components["schemas"]["ReviewRespondedEvent"] | components["schemas"]["AiOperationCompletedEvent"] | components["schemas"]["AiOperationFailedEvent"] | components["schemas"]["PaymentCompletedEvent"] | components["schemas"]["PaymentRefundedEvent"] | components["schemas"]["PayoutCompletedEvent"] | components["schemas"]["RepullPingEvent"] | components["schemas"]["UsageQuotaWarningEvent"] | components["schemas"]["MigrationCompletedEvent"] | components["schemas"]["MigrationFailedEvent"];
+        WebhookEvent: components["schemas"]["ReservationCreatedEvent"] | components["schemas"]["ReservationUpdatedEvent"] | components["schemas"]["ReservationCancelledEvent"] | components["schemas"]["ReservationMessageReceivedEvent"] | components["schemas"]["ReservationMessageSentEvent"] | components["schemas"]["ReservationMessageUpdatedEvent"] | components["schemas"]["ReservationAlterationCreatedEvent"] | components["schemas"]["ReservationAlterationRespondedEvent"] | components["schemas"]["ReservationRequestCreatedEvent"] | components["schemas"]["ReservationRequestUpdatedEvent"] | components["schemas"]["BookingUnacknowledgedEvent"] | components["schemas"]["ChannelSyncFailedEvent"] | components["schemas"]["ChannelDegradedEvent"] | components["schemas"]["ReservationThreadAssignedEvent"] | components["schemas"]["InquiryCreatedEvent"] | components["schemas"]["InquiryUpdatedEvent"] | components["schemas"]["ListingCreatedEvent"] | components["schemas"]["ListingUpdatedEvent"] | components["schemas"]["ListingDeletedEvent"] | components["schemas"]["ListingSuspendedEvent"] | components["schemas"]["ListingReactivatedEvent"] | components["schemas"]["AccountCreatedEvent"] | components["schemas"]["ConnectSessionCompletedEvent"] | components["schemas"]["AccountDisconnectedEvent"] | components["schemas"]["AccountImportStartedEvent"] | components["schemas"]["AccountImportCompletedEvent"] | components["schemas"]["AccountImportFailedEvent"] | components["schemas"]["ReviewCreatedEvent"] | components["schemas"]["ReviewRespondedEvent"] | components["schemas"]["AiOperationCompletedEvent"] | components["schemas"]["AiOperationFailedEvent"] | components["schemas"]["PaymentCompletedEvent"] | components["schemas"]["PaymentRefundedEvent"] | components["schemas"]["PayoutCompletedEvent"] | components["schemas"]["RepullPingEvent"] | components["schemas"]["UsageQuotaWarningEvent"] | components["schemas"]["MigrationCompletedEvent"] | components["schemas"]["MigrationFailedEvent"];
         /** @description A listing paired with its Airbnb connections. The list endpoint groups every Airbnb connection of the same `listingId` under a single `connections[]` array. */
         AirbnbListing: {
             /**
@@ -10057,6 +10233,149 @@ export interface components {
             instruction?: string | null;
         };
         /**
+         * @description How often an amount is charged: once per stay, per night, per guest, or per guest per night.
+         * @enum {string}
+         */
+        ChargePer: "stay" | "night" | "guest" | "guest_night";
+        ListingRoom: {
+            /**
+             * @description Room kind, Airbnb spelling: `bedroom`, `living_room`, `full_bathroom`, `kitchen`, …
+             * @example bedroom
+             */
+            type?: string;
+            name?: string | null;
+            /** @description Position among rooms of the same type (bedroom 1, 2, …). */
+            number?: number | null;
+            isPrivate?: boolean | null;
+            beds?: {
+                /** @example queen_bed */
+                type?: string;
+                /** @example 1 */
+                quantity?: number;
+            }[];
+        };
+        ListingPolicies: {
+            /** @example flexible */
+            cancellationPolicy?: string | null;
+            houseRules?: string | null;
+            checkIn?: {
+                /**
+                 * @description `lockbox`, `smartlock`, `keypad`, `doorman`, `host_greets`, `building_staff`, `other`.
+                 * @example lockbox
+                 */
+                method?: string | null;
+                instructions?: string | null;
+                /** @example 15:00 */
+                from?: string | null;
+                /** @example 22:00 */
+                until?: string | null;
+            };
+            checkOut?: {
+                /** @example 11:00 */
+                until?: string | null;
+            };
+            allowsPets?: boolean | null;
+            allowsSmoking?: boolean | null;
+            allowsEvents?: boolean | null;
+            allowsChildren?: boolean | null;
+            allowsInfants?: boolean | null;
+            childrenMinAge?: number | null;
+            quietHours?: {
+                /** @example 22:00 */
+                start?: string;
+                /** @example 07:00 */
+                end?: string;
+            } | null;
+            /** @description In the listing currency. */
+            securityDeposit?: number | null;
+        };
+        ListingRules: {
+            minNights?: number | null;
+            maxNights?: number | null;
+            /** @description How far ahead a guest can book. `null` when unlimited or not set. */
+            bookingWindowDays?: number | null;
+            /** @description Hours of notice required before check-in. */
+            advanceNoticeHours?: number | null;
+            /** @description Nights blocked between stays. */
+            preparationDays?: number | null;
+            /** @description Whether guests may send a booking request inside the notice window. */
+            allowsBookingRequests?: boolean | null;
+            instantBook?: string | null;
+        };
+        /** @description The listing's standing prices. Nightly rates per date are on `GET /v1/availability/{propertyId}`. */
+        ListingPricingSettings: {
+            /** @example GBP */
+            currency?: string | null;
+            /** @description Default nightly rate. */
+            basePrice?: number | null;
+            weekendPrice?: number | null;
+            cleaningFee?: number | null;
+            /** @description Per extra guest per night, above `guestsIncluded`. */
+            extraGuestFee?: number | null;
+            guestsIncluded?: number | null;
+            securityDeposit?: number | null;
+            /** @description Percent off for 7+ nights: `10` is 10%. */
+            weeklyDiscountPercent?: number | null;
+            /** @description Percent off for 28+ nights. */
+            monthlyDiscountPercent?: number | null;
+        };
+        /** @description A fee on top of the nightly rate, the cleaning fee included. One shape for every channel and PMS. */
+        ListingFee: {
+            /**
+             * @description `cleaning`, `pet`, `linen`, `resort`, `management`, `community`, or the source's own kind.
+             * @example cleaning
+             */
+            type?: string;
+            /** @example Damage Waiver */
+            name?: string | null;
+            /**
+             * @description In the listing currency when `amountType` is `flat`; a percent when `percent`.
+             * @example 35
+             */
+            amount?: number;
+            /** @enum {string} */
+            amountType?: "flat" | "percent";
+            chargedPer?: components["schemas"]["ChargePer"];
+            /** @description Offered to the guest (an add-on) rather than always charged. */
+            optional?: boolean;
+            /**
+             * @description Where it was read from: `airbnb`, `guesty`, …
+             * @example guesty
+             */
+            source?: string;
+        };
+        /** @description A tax charged to the guest. One shape for every channel and PMS. */
+        ListingTax: {
+            /**
+             * @description `vat`, `vat_gst`, `city_tax`, `transient_occupancy_tax`, …
+             * @example vat
+             */
+            type?: string;
+            /** @example VAT */
+            name?: string | null;
+            /** @example 20 */
+            amount?: number;
+            /** @enum {string} */
+            amountType?: "percent" | "flat";
+            chargedPer?: components["schemas"]["ChargePer"];
+            /** @description What it is charged on (`accommodation`, `cleaning`, other fee types). `null`: the whole stay. */
+            appliesTo?: string[] | null;
+            /** @description Already included in the price rather than added on top. */
+            included?: boolean;
+            /** @description `airbnb` (host-remitted), `airbnb_collected` (Airbnb collects and remits), `guesty`, … */
+            source?: string;
+        };
+        ListingContentPhoto: {
+            /** Format: uri */
+            url?: string;
+            thumbnailUrl?: string | null;
+            caption?: string | null;
+            category?: string | null;
+            width?: number | null;
+            height?: number | null;
+            sortOrder?: number;
+        };
+        /**
          * @description A vacation rental listing in your Repull workspace.
          *
          *     An **inactive** listing appears only in `GET /v1/listings`, and only when `?status=` asks for it. Such a row carries identity fields only — `id`, `name`, `status`, `inactiveReason`, `address.city`, `channels` — so the street, `content`, `details`, `createdAt` and `updatedAt` are absent until the listing is activated. `inactiveReason` is `plan_limit` (held back by the plan; activating needs a free slot or an upgrade), `unlisted_on_airbnb`, or `deactivated` (switched off by you). `GET /v1/listings/{id}` and every other listing endpoint answer `403 listing_inactive` for it. The one field you can add back is `thumbnailUrl`, by passing `?include=thumbnail` — enough to render an activate/deactivate picker with pictures from a single request.
@@ -10157,6 +10476,20 @@ export interface components {
             content?: components["schemas"]["ListingContent"] | null;
             /** @description **Only present when the caller passes `?include=details`.** Sourced from `listings_details`. `null` when the listing has no details row stored (vs the field being absent — that signals the caller did not opt into the expansion). */
             details?: components["schemas"]["ListingDetails"] | null;
+            /** @description **Only present with `?include=rooms`.** Each room and its beds. `[]` when none are stored. */
+            rooms?: components["schemas"]["ListingRoom"][];
+            /** @description **Only present with `?include=policies`.** Cancellation, house rules, check-in and check-out, pets/smoking/events/children, quiet hours, deposit. */
+            policies?: components["schemas"]["ListingPolicies"] | null;
+            /** @description **Only present with `?include=rules`.** Stay rules: min/max nights, booking window, advance notice, preparation time, and whether booking requests are allowed. */
+            rules?: components["schemas"]["ListingRules"] | null;
+            /** @description **Only present with `?include=pricing`.** Standing prices: base and weekend rate, cleaning and extra-guest fees, deposit, weekly/monthly discounts. `null` when none are stored. */
+            pricing?: components["schemas"]["ListingPricingSettings"] | null;
+            /** @description **Only present with `?include=fees`.** Every fee, the cleaning fee included, whatever channel or PMS it came from. `[]` when none. */
+            fees?: components["schemas"]["ListingFee"][];
+            /** @description **Only present with `?include=taxes`.** Taxes charged to the guest. `[]` when none. */
+            taxes?: components["schemas"]["ListingTax"][];
+            /** @description **Only present with `?include=photos`.** The listing photos in display order. */
+            photos?: components["schemas"]["ListingContentPhoto"][];
             /** Format: date-time */
             createdAt?: string;
             /** Format: date-time */
@@ -13870,7 +14203,7 @@ export interface operations {
                      */
                     reservationHistoryMonths?: number;
                     /**
-                     * @description Where the channel's units get linked to listings. `hosted` (default): after a Vrbo or Booking.com Extranet sign-in, Connect shows a mapping step and returns to `redirectUrl` when it's confirmed. `api`: Connect skips that step and finishes right after sign-in. The connection reaches you in the `connect.session.completed` webhook (and as `connectionId` in the popup message), its handle is `vrbo:{connectionId}` or `booking_extranet:{connectionId}`; you list the units with `GET /v1/connections/{id}/units` and link them with `POST /v1/connections/{id}/mappings`. Nothing is imported until you post the mappings. Other providers ignore it.
+                     * @description Where the channel's units get linked to listings. `hosted` (default): after a Vrbo or Booking.com Extranet sign-in, Connect shows a mapping step and returns to `redirectUrl` when it's confirmed. `api`: Connect skips that step and finishes right after sign-in. The connection reaches you in the `connect.session.completed` webhook as `account.externalAccountId` (its `connectionId` is null for these two), and as `connectionId` in the popup message and `accountId` on the redirect, all the same id; its handle is `vrbo:{id}` or `booking_extranet:{id}`; you list the units with `GET /v1/connections/{id}/units` and link them with `POST /v1/connections/{id}/mappings`. Nothing is imported until you post the mappings. Other providers ignore it.
                      * @default hosted
                      * @enum {string}
                      */
@@ -13888,7 +14221,7 @@ export interface operations {
                      */
                     includeRequestOnly?: boolean;
                     /**
-                     * @description Optional UI language for the hosted Connect pages. Accepts any supported locale code (currently `en`, `fr`). When set it pins the language for the whole flow, overriding the workspace `default_language`. Unknown codes are ignored and the page falls back to the workspace default, then `Accept-Language`, then `en`. The end user can still override per-visit with a `?locale=` query param on the hosted page.
+                     * @description Optional UI language for the hosted Connect pages. Accepts any supported locale code (currently `en`, `fr`, `de`, `es`, `it`, `nl`). When set it pins the language for the whole flow, overriding the workspace `default_language`. Unknown codes are ignored and the page falls back to the workspace default, then `Accept-Language`, then `en`. The end user can still override per-visit with a `?locale=` query param on the hosted page.
                      * @example fr
                      */
                     locale?: string | null;
@@ -14043,7 +14376,7 @@ export interface operations {
                     /** @description Airbnb + Booking.com — your own correlation token, e.g. your user id (at most 500 characters). Echoed on the redirect back (`&state=`) and in the `connect.session.completed` webhook. */
                     state?: string;
                     /**
-                     * @description Airbnb only — optional UI language for the hosted Connect pages. Accepts any supported locale code (currently `en`, `fr`); unknown codes are ignored and resolution falls back to the workspace `default_language`, then `Accept-Language`, then `en`.
+                     * @description Airbnb and Booking.com — optional UI language for the hosted Connect pages. Accepts any supported locale code (currently `en`, `fr`, `de`, `es`, `it`, `nl`); unknown codes are ignored and resolution falls back to the workspace `default_language`, then `Accept-Language`, then `en`.
                      * @example fr
                      */
                     locale?: string | null;
@@ -17515,7 +17848,7 @@ export interface operations {
                 status?: "active" | "inactive" | "archived" | "all";
                 /** @description Restrict to listings published on the given channel (`airbnb`, `booking`, `vrbo`, etc.). Joins through `listing_platform_links` and matches active links only. */
                 channel?: string;
-                /** @description Comma-separated optional expansions. Currently supported: `content`, `details`, `thumbnail`. `thumbnail` guarantees `thumbnailUrl` on every row and is the only expansion that applies to inactive listings. Unknown values return 422 with a `valid_values` envelope. (Note: `amenities` is not yet supported on the list endpoint — use the detail endpoint to fetch amenity rows for a single listing.) */
+                /** @description Comma-separated optional expansions. Currently supported: `content`, `details`, `thumbnail`, `rooms`, `policies`, `rules`, `pricing`, `fees`, `taxes`, `photos` (the last seven are described on `GET /v1/listings/{id}`; read for the whole page at once). `thumbnail` guarantees `thumbnailUrl` on every row and is the only expansion that applies to inactive listings. Unknown values return 422 with a `valid_values` envelope. (Note: `amenities` is not yet supported on the list endpoint — use the detail endpoint to fetch amenity rows for a single listing.) */
                 include?: string;
             };
             header?: {
@@ -17569,7 +17902,7 @@ export interface operations {
     getListing: {
         parameters: {
             query?: {
-                /** @description Comma-separated optional expansions. Currently supported: `amenities`, `content`, `details`. Unknown values return 422 with a `valid_values` envelope. */
+                /** @description Comma-separated optional expansions. Currently supported: `amenities`, `content`, `details`, `rooms`, `policies`, `rules`, `pricing`, `fees`, `taxes`, `photos`. Unknown values return 422 with a `valid_values` envelope. */
                 include?: string;
             };
             header?: {
@@ -24386,6 +24719,330 @@ export interface operations {
                 };
                 content?: never;
             };
+        };
+    };
+    importFromChannex: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Your Channex API key (the `user-api-key` header value). Used for this request only. */
+                    apiKey: string;
+                    /**
+                     * @description `production` reads app.channex.io, `staging` reads staging.channex.io.
+                     * @default production
+                     * @enum {string}
+                     */
+                    environment?: "production" | "staging";
+                    /**
+                     * @description Match and report without writing anything.
+                     * @default false
+                     */
+                    dryRun?: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Dry run: what the import would do */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data?: {
+                            /** Format: uuid */
+                            id?: string;
+                            /** @enum {string} */
+                            environment?: "production" | "staging";
+                            dryRun?: boolean;
+                            /** @description False when the time budget ran out; run the same request again to continue. */
+                            complete?: boolean;
+                            /** Format: date-time */
+                            startedAt?: string;
+                            /** Format: date-time */
+                            finishedAt?: string;
+                            summary?: {
+                                properties?: {
+                                    matched?: number;
+                                    created?: number;
+                                    needsAction?: number;
+                                };
+                                roomTypes?: {
+                                    matched?: number;
+                                    created?: number;
+                                    needsAction?: number;
+                                };
+                                ratePlans?: {
+                                    matched?: number;
+                                    created?: number;
+                                    needsAction?: number;
+                                };
+                                webhooks?: {
+                                    matched?: number;
+                                    created?: number;
+                                    needsAction?: number;
+                                };
+                                signingKeys?: {
+                                    matched?: number;
+                                    created?: number;
+                                    needsAction?: number;
+                                };
+                                channels?: {
+                                    matched?: number;
+                                    created?: number;
+                                    needsAction?: number;
+                                };
+                                bookings?: {
+                                    read?: number;
+                                    linked?: number;
+                                    waiting?: number;
+                                };
+                            };
+                            properties?: {
+                                /**
+                                 * Format: uuid
+                                 * @description The Channex id, which keeps resolving on `/channex/api/v1`.
+                                 */
+                                channexId?: string;
+                                title?: string | null;
+                                /** @enum {string} */
+                                status?: "matched" | "created" | "needs_action";
+                                /** @description How it was matched, or what to do. */
+                                detail?: string | null;
+                                repullListingId?: number | null;
+                            }[];
+                            roomTypes?: {
+                                /**
+                                 * Format: uuid
+                                 * @description The Channex id, which keeps resolving on `/channex/api/v1`.
+                                 */
+                                channexId?: string;
+                                title?: string | null;
+                                /** @enum {string} */
+                                status?: "matched" | "created" | "needs_action";
+                                /** @description How it was matched, or what to do. */
+                                detail?: string | null;
+                                repullListingId?: number | null;
+                            }[];
+                            ratePlans?: {
+                                /**
+                                 * Format: uuid
+                                 * @description The Channex id, which keeps resolving on `/channex/api/v1`.
+                                 */
+                                channexId?: string;
+                                title?: string | null;
+                                /** @enum {string} */
+                                status?: "matched" | "created" | "needs_action";
+                                /** @description How it was matched, or what to do. */
+                                detail?: string | null;
+                                repullListingId?: number | null;
+                            }[];
+                            webhooks?: {
+                                /**
+                                 * Format: uuid
+                                 * @description The Channex id, which keeps resolving on `/channex/api/v1`.
+                                 */
+                                channexId?: string;
+                                title?: string | null;
+                                /** @enum {string} */
+                                status?: "matched" | "created" | "needs_action";
+                                /** @description How it was matched, or what to do. */
+                                detail?: string | null;
+                                repullListingId?: number | null;
+                            }[];
+                            signingKeys?: {
+                                /**
+                                 * Format: uuid
+                                 * @description The Channex id, which keeps resolving on `/channex/api/v1`.
+                                 */
+                                channexId?: string;
+                                title?: string | null;
+                                /** @enum {string} */
+                                status?: "matched" | "created" | "needs_action";
+                                /** @description How it was matched, or what to do. */
+                                detail?: string | null;
+                                repullListingId?: number | null;
+                            }[];
+                            channels?: {
+                                /**
+                                 * Format: uuid
+                                 * @description The Channex id, which keeps resolving on `/channex/api/v1`.
+                                 */
+                                channexId?: string;
+                                title?: string | null;
+                                /** @enum {string} */
+                                status?: "matched" | "created" | "needs_action";
+                                /** @description How it was matched, or what to do. */
+                                detail?: string | null;
+                                repullListingId?: number | null;
+                                /** @description Channex adapter code (BookingCom, AirBNB, VRBO…). */
+                                channel?: string;
+                                /** @enum {string} */
+                                providerSwitch?: "switched" | "required" | "unsupported";
+                                instructions?: string | null;
+                            }[];
+                            warnings?: string[];
+                            nextSteps?: string[];
+                        };
+                    };
+                };
+            };
+            /** @description The import report */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data?: {
+                            /** Format: uuid */
+                            id?: string;
+                            /** @enum {string} */
+                            environment?: "production" | "staging";
+                            dryRun?: boolean;
+                            /** @description False when the time budget ran out; run the same request again to continue. */
+                            complete?: boolean;
+                            /** Format: date-time */
+                            startedAt?: string;
+                            /** Format: date-time */
+                            finishedAt?: string;
+                            summary?: {
+                                properties?: {
+                                    matched?: number;
+                                    created?: number;
+                                    needsAction?: number;
+                                };
+                                roomTypes?: {
+                                    matched?: number;
+                                    created?: number;
+                                    needsAction?: number;
+                                };
+                                ratePlans?: {
+                                    matched?: number;
+                                    created?: number;
+                                    needsAction?: number;
+                                };
+                                webhooks?: {
+                                    matched?: number;
+                                    created?: number;
+                                    needsAction?: number;
+                                };
+                                signingKeys?: {
+                                    matched?: number;
+                                    created?: number;
+                                    needsAction?: number;
+                                };
+                                channels?: {
+                                    matched?: number;
+                                    created?: number;
+                                    needsAction?: number;
+                                };
+                                bookings?: {
+                                    read?: number;
+                                    linked?: number;
+                                    waiting?: number;
+                                };
+                            };
+                            properties?: {
+                                /**
+                                 * Format: uuid
+                                 * @description The Channex id, which keeps resolving on `/channex/api/v1`.
+                                 */
+                                channexId?: string;
+                                title?: string | null;
+                                /** @enum {string} */
+                                status?: "matched" | "created" | "needs_action";
+                                /** @description How it was matched, or what to do. */
+                                detail?: string | null;
+                                repullListingId?: number | null;
+                            }[];
+                            roomTypes?: {
+                                /**
+                                 * Format: uuid
+                                 * @description The Channex id, which keeps resolving on `/channex/api/v1`.
+                                 */
+                                channexId?: string;
+                                title?: string | null;
+                                /** @enum {string} */
+                                status?: "matched" | "created" | "needs_action";
+                                /** @description How it was matched, or what to do. */
+                                detail?: string | null;
+                                repullListingId?: number | null;
+                            }[];
+                            ratePlans?: {
+                                /**
+                                 * Format: uuid
+                                 * @description The Channex id, which keeps resolving on `/channex/api/v1`.
+                                 */
+                                channexId?: string;
+                                title?: string | null;
+                                /** @enum {string} */
+                                status?: "matched" | "created" | "needs_action";
+                                /** @description How it was matched, or what to do. */
+                                detail?: string | null;
+                                repullListingId?: number | null;
+                            }[];
+                            webhooks?: {
+                                /**
+                                 * Format: uuid
+                                 * @description The Channex id, which keeps resolving on `/channex/api/v1`.
+                                 */
+                                channexId?: string;
+                                title?: string | null;
+                                /** @enum {string} */
+                                status?: "matched" | "created" | "needs_action";
+                                /** @description How it was matched, or what to do. */
+                                detail?: string | null;
+                                repullListingId?: number | null;
+                            }[];
+                            signingKeys?: {
+                                /**
+                                 * Format: uuid
+                                 * @description The Channex id, which keeps resolving on `/channex/api/v1`.
+                                 */
+                                channexId?: string;
+                                title?: string | null;
+                                /** @enum {string} */
+                                status?: "matched" | "created" | "needs_action";
+                                /** @description How it was matched, or what to do. */
+                                detail?: string | null;
+                                repullListingId?: number | null;
+                            }[];
+                            channels?: {
+                                /**
+                                 * Format: uuid
+                                 * @description The Channex id, which keeps resolving on `/channex/api/v1`.
+                                 */
+                                channexId?: string;
+                                title?: string | null;
+                                /** @enum {string} */
+                                status?: "matched" | "created" | "needs_action";
+                                /** @description How it was matched, or what to do. */
+                                detail?: string | null;
+                                repullListingId?: number | null;
+                                /** @description Channex adapter code (BookingCom, AirBNB, VRBO…). */
+                                channel?: string;
+                                /** @enum {string} */
+                                providerSwitch?: "switched" | "required" | "unsupported";
+                                instructions?: string | null;
+                            }[];
+                            warnings?: string[];
+                            nextSteps?: string[];
+                        };
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            422: components["responses"]["UnprocessableEntity"];
+            500: components["responses"]["InternalError"];
+            502: components["responses"]["InternalError"];
         };
     };
 }

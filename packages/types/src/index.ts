@@ -20,6 +20,22 @@ export type PostalAddress = components['schemas']['PostalAddress'];
 export type Reservation = components['schemas']['Reservation'];
 export type Listing = components['schemas']['Listing'];
 export type ListingChannel = components['schemas']['ListingChannel'];
+/** `?include=rooms` — one room with its beds. New in v0.2.38. */
+export type ListingRoom = components['schemas']['ListingRoom'];
+/** `?include=policies` — cancellation, house rules, check-in/out, guest rules. New in v0.2.38. */
+export type ListingPolicies = components['schemas']['ListingPolicies'];
+/** `?include=rules` — stay rules (min/max nights, booking window, notice, preparation). New in v0.2.38. */
+export type ListingRules = components['schemas']['ListingRules'];
+/** `?include=pricing` — standing prices and discounts. New in v0.2.38. */
+export type ListingPricingSettings = components['schemas']['ListingPricingSettings'];
+/** `?include=fees` — one fee, same shape whatever channel or PMS. New in v0.2.38. */
+export type ListingFee = components['schemas']['ListingFee'];
+/** `?include=taxes` — one tax, same shape whatever channel or PMS. New in v0.2.38. */
+export type ListingTax = components['schemas']['ListingTax'];
+/** `?include=photos` — one listing photo. New in v0.2.38. */
+export type ListingContentPhoto = components['schemas']['ListingContentPhoto'];
+/** How often a fee or tax is charged: `stay`, `night`, `guest`, `guest_night`. New in v0.2.38. */
+export type ChargePer = components['schemas']['ChargePer'];
 export type ListingActiveRequest = components['schemas']['ListingActiveRequest'];
 export type ListingActiveResponse = components['schemas']['ListingActiveResponse'];
 /** Body of `POST /v1/listings/status` (bulk activate/deactivate, up to 500 ids). */
