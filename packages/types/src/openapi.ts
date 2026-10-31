@@ -141,7 +141,7 @@ export interface paths {
          *
          *     ### Where the booking is made
          *
-         *     - **A listing managed in a connected PMS** (Mews, Cloudbeds, Hostaway, Guesty, Beds24, BookingSync, Lodgify, Smoobu, Hospitable, iGMS, OwnerRez, Track): the booking is created **in the PMS first**, then recorded in Repull from the PMS's own record, so the next sync lands on the same confirmation code and nothing is duplicated. A booking is **never** created only in Repull for such a listing — the PMS would keep selling the dates. What the PMS cannot do is refused (`422 pms_write_unsupported`), never faked. The PMS checks availability: taken dates answer `409 pms_unavailable`.
+         *     - **A listing managed in a connected PMS** (Mews, Cloudbeds, Hostaway, Guesty, Beds24, BookingSync, Lodgify, Smoobu, Hospitable, iGMS, OwnerRez, Track, CiiRUS): the booking is created **in the PMS first**, then recorded in Repull from the PMS's own record, so the next sync lands on the same confirmation code and nothing is duplicated. A booking is **never** created only in Repull for such a listing — the PMS would keep selling the dates. What the PMS cannot do is refused (`422 pms_write_unsupported`), never faked. The PMS checks availability: taken dates answer `409 pms_unavailable`.
          *     - **Any other listing**: a direct booking made in Repull, with everything that hangs off one — the guest, the conversation, the calendar block and the `reservation.created` fan-out that issues the door code and starts the messaging automations. Priced by the listing's own rates; **availability is NOT checked** (call `GET /v1/availability/{propertyId}` first if that matters).
          *
          *     `GET /v1/listings/{id}` → `capabilities.reservations` says which applies to a listing and exactly what it supports (`create`, `modify`, `cancel`, `quote`, `customPrice`, plus `notes`).
@@ -175,6 +175,7 @@ export interface paths {
          *     | iGMS | ✓ | ✓ | ✓ | – | ✓ (required) | iGMS direct bookings only; a price is required; no tentative holds. |
          *     | OwnerRez | ✓ | ✓ | – | ✓ | – | No cancel through OwnerRez's API; priced by the property's own rates; needs the `full` scope. |
          *     | Track | ✓ | ✓ | ✓ | ✓ | ✓ | Track decides Hold vs Confirmed from the property's channel mode; a set price on a Channel Key needs "Allow Custom Pricing"; a unit change needs `moveReasonId` on the connection; a date change re-prices at Track's current rates. |
+         *     | CiiRUS | ✓ | ✓ | ✓ | ✓ | ✓ | A set price is the rent, with CiiRUS adding its taxes; no tentative holds. |
          *
          *     Every PMS except Cloudbeds refuses group bookings, and every vacation-rental PMS refuses to change or cancel a booking that came from a channel (Airbnb, Booking.com, Vrbo…) — that is done on the channel.
          *
@@ -354,7 +355,7 @@ export interface paths {
         };
         /**
          * Get conversation detail
-         * @description Returns one thread (the same shape as the list-row `Conversation`) plus expanded `host` (from `airbnb_hosts` for the thread's `host_id`) and `guest` (resolved via the thread's `reservation_id`, with up to 50 contacts) blocks.
+         * @description Returns one thread (the same shape as the list-row `Conversation`) plus expanded `host` (from `airbnb_hosts` for the thread's `host_id`) and `guest` (resolved via the thread's `reservation_id`, with up to 50 contacts) blocks. On an inquiry (no reservation yet) `guest` carries the first name Airbnb shares with the inquiry; contacts such as the phone number arrive once the guest books.
          *
          *     A conversation that belongs to an inactive listing (by the thread's listing or its reservation's listing) returns `403 listing_inactive`. Inactive listings keep syncing; activate the listing to use it here.
          */
@@ -572,13 +573,15 @@ export interface paths {
         post: operations["create_connection"];
         /**
          * Disconnect provider
-         * @description Disconnect ONE connected account of a provider from this workspace. Supported for `airbnb`, `booking` and `vrbo-login`.
+         * @description Disconnect ONE connected account of a provider from this workspace. Supported for `airbnb`, `booking`, `vrbo-login` and every PMS (`guesty`, `hostaway`, `hospitable`, …).
          *
          *     **Which account.** Pass `accountId` — for Airbnb the host id (`accounts[].externalAccountId` from `GET /v1/connect/airbnb`), for Booking.com the hotel id, for `vrbo-login` the sign-in's `accounts[].externalAccountId` from `GET /v1/connect/vrbo-login`. It is optional only when the workspace has exactly one account for the provider. With several and no `accountId`, the call returns `422` with the account ids in `valid_values` instead of guessing. An `accountId` that is not connected to this workspace returns `404`. Disconnecting one account leaves the others connected.
          *
          *     **What happens.** The account's stored authorization is removed and it stops syncing. Its listings are **deactivated**, not deleted: they stop counting toward your plan's listing limit, their data is kept, and they are returned in `listingsDeactivated`. A listing that is still connected through another account or channel stays active. Reconnect the account, then activate the listings with `POST /v1/listings/status`.
          *
          *     The change is all or nothing. For Airbnb, the host can also revoke access on Airbnb's side (Account → Privacy & sharing → Connected apps); that alone does not update this workspace, so call this endpoint as well.
+         *
+         *     **PMS.** A workspace has one connection per PMS, so no `accountId` is needed. Disconnecting stops syncing, clears the stored credentials and deactivates the connection's listings; nothing is deleted, and reservations and messages stay. The response also carries `connectionId`. The PMS's own webhook subscription is left in place, because the same PMS account can be connected to another workspace (such as a Repull Migrate workspace). Reconnect with a new Connect session.
          *
          *     Other providers return `501 not_implemented` with instructions for disconnecting on the provider's side. That answer depends only on the provider, not on your workspace: an unsupported provider returns `501` whether or not you have a connection to it. `404 not_found` on a supported provider means this workspace has no connection to it (or, with `accountId`, that the account is not connected here).
          */
@@ -4726,6 +4729,7 @@ export interface paths {
          *     | iGMS | ✓ | ✓ | ✓ | – | ✓ (required) | iGMS direct bookings only; a price is required; no tentative holds. |
          *     | OwnerRez | ✓ | ✓ | – | ✓ | – | No cancel through OwnerRez's API; priced by the property's own rates; needs the `full` scope. |
          *     | Track | ✓ | ✓ | ✓ | ✓ | ✓ | Track decides Hold vs Confirmed from the property's channel mode; a set price on a Channel Key needs "Allow Custom Pricing"; a unit change needs `moveReasonId` on the connection; a date change re-prices at Track's current rates. |
+         *     | CiiRUS | ✓ | ✓ | ✓ | ✓ | ✓ | A set price is the rent, with CiiRUS adding its taxes; no tentative holds. |
          *
          *     Every PMS except Cloudbeds refuses group bookings, and every vacation-rental PMS refuses to change or cancel a booking that came from a channel (Airbnb, Booking.com, Vrbo…) — that is done on the channel.
          *
@@ -5204,6 +5208,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/connect/ciirus/credentials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Submit CiiRUS credentials for a Connect session
+         * @description Completes a credentials-pattern connection for CiiRUS with the property manager's CiiRUS API username and password.
+         *
+         *     **What syncs.** Units become listings (with descriptions, photos, amenities, rooms and house rules); reservations (with their charge and tax breakdown and payments) and reviews are imported, then polled for changes. Bookings can be created, quoted, changed and cancelled in CiiRUS — see `capabilities.reservations` on `GET /v1/connect/ciirus`. Guest messages are not available through CiiRUS's API.
+         *
+         *     **Where the credentials come from.** The CiiRUS API Explorer gives the API username and password after signing in with the CiiRUS MC username and company password; CiiRUS support can also issue them. Credentials that see several suppliers (management companies) also need `managementCompanyUserId`.
+         *
+         *     **IP whitelist.** CiiRUS only accepts calls from whitelisted IP addresses, and answers a wrong password and a non-whitelisted address the same way. When this returns `invalid_credentials` with correct credentials, ask CiiRUS support to whitelist Repull for the API user.
+         *
+         *     The credentials are validated against CiiRUS before anything is stored, so invalid ones return `invalid_credentials` rather than creating a dead connection. On success only the credential fields below are stored, and the first sync of listings and reservations is queued.
+         *
+         *     CiiRUS has no webhooks: after the first sync, reservation changes are picked up by polling about once a minute.
+         *
+         *     Reconnecting replaces the stored credentials on the workspace's existing CiiRUS connection — the `pmsConnectionId` stays the same.
+         *
+         *     No API key required when called with a `sessionId` — the session is the capability token.
+         */
+        post: operations["submitCiirusCredentials"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -5375,6 +5413,63 @@ export interface components {
             /** @description Per-date calendar for the requested window (capped at 366 days), ordered ascending by date. Contains only dates we hold data for — it may be shorter than the window, or empty. */
             days: components["schemas"]["PropertyAvailabilityDay"][];
             coverage: components["schemas"]["PropertyAvailabilityCoverage"];
+        };
+        /** @description One door code for a stay, as the PMS reported it. */
+        ReservationAccessCode: {
+            /**
+             * @description The code to enter on the lock.
+             * @example 482913
+             */
+            code: string;
+            /**
+             * @description `guest`: the code to give the guest. `backup`: give it only if the guest code fails; Guesty may change a backup code read before check-in day.
+             * @example guest
+             * @enum {string}
+             */
+            type: "guest" | "backup" | "other";
+            /**
+             * @description The PMS's status for the code, lower-cased.
+             * @example active
+             */
+            status: string | null;
+            /**
+             * Format: date-time
+             * @description When the code starts working. `null` when the PMS gives no window.
+             * @example 2026-11-01T20:00:00.000Z
+             */
+            validFrom: string | null;
+            /**
+             * Format: date-time
+             * @description When the code stops working. `null` when the PMS gives no window.
+             * @example 2026-11-05T15:00:00.000Z
+             */
+            validUntil: string | null;
+            /** @description The locks the code opens. */
+            locks: {
+                /**
+                 * @description The lock's id in the PMS.
+                 * @example 64f0c1aa2b3c4d5e6f708192
+                 */
+                id: string;
+                /** @example Front door */
+                name: string | null;
+                /**
+                 * @description The lock brand, as the PMS names it.
+                 * @example schlage
+                 */
+                provider: string | null;
+            }[];
+            /**
+             * @description The PMS the code was read from.
+             * @example guesty
+             */
+            source: string;
+            /**
+             * Format: date-time
+             * @description When the codes were last read from the PMS.
+             * @example 2026-10-31T14:30:00.000Z
+             */
+            updatedAt: string | null;
         };
         /** @description Inline guest summary resolved by JOIN-ing the `guests` table. Populated for every reservation that has a linked guest row; OMITTED entirely (not null) for owner-blocks / pre-arrival rows / partial-sync gaps. Always optional-chain in SDK consumers. */
         ReservationPrimaryGuest: {
@@ -5610,6 +5705,13 @@ export interface components {
                 /** @example 101 */
                 name?: string | null;
             } | null;
+            /**
+             * @description The PMS's own id for this reservation (for example Guesty's reservation `_id`), so you can look it up in the PMS. `null` when the reservation did not come from a PMS.
+             * @example 6a0374cd5eeb88f1381f9ac1
+             */
+            pmsReservationId?: string | null;
+            /** @description Door codes for the stay from the PMS's lock manager (today: Guesty Locks Manager), refreshed about every 30 minutes for stays checking in within 14 days that have not checked out. `null` when the reservation's codes are not read from a PMS. `[]` when they are and there is none yet, and for a cancelled stay. */
+            accessCodes?: components["schemas"]["ReservationAccessCode"][] | null;
             /** @description Inline guest summary. May be undefined for owner-blocks / pre-arrival rows. */
             primaryGuest?: components["schemas"]["ReservationPrimaryGuest"];
             /** @description Normalized guest counts. May be undefined when the source channel did not provide counts. */
@@ -6955,6 +7057,11 @@ export interface components {
              * @example 2026-11-11
              */
             checkOut?: string | null;
+            /** @description Who asked. Airbnb shares only the first name before the guest books. */
+            guest?: {
+                id?: string | null;
+                firstName?: string | null;
+            };
             guests?: {
                 total?: number | null;
                 adults?: number | null;
@@ -7068,6 +7175,8 @@ export interface components {
                 syncEnabled?: boolean;
                 /** @example sync_all */
                 syncCategory?: string | null;
+                /** @description The connected account this listing belongs to on this channel — for Airbnb the host account (`externalAccountId` is the Airbnb host id). The same account `account.disconnected` names, so a disconnect can be matched to its listings. Null when it cannot be resolved. */
+                account?: components["schemas"]["RecordAccount"] | null;
             }[];
             /** Format: date-time */
             createdAt?: string | null;
@@ -7224,6 +7333,13 @@ export interface components {
              * @enum {string}
              */
             reason?: "refresh_token_rejected" | "manual_disconnect" | "auth_expired" | "revoked_upstream";
+            /** @description The listings this account holds in your workspace — the ones that stop syncing until it is reconnected. Identity only; inactive listings included. Matches `channels[].account` on `GET /v1/listings`. Empty when the account has no listings here. */
+            listings?: {
+                /** @example 4118 */
+                id?: number;
+                /** @example Ocean View Villa */
+                name?: string | null;
+            }[];
         };
         /** @description Lightweight review snapshot delivered as `data.object` on `review.*` events. Fetch the full review (category ratings, public text, private feedback, response body) via `GET /v1/reviews/{id}`. */
         ReviewWebhookObject: {
@@ -10217,6 +10333,8 @@ export interface components {
             externalId?: string;
             active?: boolean;
             syncEnabled?: boolean;
+            /** @description The connected account this listing belongs to on this channel — for Airbnb the host account (`externalAccountId` is the Airbnb host id). The same account `account.disconnected` names, so a disconnect can be matched to its listings. Null when it cannot be resolved. */
+            account?: components["schemas"]["RecordAccount"] | null;
         };
         /** @description A single amenity row from the unified `listings_amenities` table. Surfaced on `GET /v1/listings/{id}` and `GET /v1/properties/{id}` only when the caller passes `?include=amenities`. */
         ListingAmenity: {
@@ -11396,9 +11514,9 @@ export interface components {
              * @enum {string|null}
              */
             busy_subtype?: "BLOCKED_BY_HOST" | "OUTSIDE_RESERVATION" | null;
-            /** @description Minimum length of stay for the date(s). */
+            /** @description Minimum length of stay for the date(s), 1–1125. Send `-1` to drop the date's own minimum so it follows the listing default again (`default_min_nights`). `0` and `null` do not clear it. */
             min_nights?: number | null;
-            /** @description Maximum length of stay for the date(s); no lower than `min_nights`. */
+            /** @description Maximum length of stay for the date(s), 1–1125 and no lower than `min_nights`. Send `-1` to drop the date's own maximum so it follows the listing default again (`default_max_nights`). */
             max_nights?: number | null;
             /** @description Closed-to-arrival — no check-ins on the affected date(s). */
             closed_to_arrival?: boolean | null;
@@ -21637,6 +21755,16 @@ export interface operations {
                              * @example 2026-10-11
                              */
                             checkOut: string | null;
+                            /** @description Who asked. Airbnb shares only the guest’s first name before they book; the last name and phone number arrive on the reservation (`GET /v1/reservations/{id}`) once they do. */
+                            guest: {
+                                /**
+                                 * @description Repull guest id.
+                                 * @example 365763
+                                 */
+                                id?: string | null;
+                                /** @example Ximena */
+                                firstName?: string | null;
+                            };
                             guests: {
                                 /** @example 2 */
                                 total?: number | null;
@@ -25043,6 +25171,99 @@ export interface operations {
             422: components["responses"]["UnprocessableEntity"];
             500: components["responses"]["InternalError"];
             502: components["responses"]["InternalError"];
+        };
+    };
+    submitCiirusCredentials: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "credentials": {
+                 *         "apiUsername": "AcmeVacationsAPI",
+                 *         "apiPassword": "…"
+                 *       }
+                 *     }
+                 */
+                "application/json": {
+                    /** @description Connect session id from `POST /v1/connect/ciirus`. Omit when calling with your API key. */
+                    sessionId?: string;
+                    /**
+                     * @description Optional: what the app may change in CiiRUS, set before the first sync. Same shape as `PATCH /v1/connect/{provider}/write-policy`; switches you leave out keep the provider default (everything on).
+                     * @example {
+                     *       "reservations": {
+                     *         "api": false
+                     *       }
+                     *     }
+                     */
+                    writePolicy?: Record<string, never>;
+                    /** @description The CiiRUS API username and password. */
+                    credentials: {
+                        /** @description CiiRUS API username, from the CiiRUS API Explorer or CiiRUS support. */
+                        apiUsername: string;
+                        /** @description CiiRUS API password. */
+                        apiPassword: string;
+                        /**
+                         * @description The CiiRUS supplier (management company) id, the MCUserID. Only needed when the credentials see several suppliers.
+                         * @example 42330
+                         */
+                        managementCompanyUserId?: number;
+                    };
+                };
+            };
+        };
+        responses: {
+            /** @description Credentials accepted, the connection stored and its first sync queued */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @example ciirus */
+                        provider?: string;
+                        connected?: boolean;
+                        /** @description Id of the stored connection. */
+                        pmsConnectionId?: string;
+                        /** @description False when an existing connection was updated. */
+                        created?: boolean;
+                        sessionId?: string | null;
+                        accountInfo?: {
+                            /**
+                             * @description The CiiRUS supplier (management company) id the connection reads.
+                             * @example 42330
+                             */
+                            supplierId?: string;
+                            /** @description The supplier's company name. */
+                            accountName?: string | null;
+                        };
+                        /** @description Whether the first import of listings and reservations was queued. When it was not, the connection still stands and polling syncs it. */
+                        firstSync?: {
+                            queued?: boolean;
+                            error?: string;
+                        };
+                        writePolicy?: components["schemas"]["PmsWritePolicy"];
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["UnprocessableEntity"];
+            /** @description CiiRUS could not be reached (`network_error`). Nothing was stored. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
 }

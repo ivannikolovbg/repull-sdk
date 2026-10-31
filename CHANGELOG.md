@@ -3,6 +3,16 @@
 All notable changes to `@repull/sdk` and `@repull/types` are recorded here.
 This project follows [Semantic Versioning](https://semver.org/).
 
+## [0.2.39] - 2026-10-31
+
+### Added
+- `Reservation.accessCodes` (`ReservationAccessCode[] | null`): door codes from the PMS's lock manager (Guesty Locks Manager) — `code`, `type` (`guest` / `backup` / `other`), `status`, `validFrom`, `validUntil`, `locks`, `source`, `updatedAt`. `null` when codes are not read for the reservation. `ReservationAccessCode` is exported from `@repull/types`.
+- `Reservation.pmsReservationId`: the PMS's own reservation id (e.g. Guesty `_id`).
+- `ListingChannel.account` and `listings` on `account.disconnected` payloads.
+
+### Changed
+- Types regenerated from the live spec.
+
 ## [0.2.38] - 2026-10-23
 
 ### Added

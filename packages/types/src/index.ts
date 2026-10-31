@@ -18,6 +18,8 @@ export type { components, operations, paths } from './openapi.js';
 export type Property = components['schemas']['Property'];
 export type PostalAddress = components['schemas']['PostalAddress'];
 export type Reservation = components['schemas']['Reservation'];
+/** One door code on a reservation (`reservation.accessCodes`), from the PMS's lock manager. New in v0.2.39. */
+export type ReservationAccessCode = components['schemas']['ReservationAccessCode'];
 export type Listing = components['schemas']['Listing'];
 export type ListingChannel = components['schemas']['ListingChannel'];
 /** `?include=rooms` — one room with its beds. New in v0.2.38. */
