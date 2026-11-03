@@ -3,6 +3,10 @@
 All notable changes to `@repull/sdk` and `@repull/types` are recorded here.
 This project follows [Semantic Versioning](https://semver.org/).
 
+## 0.2.40 — 2026-11-03
+
+- Channel health `status` can now be `unknown`: the health numbers could not be read at that moment (HTTP 200, `message` gives the reason). Regenerated from the live spec.
+
 ## [0.2.39] - 2026-10-31
 
 ### Added
