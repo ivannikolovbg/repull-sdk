@@ -3,6 +3,11 @@
 All notable changes to `@repull/sdk` and `@repull/types` are recorded here.
 This project follows [Semantic Versioning](https://semver.org/).
 
+## 0.2.41 — 2026-11-03
+
+- Availability: each day on a listing with units (Cloudbeds/Mews room type, Guesty multi-unit listing) carries `units: [{ id, available }]` — which unit is free that night.
+- Listings: `parent` on a unit of a Guesty multi-unit listing; `units[].listingId` (the unit's own listing).
+
 ## 0.2.40 — 2026-11-03
 
 - Channel health `status` can now be `unknown`: the health numbers could not be read at that moment (HTTP 200, `message` gives the reason). Regenerated from the live spec.
