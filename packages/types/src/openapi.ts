@@ -89,7 +89,7 @@ export interface paths {
         };
         /**
          * Get property availability
-         * @description Channel-agnostic day-by-day availability calendar for a property over a date window. Returns a thin per-date shape — `{ date, available, price, minNights, availableUnits }` — projected from the property calendar. `availableUnits` is 1 or 0 for a single home, and the rooms of the type left for a hotel-model listing (a Mews or Cloudbeds room type).
+         * @description Channel-agnostic day-by-day availability calendar for a property over a date window. Returns a thin per-date shape — `{ date, available, price, minNights, availableUnits }` — projected from the property calendar. `availableUnits` is 1 or 0 for a single home, and the units left for a listing with units (a Mews or Cloudbeds room type, a Guesty multi-unit listing). On such a listing each day also carries `units: [{ id, available }]` — which unit is free that night, with the ids of the listing's `units[]` and a reservation's `unit`.
          *
          *     The `from` and `to` query params are **required** (ISO `YYYY-MM-DD`, inclusive) — omitting or malforming either returns 422. The window is capped at 366 days; longer ranges are truncated to the first 366 days.
          *
@@ -397,7 +397,7 @@ export interface paths {
          *
          *     Airbnb rejects guest messages containing a link, an email address or a phone number, and names the offending text. When that happens the offending fragment is stripped and the remainder is re-sent once, which means **the guest receives a message that is not the one you wrote**. Reporting that as a plain success would be a lie, so every response carries `contentRewritten`; when it is `true`, `deliveredContent` is the text that actually reached the guest. Check it before assuming your message went out verbatim.
          *
-         *     When the text cannot be salvaged (the link is most of the message) nothing is delivered and the call returns `422 message_not_sent` with the channel's verbatim refusal in `statusReason`.
+         *     When the text cannot be salvaged (the link is most of the message) nothing is delivered and the call returns `422 message_not_sent` with the channel's verbatim refusal in `statusReason`. `message_not_sent` only ever means the channel refused: a fault on Repull's side (a dropped database connection, a timeout) is `503 internal_error` with `sent: false` when nothing was delivered — retry it unchanged with the same `Idempotency-Key`.
          *
          *     Send `Idempotency-Key` — without it, retrying after a network timeout sends the guest the same message twice.
          *
@@ -482,6 +482,8 @@ export interface paths {
         /**
          * List PMS/OTA connections
          * @description Returns every PMS and OTA connection in the workspace, each with its `status`.
+         *
+         *     **One entry per Booking.com Extranet hotel login.** Each hotel that invites the Repull user connects as its own login, with its own `externalAccountId` (handle `booking_extranet:{externalAccountId}`). A new hotel adds an entry next to the existing ones and never replaces them; the entries share the workspace's Extranet `id`, and each hotel's listings, reservations, conversations and reviews stay under its own login (filter them with `?account=booking_extranet:{externalAccountId}`).
          *
          *     **Spot connections that need attention.** A connection whose `status` is not `active` may need the host to do something before it works — most commonly a Booking.com Extranet connection where the invited user was granted only partial access (`status: "needs_permissions"`). A Smoobu connection still on a legacy single API key carries `action.reason: "reauth_required"` while its `status` is `active`: Smoobu stops accepting those keys on October 31, 2026, and `fixUrl` opens the form for a new API key + secret (the connection id stays the same). These connections carry two extra fields:
          *
@@ -902,7 +904,7 @@ export interface paths {
         };
         /**
          * Per-channel connectivity health
-         * @description Reports reachability and auth state for one channel (`airbnb`, `booking`, `vrbo`). Use it to tell "the channel is down" apart from "this workspace's connection expired". `200` when `status` is `ok`, `503` when `degraded` or `down` (the body's `status` and `message` say which and why).
+         * @description Reports reachability and auth state for one channel (`airbnb`, `booking`, `vrbo`). Use it to tell "the channel is down" apart from "this workspace's connection expired". `200` when `status` is `ok`, `503` when `degraded` or `down` (the body's `status` and `message` say which and why). `unknown` (`200`) means the health numbers could not be read at that moment; `message` gives the reason.
          *
          *     **`vrbo`** reports the connector's own signals in a `vrbo` block: connected accounts, accounts VRBO signed out (their bookings, messages and calendar stop until reconnected — `down`), accounts whose inbox sync is late (`degraded`), and the calendar push queue backlog and its oldest wait (`degraded` past 3 hours). Its rate is calendar pushes VRBO refused over finished ones in the last 3 hours; failures inside Repull's own connector are reported apart as `vrbo.connector_errors` and do not count (`vrbo.window_hours`; `refresh_attempts_24h` / `refresh_rejections_24h` count that window for VRBO), judged only once at least 50 pushes finished and at least 5 failed — VRBO pushes run in bursts, so a day-long window would keep reporting a problem already fixed.
          */
@@ -4318,10 +4320,13 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * List a listing's units (rooms)
-         * @description The physical rooms under a listing. For a hotel-model PMS (Mews, Cloudbeds) a listing is a room type: prices, restrictions and availability are set on the room type, and each reservation is assigned one of these rooms (`reservation.unit.id`). A room can belong to more than one room type.
+         * List a listing's units
+         * @description The units under a listing.
          *
-         *     Any other listing is a single home, which is its own unit, and returns an empty list.
+         *     - **Hotel-model PMS (Mews, Cloudbeds):** the listing is a room type and these are its physical rooms. Prices, restrictions and availability are set on the room type, and each reservation is assigned one of these rooms (`reservation.unit.id`). A room can belong to more than one room type.
+         *     - **Guesty multi-unit listing:** the listing is the parent channels sell, and these are its units. Each unit is also a listing of its own (`listingId`), with its own calendar and stays; a stay on a unit carries `reservation.unit`.
+         *
+         *     Which unit is free on which night: `units` per day on `GET /v1/availability/{propertyId}`. Any other listing is a single home, which is its own unit, and returns an empty list.
          */
         get: operations["listListingUnits"];
         put?: never;
@@ -5375,10 +5380,37 @@ export interface components {
              */
             minNights: number;
             /**
-             * @description Units still sellable that night. 1 or 0 for a single home. For a hotel-model listing (a Mews or Cloudbeds room type) the rooms of that type left, e.g. 3 of 5 — see `GET /v1/listings/{id}/units`. `available` is false whenever this is 0.
+             * @description Units still sellable that night. 1 or 0 for a single home. For a listing with units (a Mews or Cloudbeds room type, a Guesty multi-unit listing) the units left, e.g. 3 of 5 — see `GET /v1/listings/{id}/units`. `available` is false whenever this is 0.
              * @example 1
              */
             availableUnits: number;
+            /**
+             * @description Only on a listing with units (a Mews or Cloudbeds room type, a Guesty multi-unit listing): each active unit and whether it is free that night. A unit is taken when a stay is on it, a room block covers it, or (for a unit that is a listing of its own) its own calendar is closed. Ids are the listing's `units[].id` and a reservation's `unit.id`.
+             * @example [
+             *       {
+             *         "id": "unit_a",
+             *         "available": true
+             *       },
+             *       {
+             *         "id": "unit_b",
+             *         "available": false
+             *       }
+             *     ]
+             */
+            units?: components["schemas"]["PropertyAvailabilityUnit"][];
+        };
+        /** @description One unit on one night. */
+        PropertyAvailabilityUnit: {
+            /**
+             * @description The unit id: `units[].id` on the listing, `unit.id` on a reservation.
+             * @example unit_b
+             */
+            id: string;
+            /**
+             * @description Whether this unit is free that night.
+             * @example false
+             */
+            available: boolean;
         };
         /** @description How much of the requested window we actually hold calendar data for. Read this before treating an absent date as bookable — absence means "no data", not "available". */
         PropertyAvailabilityCoverage: {
@@ -5698,7 +5730,7 @@ export interface components {
              * @example HMXYZ123
              */
             confirmationCode: string;
-            /** @description The physical room the stay was assigned, for a hotel-model PMS (Mews, Cloudbeds) where the listing is a room type. `null` when no room is assigned yet, and for every listing that is a single home. */
+            /** @description The unit the stay is on: the room assigned by a hotel-model PMS (Mews, Cloudbeds) where the listing is a room type, or the unit of a Guesty multi-unit listing (the stay's `listingId` is then that unit's own listing). Matches the listing's `units[].id` and the per-night `units` on availability. `null` when no unit is assigned yet, and for every listing that is a single home. */
             unit?: {
                 /** @description The room id, as listed by `GET /v1/listings/{id}/units`. */
                 id?: string;
@@ -5876,7 +5908,7 @@ export interface components {
         };
         /** @description Channel-agnostic message thread between the host workspace and a guest. Returned by `GET /v1/conversations`. The `id` is the internal Repull thread id (integer) — pass it back as the `{id}` path param on detail / messages calls. */
         Conversation: {
-            /** @description The connected account this conversation belongs to. List endpoint. */
+            /** @description The connected account this conversation belongs to, the same block as the message webhooks. On the list and on `GET /v1/conversations/{id}`. */
             account?: components["schemas"]["RecordAccount"];
             id?: string;
             /**
@@ -10505,10 +10537,16 @@ export interface components {
                 pms?: components["schemas"]["PmsCapabilities"];
             };
             /**
-             * @description `room_type` when the listing sells several identical units (a hotel room type: `unitCount` > 1) or is a hotel PMS room type; `home` otherwise. See the Hotels & multi-unit guide.
+             * @description `room_type` when the listing sells several units (a hotel room type or a Guesty multi-unit listing: `unitCount` > 1) or is a hotel PMS room type; `home` otherwise. See the Hotels & multi-unit guide.
              * @enum {string}
              */
             kind?: "home" | "room_type";
+            /** @description The multi-unit listing this listing is one unit of (a Guesty multi-unit listing's unit, which has its own calendar and stays). The parent lists it in `units[]` with this listing's id as `units[].listingId`. `null` otherwise. */
+            parent?: {
+                /** @description Repull listing id of the multi-unit listing. */
+                id?: string;
+                name?: string | null;
+            } | null;
             /** @description The hotel the listing belongs to: a hotel PMS hotel (Cloudbeds, Mews) or a Booking.com property with several room types or rooms. `null` for a standalone home. `GET /v1/hotels/{id}` lists its room types. */
             hotel?: {
                 /**
@@ -10520,17 +10558,21 @@ export interface components {
                 /** @enum {string} */
                 source?: "pms" | "booking";
             } | null;
-            /** @description How many identical units (rooms) this listing sells: the hotel PMS rooms of the room type, the room count on Booking.com, or 1 for a home. Rooms left per night are `availableUnits` on `GET /v1/availability/{propertyId}`. */
+            /** @description How many units (rooms) this listing sells: the hotel PMS rooms of the room type, the units of a Guesty multi-unit listing, the room count on Booking.com, or 1 for a home. Units left per night are `availableUnits` on `GET /v1/availability/{propertyId}`, and which unit is free is `units` there. */
             unitCount?: number;
-            /** @description `GET /v1/listings/{id}` only. The physical rooms under a hotel-model listing (a Mews or Cloudbeds room type); empty for a single home. Same items as `GET /v1/listings/{id}/units`. */
+            /** @description `GET /v1/listings/{id}` only. The units under the listing: a Mews or Cloudbeds room type's rooms, or a Guesty multi-unit listing's units; empty for a single home. Same items as `GET /v1/listings/{id}/units`. */
             units?: {
+                /** @description Unit id — what `reservation.unit.id` and the per-night `units[].id` on availability refer to. */
                 id?: string;
                 name?: string;
                 active?: boolean;
                 parentId?: string | null;
                 housekeepingStatus?: string | null;
                 floor?: string | null;
+                /** @description The PMS the unit comes from: `cloudbeds`, `mews`, `guesty`, … */
                 source?: string;
+                /** @description The unit's own Repull listing id when the unit is a listing too (a Guesty multi-unit listing's units, each with its own calendar), else `null`. */
+                listingId?: string | null;
             }[];
             /** @description Repull listing id */
             id?: string;
@@ -10579,6 +10621,16 @@ export interface components {
                  */
                 countryCode?: string | null;
             };
+            /**
+             * @description `GET /v1/listings/{id}` only. Map pin latitude in decimal degrees, as a string; the same value as `GET /v1/properties/{id}`. Null when the listing has no coordinates.
+             * @example 25.7617
+             */
+            latitude?: string | null;
+            /**
+             * @description `GET /v1/listings/{id}` only. Map pin longitude in decimal degrees, as a string; the same value as `GET /v1/properties/{id}`. Null when the listing has no coordinates.
+             * @example -80.1918
+             */
+            longitude?: string | null;
             /**
              * Format: uri
              * @description Cover photo URL. Always present on an active listing. On an **inactive** one it is present only when the caller passes `?include=thumbnail`; `null` means the listing has no cover photo stored, absent means the expansion was not requested.
@@ -14139,7 +14191,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
-            /** @description `listing_inactive` — the conversation belongs to an inactive listing, so nothing was sent. The error names the listing. */
+            /** @description `listing_inactive` — the conversation belongs to an inactive listing, so nothing was sent. The error names the listing. `connection_reauth_required` — the channel account behind this conversation has no working credentials (`reconnectRequired: true`); nothing was sent and the text was not refused. Reconnect via `POST /v1/connect/{provider}`, then send again. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -14157,7 +14209,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description Nothing was sent unless the code is `message_partially_sent`. Codes: `invalid_params` (malformed body, field named), `message_not_sent` (the channel refused — `statusReason` has its words), `attachments_not_supported`, `too_many_attachments`, `attachment_requires_message`, `attachment_url_not_allowed`, `attachment_unreachable`, `attachment_too_large`, `attachment_type_not_supported` (each names the file in `index`/`field` and the conversation's `channel`), and `message_partially_sent` (some channel messages were delivered — `parts` says which). */
+            /** @description Nothing was sent unless the code is `message_partially_sent`. Codes: `invalid_params` (malformed body, field named), `message_not_sent` (the channel itself refused — `statusReason` has its words verbatim; a failure on Repull's side is never `message_not_sent`, it is `503 internal_error`), `attachments_not_supported`, `too_many_attachments`, `attachment_requires_message`, `attachment_url_not_allowed`, `attachment_unreachable`, `attachment_too_large`, `attachment_type_not_supported` (each names the file in `index`/`field` and the conversation's `channel`), and `message_partially_sent` (some channel messages were delivered — `parts` says which). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -14175,7 +14227,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description `attachment_storage_failed` — a file could not be stored for delivery. Nothing was sent; retry with the same `Idempotency-Key` after `retry_after` seconds. */
+            /** @description A temporary fault on Repull's side — never a verdict on the message. `internal_error`: the send failed inside Repull (a dropped database connection, a timeout) before the channel refused anything. `sent` says whether the message reached the channel: with `messageId: null` and `sent: false` nothing was delivered or recorded, and retrying the same request with the same `Idempotency-Key` after `retry_after` seconds sends it once. With a `messageId`, check that message in `GET /v1/conversations/{id}/messages` before resending. `attachment_storage_failed`: a file could not be stored for delivery; nothing was sent, retry the same way. A 503 is never stored against the `Idempotency-Key`, so the retry runs for real. Do not edit the text: it was not refused. */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -15050,7 +15102,7 @@ export interface operations {
                 content: {
                     "application/json": {
                         /** @enum {string} */
-                        status?: "ok" | "degraded" | "down";
+                        status?: "ok" | "degraded" | "down" | "unknown";
                         /** @description VRBO only — the connector's own signals. */
                         vrbo?: {
                             accounts_connected?: number;
@@ -16301,6 +16353,15 @@ export interface operations {
             429: components["responses"]["AirbnbRateLimited"];
             500: components["responses"]["InternalError"];
             502: components["responses"]["AirbnbUpstreamError"];
+            /** @description With `mediaUrl`: `internal_error` — the send failed on Repull's side (a dropped database connection, a timeout), not at Airbnb. With `sent: false` and `messageId: null` nothing reached the guest; retry the same request with the same `Idempotency-Key` after `retry_after` seconds. Never stored against the key. `message_not_sent` is reserved for Airbnb's own refusals. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     list_airbnb_reservations: {
@@ -22741,7 +22802,7 @@ export interface operations {
                         listingId?: string;
                         total?: number;
                         data?: {
-                            /** @description The PMS's id for the room; `reservation.unit.id` refers to it. */
+                            /** @description The PMS's id for the unit; `reservation.unit.id` and the per-night `units[].id` on `GET /v1/availability/{propertyId}` refer to it. */
                             id?: string;
                             /** @example 101 */
                             name?: string;
@@ -22751,8 +22812,13 @@ export interface operations {
                             /** @description The PMS's housekeeping state, verbatim (e.g. `Dirty`, `Clean`, `Inspected`). */
                             housekeepingStatus?: string | null;
                             floor?: string | null;
-                            /** @example mews */
+                            /**
+                             * @description The PMS the unit comes from: `cloudbeds`, `mews`, `guesty`, …
+                             * @example mews
+                             */
                             source?: string;
+                            /** @description The unit's own Repull listing id when the unit is a listing too (a Guesty multi-unit listing's units, each with its own calendar and stays), else null. */
+                            listingId?: string | null;
                         }[];
                     };
                 };

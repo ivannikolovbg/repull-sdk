@@ -3,6 +3,11 @@
 All notable changes to `@repull/sdk` and `@repull/types` are recorded here.
 This project follows [Semantic Versioning](https://semver.org/).
 
+## 0.2.42 — 2026-11-05
+
+- Listings: `GET /v1/listings/{id}` returns `latitude` and `longitude` — the map pin in decimal degrees, as strings (null when the listing has no coordinates).
+- Conversations: `account` is now documented on `GET /v1/conversations/{id}`. Regenerated from the live spec.
+
 ## 0.2.41 — 2026-11-03
 
 - Availability: each day on a listing with units (Cloudbeds/Mews room type, Guesty multi-unit listing) carries `units: [{ id, available }]` — which unit is free that night.
