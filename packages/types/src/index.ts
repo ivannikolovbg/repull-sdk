@@ -22,6 +22,8 @@ export type Reservation = components['schemas']['Reservation'];
 export type ReservationAccessCode = components['schemas']['ReservationAccessCode'];
 export type Listing = components['schemas']['Listing'];
 export type ListingChannel = components['schemas']['ListingChannel'];
+/** `airbnbAccess` on a conversation or listing — the Airbnb accounts that can act on it and which one sends by default. New in v0.2.43. */
+export type AirbnbAccess = components['schemas']['AirbnbAccess'];
 /** `?include=rooms` — one room with its beds. New in v0.2.38. */
 export type ListingRoom = components['schemas']['ListingRoom'];
 /** `?include=policies` — cancellation, house rules, check-in/out, guest rules. New in v0.2.38. */

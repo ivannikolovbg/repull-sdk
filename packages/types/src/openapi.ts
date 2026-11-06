@@ -5910,6 +5910,8 @@ export interface components {
         Conversation: {
             /** @description The connected account this conversation belongs to, the same block as the message webhooks. On the list and on `GET /v1/conversations/{id}`. */
             account?: components["schemas"]["RecordAccount"];
+            /** @description Airbnb conversations, on `GET /v1/conversations/{id}`: every account on the listing (owner and co-hosts) with its state, and `defaultAccount` — the one a send uses when `account` is not given. Pass any connected one as `account` on `POST /v1/conversations/{id}/messages` to send as it. */
+            airbnbAccess?: components["schemas"]["AirbnbAccess"] | null;
             id?: string;
             /**
              * @example airbnb
@@ -7557,6 +7559,31 @@ export interface components {
                  */
                 sharePercent?: number;
             } | null;
+        };
+        AirbnbAccess: {
+            /**
+             * @description The account that acts when none is named: the conversation's own account while connected, else the listing's owner, else a connected co-host. Null when none is connected.
+             * @example airbnb:483175841
+             */
+            defaultAccount: string | null;
+            accounts: {
+                /**
+                 * @description What `account` on a send takes.
+                 * @example airbnb:228981432
+                 */
+                account: string;
+                /** @example Team Co-Host */
+                name: string | null;
+                /** @enum {string} */
+                role: "owner" | "cohost" | "unknown";
+                /**
+                 * @description `connected` can act now; `disconnected` was connected to this workspace; `never_connected` is on the listing but was never connected here.
+                 * @enum {string}
+                 */
+                state: "connected" | "disconnected" | "never_connected";
+                /** Format: date-time */
+                disconnectedAt: string | null;
+            }[];
         };
         /** @description The connected account a record belongs to — keyed exactly like the webhook `account` block and `connect.session.completed`, so one `provider:externalAccountId` key routes reads and events to the same user. `null` when it cannot be resolved (never guessed). */
         RecordAccount: {
@@ -10640,6 +10667,8 @@ export interface components {
             status?: "active" | "inactive" | "archived";
             /** @description Channels (Airbnb, Booking, VRBO, etc.) the listing is connected to. */
             channels?: components["schemas"]["ListingChannel"][];
+            /** @description Airbnb listings: every account on the listing (owner and co-hosts), whether each is connected, and which one acts by default. `defaultAccount: null` means no connected account can reach the listing — connect one of `accounts`. */
+            airbnbAccess?: components["schemas"]["AirbnbAccess"];
             /** @description Amenity rows for the listing. **Only present when the caller passes `?include=amenities`.** Empty array (`[]`) when the listing has no amenity rows. */
             amenities?: components["schemas"]["ListingAmenity"][];
             /** @description **Only present when the caller passes `?include=content`.** Sourced from `listings_descriptions` for the `en` locale. `null` when the listing has no description row stored (vs the field being absent — that signals the caller did not opt into the expansion). */
@@ -12379,6 +12408,11 @@ export interface components {
              * @example email
              */
             channel?: string;
+            /**
+             * @description Airbnb conversations: send as exactly this connected account — the listing's owner or one of its co-hosts — e.g. your team co-host. Never swapped for another account: if it is disconnected or not on the listing, nothing is sent and the error says why. Omit it and the conversation's own account sends while it is connected, otherwise the listing's owner, otherwise a connected co-host. Connected accounts are on `GET /v1/connect`.
+             * @example airbnb:483175841
+             */
+            account?: string;
             /** @description Files to send. See the per-channel table above. On a conversation a connected PMS relays, files go through the PMS — `422 pms_write_unsupported` when its API cannot send them (`capabilities.pms.conversations.attachments` on `GET /v1/connect/{provider}`). */
             attachments?: components["schemas"]["SendMessageAttachment"][];
         };
@@ -14191,7 +14225,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
-            /** @description `listing_inactive` — the conversation belongs to an inactive listing, so nothing was sent. The error names the listing. `connection_reauth_required` — the channel account behind this conversation has no working credentials (`reconnectRequired: true`); nothing was sent and the text was not refused. Reconnect via `POST /v1/connect/{provider}`, then send again. */
+            /** @description `listing_inactive` — the conversation belongs to an inactive listing, so nothing was sent. The error names the listing. `connection_reauth_required` — no connected account can send on this conversation (`reconnectRequired: true`); nothing was sent and the text was not refused. On Airbnb the message names each account on the listing — owner and co-hosts — and its state (e.g. `Team Co-Host (228981432), co-host, was disconnected on 2026-09-30`). Connect one of them via `POST /v1/connect/{provider}`, or send as another connected account with `account`, then send again. */
             403: {
                 headers: {
                     [name: string]: unknown;

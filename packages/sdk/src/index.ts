@@ -62,6 +62,7 @@ export type {
   BookingPublishResult,
   Guest,
   Conversation,
+  AirbnbAccess,
   Message,
   Review,
   Connection,
