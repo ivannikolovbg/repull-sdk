@@ -3,6 +3,12 @@
 All notable changes to `@repull/sdk` and `@repull/types` are recorded here.
 This project follows [Semantic Versioning](https://semver.org/).
 
+## 0.2.44 — 2026-11-08
+
+- Booking.com: `PUT /v1/channels/booking/availability` with `type: "derived-pricing"` now has a typed item, `BookingDerivedPricingUpdate`: `roomId`, `rateId`, `leadingOccupancy` and `occupancies[]` (`BookingOccupancyRule`: `persons`, `additional` or `percentage`, `round`). The response is `BookingDerivedPricingWriteResponse`, with the rules read back from Booking.com. A restriction-only `availability` write returns `BookingRestrictionWriteResponse`, which includes a read-back.
+- Booking.com restrictions: `maxStay`/`maxStayArrival` are 0–90 and `minStay`/`minStayArrival` are 0–91. A value outside that range returns `422 restriction_out_of_range`.
+- `GET /v1/channels/booking/properties/{id}/rooms`: rates carry `occupancyPricing`. Verification reports carry `rowsOmitted`. Regenerated from the live spec.
+
 ## 0.2.43 — 2026-11-06
 
 - Conversations: `POST /v1/conversations/{id}/messages` takes an optional `account` — on Airbnb, send as exactly that connected account (the listing's owner or one of its co-hosts). Never swapped for another account: if it is disconnected or not on the listing, nothing is sent and the error says why.

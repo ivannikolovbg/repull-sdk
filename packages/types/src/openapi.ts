@@ -2286,7 +2286,7 @@ export interface paths {
          * Deactivate (exclude) a listing
          * @description Deactivate a listing — sets it inactive and excludes it from Repull. This is a **soft** operation: the listing row is KEPT (never hard-deleted) and the upstream channel (Airbnb / Hospitable / Booking.com) is NEVER touched. Repull only mutates its own copy.
          *
-         *     Equivalent to `PATCH /v1/listings/{id}` with `{ "active": false }`. This is the primary self-serve way for a free-tier customer to trim back under the plan-listings cap — `DELETE` is served even when the account is over the cap (a 402-locked account can still call it). To bring a listing back, use `PATCH` with `{ "active": true }`.
+         *     Equivalent to `PATCH /v1/listings/{id}` with `{ "active": false }`. It is the self-serve way to choose which listings count toward your plan. To bring a listing back, use `PATCH` with `{ "active": true }`.
          *
          *     Idempotent: deactivating an already-inactive listing returns 200.
          *
@@ -2562,7 +2562,7 @@ export interface paths {
          *
          *     - `rates` — nightly prices, plus any length-of-stay / arrival restrictions sent with them.
          *     - `availability` — inventory (`availableRooms`), the stop-sell flag (`closed`), and restrictions. Omit `availableRooms` and `closed` for a restriction-only write.
-         *     - `derived-pricing` — occupancy-derived pricing rules.
+         *     - `derived-pricing` — occupancy-based pricing: what a smaller party pays relative to the nightly price (see below).
          *
          *     **Dates are inclusive at both ends.** `{ "start": "2026-11-04", "end": "2026-11-04" }` is exactly one night.
          *
@@ -2570,9 +2570,13 @@ export interface paths {
          *
          *     **Restrictions are sent in the same call, on their own wire.** A price and a minimum stay are two writes on Booking.com's side. Send them together and the response reports each separately: `price` and `restrictions` carry their own state, their own read-back, and — when refused — Booking.com's own reason. The top-level `applied` is `partial` when they disagree, so a price that landed is never reported as a failure. `minStay`, `maxStay`, `minStayArrival`, `maxStayArrival`, `closedToArrival` and `closedToDeparture` are written; `exactStayArrival`, `minAdvanceRes` and `maxAdvanceRes` are refused with `422 restriction_not_supported` because Booking.com's notification has no element for them — set those on the rate plan in the Extranet. Nothing you send is ever silently ignored.
          *
+         *     **Length-of-stay limits.** Booking.com keeps a maximum stay of 1–90 nights and a minimum of 1–91; `0` removes the limit. A value outside that is refused with `422 restriction_out_of_range` naming the field — Booking.com would acknowledge it and then store something else (a `maxStayArrival` of 365 is stored as no maximum), so send `0` for "no limit". `minStay`/`maxStay` are stay-through limits (any stay covering the night); `minStayArrival`/`maxStayArrival` apply only to stays that start on the night.
+         *
+         *     **Occupancy-based pricing (`type: "derived-pricing"`).** The nightly price you write with `type: "rates"` is the price for `leadingOccupancy` guests (the rate plan's `maxPersons`). Each item in `occupancies` prices another party size relative to it: `additional` is a signed amount in the rate currency, `percentage` a signed percent. The rule applies to every night, date-specific prices included. A write replaces the rate plan's whole rule set; `"occupancies": []` removes every rule. Example — EUR 12.01 off for 1 and 2 guests on a 3-guest rate: `{"type":"derived-pricing","property_id":"17610853","updates":[{"roomId":"1761085301","rateId":"70596570","leadingOccupancy":3,"occupancies":[{"persons":2,"additional":-12.01},{"persons":1,"additional":-12.01}]}]}`. The rules are read back after the write, and at any time on `GET /v1/channels/booking/properties/{id}/rooms` (`rates[].occupancyPricing`). A wrong shape is `422 invalid_params` naming the field; a rule Booking.com refuses is `422 booking_rejected` with its code.
+         *
          *     **Inventory is not part of a rate update.** `roomsToSell` on a `rates` update returns `422 inventory_not_in_rate_update`; send it as `type: "availability"` instead.
          *
-         *     **The response says what is known.** Booking.com acknowledges a write with no per-date status, so the nights are read back — prices and restrictions out of the same read: `applied` is `verified`, `mismatch`, `partial`, `rejected` or `unverified` (send `verify: false` to skip the read-back). A bare acknowledgement is never reported as "all updates applied". Booking.com stores a 1-night minimum as no minimum, so `minStay: 1` reads back as `0` and still counts as applied.
+         *     **The response says what is known.** Booking.com acknowledges a write with no per-date status, so the nights are read back — prices and restrictions out of the same read: `applied` is `verified`, `mismatch`, `partial`, `rejected` or `unverified` (send `verify: false` to skip the read-back). A restriction-only `availability` write is read back the same way. Every night is read, however long the range. A bare acknowledgement is never reported as "all updates applied". Booking.com stores a 1-night minimum as no minimum, so `minStay: 1` reads back as `0` and still counts as applied.
          *
          *     Restrictions never leak across channels — this endpoint writes only to Booking.com. When Booking.com refuses a write outright, their own reason comes back as `422 booking_rejected` with `booking_ruid`; a genuine outage on their side is `502 booking_error`.
          *
@@ -10129,8 +10133,16 @@ export interface components {
         };
         /** @description Added to the body of EVERY JSON response (success or error, except bare arrays and 5xx) while the workspace is connected to more listings than its plan lets it use — so a developer reading any payload, or an AI assistant relaying it, sees it. Connect keeps every listing it finds, but on a capped plan only as many as the plan allows are active; the rest are held back inactive and keep syncing. The same responses also carry the `X-Repull-Listings-Held-Back` and `X-Repull-Active-Listing-Limit` headers. Using a held-back listing answers `403 listing_inactive` with `reason: "plan_limit"`. Tell the user: they can see the held-back listings with `GET /v1/listings?status=all`, choose which are active with `POST /v1/listings/status`, or upgrade. */
         PlanNotice: {
-            /** @enum {string} */
-            code: "listings_held_back";
+            /**
+             * @description "listings_held_back": some connected listings are held inactive by the plan. "listings_over_plan": more listings are active than the plan includes (after a downgrade). Neither blocks any call.
+             * @enum {string}
+             */
+            code: "listings_held_back" | "listings_over_plan";
+            /**
+             * @description Active listings right now. Only when the code is "listings_over_plan".
+             * @example 12
+             */
+            activeListingCount?: number;
             /**
              * @description Connected listings kept inactive because of the plan.
              * @example 40
@@ -11241,17 +11253,17 @@ export interface components {
          *     Three restrictions are refused with `422 restriction_not_supported` naming the field: Booking.com's notification has no element for them, and dropping a restriction you stated would be worse than refusing it. Set those on the rate plan in the Booking.com Extranet.
          */
         BookingPricingRateUpdateRestrictions: {
-            /** @description Minimum length of stay. Booking.com stores a 1-night minimum as no minimum at all, so `minStay: 1` reads back as `0` and is reported as applied. */
+            /** @description Stay-through minimum length of stay — every stay that covers these nights must be at least this long. `1`–`91`; `0` removes the minimum. Booking.com stores a 1-night minimum as no minimum at all, so `minStay: 1` reads back as `0` and is reported as applied. Above `91` returns `422 restriction_out_of_range` (Booking.com would store 91). */
             minStay?: number | null;
-            /** @description Maximum length of stay. */
+            /** @description Stay-through maximum length of stay — no stay covering these nights may be longer. `1`–`90`; `0` removes the maximum. Above `90` returns `422 restriction_out_of_range`: Booking.com acknowledges a larger value and then stores no maximum, so send `0` for "no limit". */
             maxStay?: number | null;
             /** @description Closed-to-arrival — guests may not check in on these nights. `false` clears the flag; omit the field to leave it as it is. */
             closedToArrival?: boolean | null;
             /** @description Closed-to-departure — guests may not check out on these nights. `false` clears the flag; omit the field to leave it as it is. */
             closedToDeparture?: boolean | null;
-            /** @description Arrival-based minimum length of stay — applies to stays that START on these nights, rather than any stay covering them. */
+            /** @description Arrival-based minimum length of stay — applies to stays that START on these nights, rather than any stay covering them. `1`–`91`; `0` removes it. Above `91` returns `422 restriction_out_of_range`. */
             minStayArrival?: number | null;
-            /** @description Arrival-based maximum length of stay. */
+            /** @description Arrival-based maximum length of stay — the longest stay that may START on these nights. `1`–`90`; `0` removes the maximum. Above `90` (for example `365`) returns `422 restriction_out_of_range`: Booking.com acknowledges it and then stores no maximum (`0`), so send `0` for "no limit". */
             maxStayArrival?: number | null;
             /**
              * @deprecated
@@ -11340,11 +11352,14 @@ export interface components {
         BookingRateWriteVerification: {
             /** @description Whether the read-back happened. */
             ran?: boolean;
-            /** @description Why it did not: `not_requested` (you sent `verify: false`), `span_too_long`, `all_dates_beyond_booking_horizon`, `read_back_failed`, `nothing_to_verify`. */
+            /** @description Why it did not: `not_requested` (you sent `verify: false`), `all_dates_beyond_booking_horizon`, `read_back_failed`, `nothing_to_verify`. Every night of a write is read back, however long the range (a year is read in 31-day chunks, in parallel). */
             skippedReason?: string | null;
             matched?: number;
             mismatched?: number;
+            /** @description One row per night. When a write covers more than 62 rows, only the nights that did NOT match are listed and `rowsOmitted` counts the rest — `matched` and `mismatched` always cover every night. */
             rows?: components["schemas"]["BookingRateWriteVerificationRow"][];
+            /** @description Matching nights left out of `rows` on a long write. Absent when every row is listed. */
+            rowsOmitted?: number | null;
             /** @description Present when the read itself failed. */
             error?: string | null;
         };
@@ -11380,13 +11395,16 @@ export interface components {
         /** @description The restriction read-back. It runs out of the SAME call that reads the prices back, so proving a restriction costs no extra request. */
         BookingRestrictionVerification: {
             ran?: boolean;
-            /** @description `not_requested` (no restrictions were sent, `verify: false`, or Booking.com refused them), `span_too_long`, `all_dates_beyond_booking_horizon`, `read_back_failed`, `nothing_to_verify`. */
+            /** @description `not_requested` (no restrictions were sent, `verify: false`, or Booking.com refused them), `all_dates_beyond_booking_horizon`, `read_back_failed`, `nothing_to_verify`. */
             skippedReason?: string | null;
             matched?: number;
             mismatched?: number;
             /** @description Restrictions Booking.com's read-back did not mention either way. Counted apart from `mismatched`: an unknown is not a failure. */
             unreported?: number;
+            /** @description One row per (night, restriction). Above 62 rows only the non-matching ones are listed; `rowsOmitted` counts the rest. */
             rows?: components["schemas"]["BookingRestrictionVerificationRow"][];
+            /** @description Matching rows left out of `rows` on a long write. */
+            rowsOmitted?: number | null;
             error?: string | null;
         };
         /** @description The prices: what was sent, what Booking.com said, and what is live now. */
@@ -11518,6 +11536,8 @@ export interface components {
                     pricingType?: string | null;
                     /** @description Whether this rate plan is a derived child rate. */
                     isChildRate?: boolean | null;
+                    /** @description The occupancy rules this rate plan holds on Booking.com — what `PUT /v1/channels/booking/availability` with `type: "derived-pricing"` writes, in the same terms (`percentage: -10` is 10% less). Empty when the rate plan has none; `null` when `source` is `mirror`. The price for a party of `persons` is the nightly price plus `additional` (or changed by `percentage`), on every night. */
+                    occupancyPricing?: components["schemas"]["BookingOccupancyRule"][] | null;
                 }[];
             }[];
         };
@@ -11555,19 +11575,153 @@ export interface components {
             closed?: boolean | null;
             restrictions?: components["schemas"]["BookingPricingRateUpdateRestrictions"];
         };
-        /** @description Body for `PUT /v1/channels/booking/availability`. `type` selects which of Booking.com's writes to perform. Date ranges are inclusive at both ends everywhere in this body. */
+        /**
+         * @description Body for `PUT /v1/channels/booking/availability`. `type` selects which of Booking.com's writes to perform. Date ranges are inclusive at both ends everywhere in this body.
+         * @example {
+         *       "type": "derived-pricing",
+         *       "property_id": "17610853",
+         *       "updates": [
+         *         {
+         *           "roomId": "1761085301",
+         *           "rateId": "70596570",
+         *           "leadingOccupancy": 3,
+         *           "occupancies": [
+         *             {
+         *               "persons": 2,
+         *               "additional": -12.01
+         *             },
+         *             {
+         *               "persons": 1,
+         *               "additional": -12.01
+         *             }
+         *           ]
+         *         }
+         *       ]
+         *     }
+         */
         BookingAvailabilityUpdateRequest: {
             /**
              * @description `rates` → nightly prices (+ any restrictions sent with them), written at an explicit `occupancy`; `availability` → inventory, stop-sell and restrictions; `derived-pricing` → occupancy-derived pricing rules. A rates update may not carry `roomsToSell`: inventory is an `availability` write.
              * @enum {string}
              */
             type: "rates" | "availability" | "derived-pricing";
-            /** @description Only for `type: "rates"`. Default `true`: after the write the affected nights are read back off Booking.com so `applied` can say `verified` or `mismatch`. Send `false` to skip the read (one fewer Booking.com call); the response then reports `applied: "unverified"`. */
+            /** @description Default `true`, for every `type`: after the write Repull reads the result back off Booking.com so `applied` says `verified` or `mismatch` — prices and restrictions per night (`rates`, `availability`), the rule set per rate plan (`derived-pricing`). Send `false` to skip the read; `applied` is then `unverified` (`acknowledged` for a restriction-only `availability` write). */
             verify?: boolean | null;
             /** @description Booking.com hotel/property id (numeric; accepted as int or numeric string). */
             property_id: number | string;
-            /** @description For `type: "rates"` each item is a `BookingPricingRateUpdate`; for `type: "availability"` a `BookingAvailabilityUpdate`; for `type: "derived-pricing"` a derived-price rule set. */
-            updates: (components["schemas"]["BookingPricingRateUpdate"] | components["schemas"]["BookingAvailabilityUpdate"])[];
+            /** @description For `type: "rates"` each item is a `BookingPricingRateUpdate`; for `type: "availability"` a `BookingAvailabilityUpdate`; for `type: "derived-pricing"` a `BookingDerivedPricingUpdate`. */
+            updates: (components["schemas"]["BookingPricingRateUpdate"] | components["schemas"]["BookingAvailabilityUpdate"] | components["schemas"]["BookingDerivedPricingUpdate"])[];
+        };
+        /** @description One occupancy rule: the price for a party of `persons`, relative to the leading-occupancy price. Send exactly one of `additional` or `percentage`. */
+        BookingOccupancyRule: {
+            /**
+             * @description The party size this rule prices. Must differ from `leadingOccupancy` and be no more than the room holds.
+             * @example 2
+             */
+            persons: number;
+            /**
+             * @description Signed amount added to the leading-occupancy price, in the rate plan's currency. `-12.01` = 12.01 less.
+             * @example -12.01
+             */
+            additional?: number | null;
+            /** @description Signed percent change from the leading-occupancy price. `-10` = 10% less, `5` = 5% more. (Booking.com's own feeds show the result as a multiplier, `90.0`; Repull reads it back as `-10`.) */
+            percentage?: number | null;
+            /** @description Ask Booking.com to round the derived price. Default `false`. */
+            round?: boolean | null;
+        };
+        /**
+         * @description Occupancy-based pricing for one rate plan (Booking.com "derived prices"). The nightly price you write with `type: "rates"` is the price for `leadingOccupancy` guests; each rule prices a smaller (or other) party relative to it, on every night — date-specific prices included.
+         *
+         *     **A write replaces the rate plan's whole rule set.** Rules you leave out are removed. Send `"occupancies": []` to remove every rule (all party sizes then pay the leading price).
+         *
+         *     Read the rules back with `GET /v1/channels/booking/properties/{id}/rooms` (`rates[].occupancyPricing`); this write also reads them back itself unless you send `verify: false`.
+         */
+        BookingDerivedPricingUpdate: {
+            /**
+             * @description Booking.com room id.
+             * @example 1761085301
+             */
+            roomId: string;
+            /**
+             * @description Booking.com rate-plan id. Its `pricingType` must be `RLO` or `OBP`.
+             * @example 70596570
+             */
+            rateId: string;
+            /**
+             * @description The party size the nightly price is for. Must equal the rate plan's `maxPersons` (`GET /v1/channels/booking/properties/{id}/rooms`): Booking.com accepts a different value and then drops every nightly price on the rate plan, so any other value is refused with `422`.
+             * @example 3
+             */
+            leadingOccupancy: number;
+            /**
+             * @description The rules, one per party size. `rules` is accepted as an alias. Empty removes every rule.
+             * @example [
+             *       {
+             *         "persons": 2,
+             *         "additional": -12.01
+             *       },
+             *       {
+             *         "persons": 1,
+             *         "additional": -12.01
+             *       }
+             *     ]
+             */
+            occupancies: components["schemas"]["BookingOccupancyRule"][];
+        };
+        /** @description Returned by `PUT /v1/channels/booking/availability` for a restriction-only `type: "availability"` write (and as `restrictions` beside `inventory` when the write also changed inventory). */
+        BookingRestrictionWriteResponse: {
+            /** @description How many updates carried a restriction. */
+            requested?: number;
+            /**
+             * @description `verified` — read back, Booking.com holds every restriction sent. `mismatch` — read back, some differ (`verification.rows`). `rejected` — Booking.com refused it (`rejection`). `unverified` — the read-back could not run. `acknowledged` — you sent `verify: false`: Booking.com took the request and nothing was read back.
+             * @enum {string}
+             */
+            applied?: "verified" | "mismatch" | "rejected" | "unverified" | "acknowledged";
+            fields?: string[];
+            dates?: components["schemas"]["BookingRestrictionRequestRow"][];
+            verification?: components["schemas"]["BookingRestrictionVerification"];
+            errors?: {
+                [key: string]: unknown;
+            }[];
+            /** @description Booking.com's answer, verbatim. */
+            booking?: {
+                [key: string]: unknown;
+            };
+            rejection?: components["schemas"]["BookingUpstreamFailure"];
+        };
+        /** @description Returned by `PUT /v1/channels/booking/availability` with `type: "derived-pricing"`. */
+        BookingDerivedPricingWriteResponse: {
+            propertyId?: string;
+            requested?: number;
+            /**
+             * @description `verified` — read back, each rate plan holds exactly the rules sent. `mismatch` — read back and they differ (`verification.rows`). `unverified` — `verify: false`, or the read failed. A refusal is `422 booking_rejected`, not a 200.
+             * @enum {string}
+             */
+            applied?: "verified" | "mismatch" | "unverified";
+            /** @description Per rate plan, the rules it holds now (as read back; as sent when unverified). */
+            rates?: {
+                roomId?: string;
+                rateId?: string;
+                leadingOccupancy?: number;
+                occupancies?: components["schemas"]["BookingOccupancyRule"][];
+            }[];
+            verification?: {
+                ran?: boolean;
+                skippedReason?: string | null;
+                matched?: number;
+                mismatched?: number;
+                rows?: {
+                    roomId?: string;
+                    rateId?: string;
+                    expected?: components["schemas"]["BookingOccupancyRule"][];
+                    booking?: components["schemas"]["BookingOccupancyRule"][] | null;
+                    match?: boolean;
+                }[];
+                error?: string | null;
+            };
+            /** @description Booking.com's answer, verbatim. */
+            booking?: {
+                [key: string]: unknown;
+            };
         };
         /** @description One calendar operation, applied to every date it names. Supply either `dates` OR a `start_date` + `end_date` pair (not both). Unknown fields are refused with `422 invalid_params` rather than dropped, so a misspelling such as `price` (the field is `daily_price`) can never look like a successful write. */
         AirbnbCalendarOperation: {
@@ -13204,10 +13358,11 @@ export interface components {
             };
         };
         /**
-         * @description The request was refused as sent; resending the same body will be refused again. Three cases:
+         * @description The request was refused as sent; resending the same body will be refused again. Four cases:
          *
          *     - `invalid_params` / `inventory_not_in_rate_update` — the body failed validation before anything was sent to Booking.com. `field` names the offending field.
          *     - `restriction_not_supported` — the body asked for a restriction Booking.com's notification has no element for. It is refused rather than dropped, so a restriction you state is never silently lost; set it on the rate plan in the Extranet.
+         *     - `restriction_out_of_range` — a length of stay Booking.com would not keep as sent (maximum above 90, minimum above 91, negative or fractional). Send `0` for no limit.
          *     - `booking_rejected` — Booking.com refused the change; `message` carries their own reason and `booking_ruid` identifies the call in their support tooling.
          */
         BookingWriteRejected: {
@@ -18562,13 +18717,13 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Written. For `type: "rates"` the body reports the occupancy each amount was written at and whether the nights were verified against Booking.com; the other types return Booking.com's answer. */
+            /** @description Written. `type: "rates"` returns `BookingPricingUpdateResponse` (occupancy per amount, prices and restrictions verified per night). A restriction-only `type: "availability"` write returns `BookingRestrictionWriteResponse`; one that also changes inventory returns `{ inventory, restrictions }`. `type: "derived-pricing"` returns `BookingDerivedPricingWriteResponse` (the rules each rate plan holds after the write). */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["BookingPricingUpdateResponse"];
+                    "application/json": components["schemas"]["BookingPricingUpdateResponse"] | components["schemas"]["BookingRestrictionWriteResponse"] | components["schemas"]["BookingDerivedPricingWriteResponse"];
                 };
             };
             400: components["responses"]["BadRequest"];

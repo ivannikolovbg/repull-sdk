@@ -24,6 +24,14 @@ export type Listing = components['schemas']['Listing'];
 export type ListingChannel = components['schemas']['ListingChannel'];
 /** `airbnbAccess` on a conversation or listing — the Airbnb accounts that can act on it and which one sends by default. New in v0.2.43. */
 export type AirbnbAccess = components['schemas']['AirbnbAccess'];
+/** Booking.com `type: "derived-pricing"` item — occupancy rules for one rate plan. New in v0.2.44. */
+export type BookingDerivedPricingUpdate = components['schemas']['BookingDerivedPricingUpdate'];
+/** One occupancy rule (`persons` + `additional` or `percentage`). New in v0.2.44. */
+export type BookingOccupancyRule = components['schemas']['BookingOccupancyRule'];
+/** Response to a `derived-pricing` write — the rules read back from Booking.com. New in v0.2.44. */
+export type BookingDerivedPricingWriteResponse = components['schemas']['BookingDerivedPricingWriteResponse'];
+/** Response to a restriction-only `availability` write, with its read-back. New in v0.2.44. */
+export type BookingRestrictionWriteResponse = components['schemas']['BookingRestrictionWriteResponse'];
 /** `?include=rooms` — one room with its beds. New in v0.2.38. */
 export type ListingRoom = components['schemas']['ListingRoom'];
 /** `?include=policies` — cancellation, house rules, check-in/out, guest rules. New in v0.2.38. */
