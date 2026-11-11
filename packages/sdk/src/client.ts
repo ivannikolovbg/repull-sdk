@@ -102,6 +102,8 @@ import type {
   ReservationCreateResponse,
   ReservationQuoteRequest,
   ReservationQuoteResponse,
+  ReservationSummary,
+  ReservationSummaryQuery,
   ReservationDeclineRequest,
   ReservationRequestResponse,
   ReservationCancelRequest,
@@ -769,6 +771,21 @@ class ReservationsNamespace {
    */
   quote(body: ReservationQuoteRequest): Promise<ReservationQuoteResponse> {
     return this.client.request<ReservationQuoteResponse>('POST', '/v1/reservations/quote', { body });
+  }
+
+  /**
+   * GET /v1/reservations/summary — bookings, nights, revenue, payout, average
+   * nightly rate, occupancy and cancellations for a period, optionally grouped
+   * by `month`, `listing` and/or `channel`. New in v0.2.45.
+   *
+   * ```ts
+   * // This year's next three months vs. the same dates last year, as they stood a year ago
+   * const now = await repull.reservations.summary({ from: '2026-11-10', to: '2027-02-09' });
+   * const pace = await repull.reservations.summary({ from: '2025-11-10', to: '2026-02-09', as_of: '2025-11-10' });
+   * ```
+   */
+  summary(query: ReservationSummaryQuery): Promise<ReservationSummary> {
+    return this.client.request<ReservationSummary>('GET', '/v1/reservations/summary', { query });
   }
 
   /**
