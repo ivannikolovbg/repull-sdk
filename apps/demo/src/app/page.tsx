@@ -4,7 +4,6 @@ import { useCallback, useState } from 'react';
 import { AuthBar, type AuthState } from '@/components/auth-bar';
 import { ConnectPicker } from '@/components/connect-picker';
 import { ChannelGrid } from '@/components/channel-grid';
-import { MarketIntelligence } from '@/components/market-intelligence';
 import { ConnectionsList } from '@/components/connections-list';
 import { ConnectAirbnb } from '@/components/connect-airbnb';
 import { ReservationsTable } from '@/components/reservations-table';
@@ -31,16 +30,13 @@ export default function Home() {
             >
               Repull SDK
             </span>
-            <span className="text-xs px-2 py-0.5 rounded-full border border-white/[0.1] text-white/50">
-              v0.1.0-alpha
-            </span>
           </div>
           <h1 className="mt-2 text-3xl md:text-4xl font-semibold tracking-tight">
             Build vacation-rental tech in TypeScript.
           </h1>
           <p className="muted text-sm md:text-base mt-2 max-w-2xl">
-            One SDK over <span className="kbd">api.repull.dev</span> — Airbnb, Booking.com, VRBO, Plum Guide,
-            and 9 PMS connectors behind a single hosted Connect picker. Mint a session, send the user, get
+            One SDK over <span className="kbd">api.repull.dev</span> — Airbnb, Booking.com, Vrbo and more
+            channels, plus 15 PMS platforms, behind a single hosted Connect picker. Mint a session, send the user, get
             a connection back.
           </p>
         </div>
@@ -50,8 +46,6 @@ export default function Home() {
       <AuthBar state={auth} onChange={setAuth} />
 
       <ChannelGrid auth={auth} />
-
-      <MarketIntelligence auth={auth} />
 
       <ConnectPicker auth={auth} onConnected={handleConnected} />
 
@@ -78,7 +72,7 @@ export default function Home() {
           <a href="https://github.com/ivannikolovbg/repull-sdk" className="underline decoration-dotted">GitHub</a>
         </div>
         <div>
-          Alpha. Not production-ready. License is{' '}
+          License:{' '}
           <a href="https://github.com/ivannikolovbg/repull-sdk/blob/main/LICENSE.md" className="underline decoration-dotted">
             Repull SDK Community License
           </a>

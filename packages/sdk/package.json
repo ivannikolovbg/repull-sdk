@@ -1,7 +1,7 @@
 {
   "name": "@repull/sdk",
   "version": "0.2.44",
-  "description": "Official TypeScript SDK for api.repull.dev — vacation-rental tech, unified.",
+  "description": "Official TypeScript SDK for Repull — one API for Airbnb, Booking.com, Vrbo and 15 PMS platforms.",
   "license": "SEE LICENSE.md",
   "type": "module",
   "publishConfig": {

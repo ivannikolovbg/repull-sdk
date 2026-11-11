@@ -1,8 +1,10 @@
 # Repull SDK
 
-> **Status:** v0.1.0-alpha — early preview. Not production-ready.
+The official TypeScript SDK and interactive demo for [Repull](https://repull.dev) — one API for vacation-rental tech: Airbnb, Booking.com, Vrbo and more channels, plus 15 PMS platforms, behind one key, with white-label Connect for linking your users' accounts.
 
-The official TypeScript SDK and interactive demo for [api.repull.dev](https://api.repull.dev) — the unified API for vacation-rental tech (50+ PMS platforms, Airbnb / Booking.com / VRBO / Plumguide channels, AI ops, white-label OAuth).
+```bash
+npm install @repull/sdk
+```
 
 ## Packages
 
@@ -95,10 +97,8 @@ This SDK is **NOT** MIT-licensed. See [`LICENSE.md`](./LICENSE.md). Free for per
 
 Inquiries: `hello@repull.dev`.
 
-## Status & roadmap
+## Status
 
-This is **Phase A / MVP** from the SDK proposal. In scope today: SDK + demo with Connect / Reservations / Properties / Health / Airbnb listings. Out of scope (Phase B+): Booking/Plumguide/VRBO panels, AI streaming, webhook playground, `@repull/connect-react`, multi-language SDKs.
-
-**Do not consider this production-ready.** API surface may break before v1.0.
+Pre-1.0: minor versions may rename methods when the API changes. SDKs for other languages: [Python](https://github.com/ivannikolovbg/repull-python), [Go](https://github.com/ivannikolovbg/repull-go), [PHP](https://github.com/ivannikolovbg/repull-php), [Ruby](https://github.com/ivannikolovbg/repull-ruby) and [.NET](https://github.com/ivannikolovbg/repull-dotnet). Full API reference at [repull.dev/docs](https://repull.dev/docs).
 
 

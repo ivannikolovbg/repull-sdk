@@ -44,7 +44,7 @@ If your Repull API access is revoked (e.g., terms of service violation, non-paym
 
 ## Why isn't this MIT?
 
-Because the SDK is free to use, but the underlying API at `api.repull.dev` is what costs us money to run, secure, maintain, and keep partner-approved with Airbnb/Booking/VRBO. We give the SDK away to seed the ecosystem; we charge gatecrossers (commercial operators of meaningful scale) so we can keep the API alive for everyone else. The Llama 3 Community License is the precedent — same idea, different threshold.
+Because the SDK is free to use, but the underlying API at `api.repull.dev` is what costs us money to run, secure, maintain, and keep partner-approved with Airbnb, Booking.com, Vrbo and more. We give the SDK away to seed the ecosystem; we charge gatecrossers (commercial operators of meaningful scale) so we can keep the API alive for everyone else. The Llama 3 Community License is the precedent — same idea, different threshold.
 
 ## Questions
 
