@@ -1,7 +1,7 @@
 {
   "name": "repull-sdk-monorepo",
   "private": true,
-  "version": "0.2.44",
+  "version": "0.2.45",
   "description": "Repull SDK monorepo — TypeScript SDK + interactive demo for the Repull API",
   "license": "SEE LICENSE.md",
   "packageManager": "pnpm@9.12.0",

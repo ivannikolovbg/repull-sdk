@@ -269,6 +269,12 @@ export type ReservationUpdateResponse = components['schemas']['ReservationUpdate
 export type ReservationQuoteRequest = components['schemas']['ReservationQuoteRequest'];
 /** Returned by `POST /v1/reservations/quote`. `available: false` is an answer — read `restrictions`. */
 export type ReservationQuoteResponse = components['schemas']['ReservationQuoteResponse'];
+/** `GET /v1/reservations/summary` query: period, counting basis, grouping and `as_of` for pace. */
+export type ReservationSummaryQuery = NonNullable<operations['get_reservation_summary']['parameters']['query']>;
+/** `GET /v1/reservations/summary` response: totals per currency and, with `group_by`, one row per group. */
+export type ReservationSummary = operations['get_reservation_summary']['responses'][200]['content']['application/json'];
+/** One row of a reservation summary (bookings, nights, revenue, payout, occupancy…). */
+export type ReservationSummaryGroup = ReservationSummary['totals'][number];
 /** The `pms` block on reservation write responses — what the PMS did with the write. */
 export type ReservationPmsOutcome = components['schemas']['ReservationPmsOutcome'];
 /** `capabilities.reservations` on listing and connection responses. */

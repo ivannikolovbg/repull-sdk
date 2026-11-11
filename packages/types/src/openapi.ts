@@ -1965,8 +1965,10 @@ export interface paths {
          *
          *     - `edit` — replace message text (requires `message`).
          *     - `unsend` — retract the message.
-         *     - `read` — mark the message as read.
-         *     - `react` — add a reaction (requires `reaction`).
+         *     - `read` — mark the message as read on Airbnb, as the host. Airbnb accepts it (it has been used in production); whether and when the guest sees it as read is up to Airbnb and is not confirmed yet. Your side's read state on each guest message is `hostReadAt` on `GET /v1/conversations/{id}/messages`.
+         *     - `react` — add a reaction (requires `reaction`, e.g. `"👍"`). Airbnb decides which reactions it accepts: a refusal is `422 reaction_not_supported` naming the field, with Airbnb's reason. Removing a reaction is not available yet.
+         *
+         *     Reactions and read receipts from the guest's side arrive on each message (`reactions`, `readAt`) and as the `reservation.message.reaction` and `reservation.message.read` webhooks.
          *
          *     Requires a connected Airbnb host, else `404 no_connection`.
          *
@@ -2330,7 +2332,7 @@ export interface paths {
          *
          *     **Local write only — NOT a channel publish.** This mutates Repull's own copy of the content. It does NOT push to Airbnb / Booking.com; it marks the channels dirty so a later publish knows what changed. Distribution stays a separate explicit step.
          *
-         *     **Photos are deferred:** a provided `photos` array is echoed back in the `deferred` field and NOT persisted (media ingestion is a follow-up).
+         *     **Photos:** `photos` is a list of hosted image URLs (or structured refs) saved to the listing in order: a full replacement by default, or added after the existing ones with `photosMode: "append"`. A publish sends them to the channels. An array with no valid http(s) URL is reported in `deferred` and the existing photos are left alone.
          *
          *     Cross-tenant access (a listing that belongs to a different workspace) returns 404 — never 403. This endpoint is served even when the account is over the plan-listings cap, since editing content on a listing you already own never grows the portfolio.
          *
@@ -4233,6 +4235,7 @@ export interface paths {
          *
          *     - **Airbnb** — one markup per listing.
          *     - **Booking.com** — one markup per **property**, shared by every listing priced through it (`listingIds` names them).
+         *     - **Vrbo** — one markup per connected **Vrbo account**, shared by every listing linked on it (`listingIds` names them). Prices reach Vrbo through its calendar queue.
          *
          *     Returns `404 not_found` for a listing that does not exist or is not in this workspace, and `403 listing_inactive` for an inactive one.
          */
@@ -4245,10 +4248,13 @@ export interface paths {
          *
          *     - **Airbnb** — one markup per listing.
          *     - **Booking.com** — one markup per **property**, shared by every listing priced through it (`listingIds` names them).
+         *     - **Vrbo** — one markup per connected **Vrbo account**, shared by every listing linked on it (`listingIds` names them). Prices reach Vrbo through its calendar queue.
          *
          *     Returns `404 not_found` for a listing that does not exist or is not in this workspace, and `403 listing_inactive` for an inactive one.
          *
          *     On Booking.com the markup belongs to the property, so setting it reprices every listing on that property (`affectedListingIds`). A listing on more than one property must name one with `hotelId`; without it the request is refused with `409 ambiguous_booking_mapping` listing the candidates, rather than repricing a property it guessed.
+         *
+         *     On Vrbo the markup belongs to the connected Vrbo account, so setting it reprices every listing linked on that account (`affectedListingIds`). A listing linked on more than one account names one with `accountId`, else `409 ambiguous_vrbo_account`; a listing not linked to Vrbo is `409 listing_not_on_vrbo`.
          *
          *     `markupPercent` is a percentage — `15` for 15%. A value between 0 and 1 is refused as a probable fraction, with the number to send instead.
          */
@@ -5251,6 +5257,64 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/listings/{id}/publish/vrbo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Progress of a Vrbo listing creation
+         * @description Each step Vrbo has finished, Vrbo's reason when it failed, the new Vrbo listing number once published, and photos Vrbo's review refused. When Vrbo has published the listing, this read links the new unit to the listing with calendar sync on and queues the whole calendar — poll until `linked` is true. A job is remembered while it runs and for a while after; an unknown job is `404` (publish again to resume).
+         */
+        get: operations["getVrboPublishJob"];
+        put?: never;
+        /**
+         * Create a listing on Vrbo
+         * @description Creates the listing on Vrbo in the host's connected Vrbo account, from the listing's content: title and description, property type, rooms and beds, amenities, photos, house rules (guests, minimum age, children, pets, smoking, events), check-in and check-out times, minimum stay, advance notice and booking window, the nightly price, cleaning, pet and extra-guest fees, the cancellation policy and the licence number. Vrbo's automatic new-listing discount is turned off so the listing sells at your prices.
+         *
+         *     **It is a job.** Vrbo's onboarding takes 5–15 minutes (photos go up one at a time), so this answers `202` with `job.jobId`. Poll `GET /v1/listings/{id}/publish/vrbo?jobId=` for each finished step. When Vrbo has published the listing, that read links the new Vrbo unit to the listing with calendar sync on and queues the whole calendar (prices, availability, minimum stay) to Vrbo: **keep polling until `linked` is true.**
+         *
+         *     **Which account.** A workspace with one Vrbo account needs nothing. With several, name it with `accountId` (`"vrbo:13"`, as the connection id). An account connected with messaging access is refused with `403 vrbo_messaging_access`.
+         *
+         *     **Missing content** (street address, city, photos, nightly price, description) is refused with `422 listing_incomplete` naming what is missing. A listing already linked to a Vrbo unit is `409 listing_already_on_vrbo`. A run that failed part-way leaves an unpublished Vrbo property: publishing again completes it instead of creating a second one.
+         *
+         *     This creates a Vrbo listing. Prices, availability and minimum stay on an existing one change through `PUT /v1/availability/{propertyId}`; other content of an existing Vrbo listing is edited on Vrbo.
+         */
+        post: operations["publishListingToVrbo"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/reservations/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Summarize reservations for a period
+         * @description Bookings, nights, revenue, payout, average nightly rate, occupancy and cancellations for a period, in one small response — optionally grouped by `month`, `listing` and/or `channel`. Use it for reporting instead of paging through `GET /v1/reservations`.
+         *
+         *     **Counting (`basis`):** `stay` (default) counts the nights that fall inside `from`–`to` and splits each reservation’s money across its nights, so a stay crossing the window or a month edge brings only its share. `check_in` and `booked` count whole reservations by their check-in or booking date.
+         *
+         *     **Pace (`as_of`):** keeps only what was on the books at the end of that day — booked by then and not yet cancelled. To compare the next three months with the same months last year like for like, ask for last year’s window with `as_of` set to today’s date one year ago.
+         *
+         *     Owner stays are reported apart and never count as revenue or occupancy. Pending requests are counted in `pending` only. Reservations on inactive listings are left out.
+         */
+        get: operations["get_reservation_summary"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -5647,6 +5711,11 @@ export interface components {
             id: string;
             /** @description Internal Repull listing ID this reservation is on. */
             listingId: string;
+            /**
+             * @description Name of the listing this reservation is on, so a report or message can name it without a second lookup.
+             * @example Lakeside Cabin
+             */
+            listingName?: string | null;
             /**
              * @deprecated
              * @description DEPRECATED — use `primaryGuest.id`. Internal Repull guest ID. Kept populated for back-compat.
@@ -6062,8 +6131,44 @@ export interface components {
              * @description When the message reached the channel. `null` while it is `sending` or when it `failed`.
              */
             deliveredAt?: string | null;
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @description Who read it depends on `direction`. **Outbound** (your message): when the guest first read it, from the channel's read receipts — Airbnb reports them; on other channels it stays `null`. Changes are sent as `reservation.message.read`. **Inbound** (the guest's message): when your team answered it or marked it handled.
+             */
             readAt?: string | null;
+            /**
+             * Format: date-time
+             * @description Inbound messages only: when the host or a co-host first read it on the channel, from the channel's read receipts (Airbnb reports them). `null` for your own messages, on other channels, and until your side has opened the conversation since it arrived.
+             */
+            hostReadAt?: string | null;
+            /** @description Reactions on this message, oldest first. Airbnb reports them; empty on other channels. Added and removed reactions are sent as `reservation.message.reaction`. To react, `PATCH /v1/channels/airbnb/messaging/{threadId}/messages/{messageId}` with `action: "react"`. */
+            reactions?: components["schemas"]["MessageReaction"][];
+        };
+        /** @description One reaction on a message. */
+        MessageReaction: {
+            /**
+             * @description The channel's id for this reaction.
+             * @example 9e0b945a-b03d-4e28-ad48-5f7fc706a67f
+             */
+            id?: string;
+            /** @example ❤️ */
+            emoji?: string;
+            by?: components["schemas"]["MessageActor"];
+            /**
+             * Format: date-time
+             * @description When it was added, as the channel reports it.
+             */
+            at?: string | null;
+        };
+        /** @description Who did something on a message. */
+        MessageActor: {
+            /**
+             * @description `guest`, `cotraveler`, `booker`, `host` or `cohost`. `unknown` when the channel did not say.
+             * @example guest
+             */
+            type?: string;
+            /** @example Maya */
+            name?: string | null;
         };
         /** @description One scored sub-category of a multi-axis review (cleanliness, communication, accuracy, etc.). Categories vary by platform. */
         ReviewCategory: {
@@ -6681,7 +6786,7 @@ export interface components {
          * @description Canonical event type identifier. Every webhook delivery declares one of these in its `type` field; SDKs key the discriminated `WebhookEvent` union on this value.
          * @enum {string}
          */
-        WebhookEventType: "reservation.created" | "reservation.updated" | "reservation.cancelled" | "reservation.message.received" | "reservation.message.sent" | "reservation.message.updated" | "reservation.alteration.created" | "reservation.alteration.responded" | "reservation.request.created" | "reservation.request.updated" | "booking.unacknowledged" | "channel.sync.failed" | "channel.degraded" | "reservation.thread.assigned" | "inquiry.created" | "inquiry.updated" | "listing.created" | "listing.updated" | "listing.deleted" | "listing.suspended" | "listing.reactivated" | "account.created" | "connect.session.completed" | "account.disconnected" | "account.import.started" | "account.import.completed" | "account.import.failed" | "review.created" | "review.responded" | "ai.operation.completed" | "ai.operation.failed" | "payment.completed" | "payment.refunded" | "payout.completed" | "migration.completed" | "migration.failed" | "repull.ping" | "usage.quota.warning";
+        WebhookEventType: "reservation.created" | "reservation.updated" | "reservation.cancelled" | "reservation.message.received" | "reservation.message.sent" | "reservation.message.updated" | "reservation.message.read" | "reservation.message.reaction" | "reservation.alteration.created" | "reservation.alteration.responded" | "reservation.request.created" | "reservation.request.updated" | "booking.unacknowledged" | "channel.sync.failed" | "channel.degraded" | "reservation.thread.assigned" | "inquiry.created" | "inquiry.updated" | "listing.created" | "listing.updated" | "listing.deleted" | "listing.suspended" | "listing.reactivated" | "account.created" | "connect.session.completed" | "account.disconnected" | "account.import.started" | "account.import.completed" | "account.import.failed" | "review.created" | "review.responded" | "ai.operation.completed" | "ai.operation.failed" | "payment.completed" | "payment.refunded" | "payout.completed" | "migration.completed" | "migration.failed" | "repull.ping" | "usage.quota.warning";
         /**
          * @description Lightweight reservation snapshot delivered as `data.object` on every reservation webhook event. Stable across `reservation.created`, `reservation.updated`, and `reservation.cancelled`. Fetch the full reservation via `GET /v1/reservations/{id}` if you need pricing, guest contact info, or audit history — those are deliberately omitted to keep deliveries small.
          *
@@ -6890,7 +6995,7 @@ export interface components {
             aiGenerated?: boolean;
             attachments?: components["schemas"]["ConversationMessageAttachment"][];
         };
-        /** @description Payload for `reservation.message.updated`: a message was edited on the channel. `body` is the new text; `previousBody` what it replaced. Read receipts and reactions do not fire it. */
+        /** @description Payload for `reservation.message.updated`: a message was edited on the channel. `body` is the new text; `previousBody` what it replaced. Read receipts and reactions do not fire it: they have their own events, `reservation.message.read` and `reservation.message.reaction`. */
         ReservationMessageUpdatedPayload: {
             /**
              * @description Booking.com only: the hotel (property) id of the conversation's listing. Absent on other channels. A Booking.com Extranet login can cover several hotels, so use this to route the message.
@@ -6928,6 +7033,69 @@ export interface components {
             sentAt?: string;
             /** @enum {string} */
             direction?: "inbound" | "outbound";
+        };
+        /** @description Payload for `reservation.message.read`: the guest read the conversation up to and including `messageId`, a message from your side. Every earlier message in it was read by then too. Airbnb reports read receipts; other channels do not fire this event. */
+        ReservationMessageReadPayload: {
+            /** @example 235970 */
+            reservationId?: number | null;
+            /**
+             * @description The conversation id (`GET /v1/conversations/{id}`).
+             * @example 900301
+             */
+            threadId?: string;
+            /** @example 2648057088 */
+            externalThreadId?: string | null;
+            /** @example 23893 */
+            listingId?: number | null;
+            /** @example airbnb */
+            channel?: string;
+            /**
+             * @description The newest message the guest has read. Its `readAt` is now set.
+             * @example 1854462
+             */
+            messageId?: string;
+            /** @example 33532605539 */
+            externalMessageId?: string | null;
+            /**
+             * Format: date-time
+             * @description When the guest read it, as the channel reports it.
+             */
+            readAt?: string;
+            reader?: components["schemas"]["MessageActor"];
+        };
+        /** @description Payload for `reservation.message.reaction`: someone on the conversation added or removed a reaction. Airbnb reports reactions; other channels do not fire this event. */
+        ReservationMessageReactionPayload: {
+            /** @example 235970 */
+            reservationId?: number | null;
+            /** @example 900301 */
+            threadId?: string;
+            /** @example 2648057088 */
+            externalThreadId?: string | null;
+            /** @example 23893 */
+            listingId?: number | null;
+            /** @example airbnb */
+            channel?: string;
+            /**
+             * @description The message reacted to.
+             * @example 1854462
+             */
+            messageId?: string;
+            /** @example 33532605539 */
+            externalMessageId?: string | null;
+            /** @enum {string} */
+            action?: "added" | "removed";
+            reaction?: {
+                /** @example 9e0b945a-b03d-4e28-ad48-5f7fc706a67f */
+                id?: string;
+                /** @example ❤️ */
+                emoji?: string;
+                by?: components["schemas"]["MessageActor"];
+                /**
+                 * Format: date-time
+                 * @description When it was added; for `removed`, when Repull saw it go.
+                 */
+                at?: string;
+            };
         };
         /** @description Lightweight alteration snapshot delivered as `data.object` on `reservation.alteration.*` events. Currently Airbnb only. Fetch full state (original vs new dates/guests/price) via `GET /v1/channels/airbnb/alterations` filtered by `reservation_code`. */
         AlterationWebhookObject: {
@@ -7347,7 +7515,7 @@ export interface components {
             /** Format: date-time */
             completedAt?: string;
         };
-        /** @description Payload for `account.disconnected`. A PMS or channel connection was revoked, expired, or rejected by the upstream provider. */
+        /** @description Payload for `account.disconnected`. A PMS or channel connection was revoked, expired, or rejected by the upstream provider. Sent for Airbnb, Booking.com Extranet logins, Vrbo logins and PMS connections (Hostaway, Guesty, Smoobu, Lodgify, Beds24, Hospitable, OwnerRez, iGMS, BookingSync, Track, Mews, Cloudbeds, Zeevou, RentalReady, CiiRUS, …). A PMS connection is reported when the PMS refuses its credentials (API key revoked or invalid, 401/403, token refresh refused); timeouts, rate limits and 5xx errors are retried and never reported. Sent once per disconnect, not on every failed sync. When the connection works again — credentials fixed in the PMS, or reconnected — Repull re-imports the changes made while it was down and sends their `reservation.*` events, so nothing missed has to be fetched by hand. */
         AccountDisconnectedPayload: {
             /**
              * Format: uuid
@@ -7358,7 +7526,10 @@ export interface components {
             accountId?: string;
             /** @description Stable connection identifier — alias of accountId for this event variant. */
             connectionId?: string | null;
-            /** @example airbnb */
+            /**
+             * @description Channel or PMS id: `airbnb`, `booking_extranet`, `vrbo`, or the PMS (`hostaway`, `guesty`, `smoobu`, …).
+             * @example airbnb
+             */
             provider?: string;
             /**
              * Format: date-time
@@ -7366,7 +7537,7 @@ export interface components {
              */
             disconnectedAt?: string;
             /**
-             * @description Why the connection was lost. `refresh_token_rejected` — upstream OAuth refresh endpoint returned a hard rejection. `manual_disconnect` — host/admin disconnected via the dashboard. `auth_expired` — credentials aged out without ever being used. `revoked_upstream` — provider notified us the user revoked access.
+             * @description Why the connection was lost. `refresh_token_rejected` — upstream OAuth refresh endpoint returned a hard rejection. `manual_disconnect` — host/admin disconnected via the dashboard. `auth_expired` — the saved credentials stopped working: an Extranet or Vrbo login was signed out, or a PMS rejected its API key or token (401/403). `revoked_upstream` — provider notified us the user revoked access.
              * @example refresh_token_rejected
              * @enum {string}
              */
@@ -7749,6 +7920,48 @@ export interface components {
             timestamp: string;
             account?: components["schemas"]["WebhookEventAccount"];
             data: components["schemas"]["ReservationMessageUpdatedPayload"];
+        };
+        ReservationMessageReadEvent: {
+            /**
+             * @description The event name. This field is `event`, not `type`. (enum property replaced by openapi-typescript)
+             * @enum {string}
+             */
+            event: "reservation.message.read";
+            /**
+             * Format: uuid
+             * @description Stable across every delivery and replay of this logical event — dedupe on it.
+             */
+            eventId: string;
+            /** @example 2026-04 */
+            apiVersion: string;
+            /**
+             * Format: date-time
+             * @description When this delivery was built.
+             */
+            timestamp: string;
+            account?: components["schemas"]["WebhookEventAccount"];
+            data: components["schemas"]["ReservationMessageReadPayload"];
+        };
+        ReservationMessageReactionEvent: {
+            /**
+             * @description The event name. This field is `event`, not `type`. (enum property replaced by openapi-typescript)
+             * @enum {string}
+             */
+            event: "reservation.message.reaction";
+            /**
+             * Format: uuid
+             * @description Stable across every delivery and replay of this logical event — dedupe on it.
+             */
+            eventId: string;
+            /** @example 2026-04 */
+            apiVersion: string;
+            /**
+             * Format: date-time
+             * @description When this delivery was built.
+             */
+            timestamp: string;
+            account?: components["schemas"]["WebhookEventAccount"];
+            data: components["schemas"]["ReservationMessageReactionPayload"];
         };
         ReservationAlterationCreatedEvent: {
             /**
@@ -8598,7 +8811,7 @@ export interface components {
             data: components["schemas"]["MigrationImportPayload"];
         };
         /** @description The full event envelope POSTed to your webhook URL. Discriminated on `type` — narrow `event.data` by switching on `event.type`. Use the matching `*Event` variant directly if your SDK lacks discriminator support. Events about an inactive listing (reservations, messages, alterations, reviews, payments, calendar and listing events) are not delivered. The data keeps syncing while the listing is inactive, but its events are never sent — including after you reactivate it; webhooks resume for events that happen from reactivation on. Account-level events are always delivered. */
-        WebhookEvent: components["schemas"]["ReservationCreatedEvent"] | components["schemas"]["ReservationUpdatedEvent"] | components["schemas"]["ReservationCancelledEvent"] | components["schemas"]["ReservationMessageReceivedEvent"] | components["schemas"]["ReservationMessageSentEvent"] | components["schemas"]["ReservationMessageUpdatedEvent"] | components["schemas"]["ReservationAlterationCreatedEvent"] | components["schemas"]["ReservationAlterationRespondedEvent"] | components["schemas"]["ReservationRequestCreatedEvent"] | components["schemas"]["ReservationRequestUpdatedEvent"] | components["schemas"]["BookingUnacknowledgedEvent"] | components["schemas"]["ChannelSyncFailedEvent"] | components["schemas"]["ChannelDegradedEvent"] | components["schemas"]["ReservationThreadAssignedEvent"] | components["schemas"]["InquiryCreatedEvent"] | components["schemas"]["InquiryUpdatedEvent"] | components["schemas"]["ListingCreatedEvent"] | components["schemas"]["ListingUpdatedEvent"] | components["schemas"]["ListingDeletedEvent"] | components["schemas"]["ListingSuspendedEvent"] | components["schemas"]["ListingReactivatedEvent"] | components["schemas"]["AccountCreatedEvent"] | components["schemas"]["ConnectSessionCompletedEvent"] | components["schemas"]["AccountDisconnectedEvent"] | components["schemas"]["AccountImportStartedEvent"] | components["schemas"]["AccountImportCompletedEvent"] | components["schemas"]["AccountImportFailedEvent"] | components["schemas"]["ReviewCreatedEvent"] | components["schemas"]["ReviewRespondedEvent"] | components["schemas"]["AiOperationCompletedEvent"] | components["schemas"]["AiOperationFailedEvent"] | components["schemas"]["PaymentCompletedEvent"] | components["schemas"]["PaymentRefundedEvent"] | components["schemas"]["PayoutCompletedEvent"] | components["schemas"]["RepullPingEvent"] | components["schemas"]["UsageQuotaWarningEvent"] | components["schemas"]["MigrationCompletedEvent"] | components["schemas"]["MigrationFailedEvent"];
+        WebhookEvent: components["schemas"]["ReservationCreatedEvent"] | components["schemas"]["ReservationUpdatedEvent"] | components["schemas"]["ReservationCancelledEvent"] | components["schemas"]["ReservationMessageReceivedEvent"] | components["schemas"]["ReservationMessageSentEvent"] | components["schemas"]["ReservationMessageUpdatedEvent"] | components["schemas"]["ReservationMessageReadEvent"] | components["schemas"]["ReservationMessageReactionEvent"] | components["schemas"]["ReservationAlterationCreatedEvent"] | components["schemas"]["ReservationAlterationRespondedEvent"] | components["schemas"]["ReservationRequestCreatedEvent"] | components["schemas"]["ReservationRequestUpdatedEvent"] | components["schemas"]["BookingUnacknowledgedEvent"] | components["schemas"]["ChannelSyncFailedEvent"] | components["schemas"]["ChannelDegradedEvent"] | components["schemas"]["ReservationThreadAssignedEvent"] | components["schemas"]["InquiryCreatedEvent"] | components["schemas"]["InquiryUpdatedEvent"] | components["schemas"]["ListingCreatedEvent"] | components["schemas"]["ListingUpdatedEvent"] | components["schemas"]["ListingDeletedEvent"] | components["schemas"]["ListingSuspendedEvent"] | components["schemas"]["ListingReactivatedEvent"] | components["schemas"]["AccountCreatedEvent"] | components["schemas"]["ConnectSessionCompletedEvent"] | components["schemas"]["AccountDisconnectedEvent"] | components["schemas"]["AccountImportStartedEvent"] | components["schemas"]["AccountImportCompletedEvent"] | components["schemas"]["AccountImportFailedEvent"] | components["schemas"]["ReviewCreatedEvent"] | components["schemas"]["ReviewRespondedEvent"] | components["schemas"]["AiOperationCompletedEvent"] | components["schemas"]["AiOperationFailedEvent"] | components["schemas"]["PaymentCompletedEvent"] | components["schemas"]["PaymentRefundedEvent"] | components["schemas"]["PayoutCompletedEvent"] | components["schemas"]["RepullPingEvent"] | components["schemas"]["UsageQuotaWarningEvent"] | components["schemas"]["MigrationCompletedEvent"] | components["schemas"]["MigrationFailedEvent"];
         /** @description A listing paired with its Airbnb connections. The list endpoint groups every Airbnb connection of the same `listingId` under a single `connections[]` array. */
         AirbnbListing: {
             /**
@@ -12769,6 +12982,10 @@ export interface components {
             reservationsImported?: number | null;
             /** @description How many reservations Booking.com returned for the property. Equal to `reservationsImported` unless some could not be attached to a listing — so `0` here means Booking.com had none. `null` when the sync could not run. */
             reservationsFound?: number | null;
+            /** @description Ids of the listings this call created from Booking.com rooms (`create: true`). They start without a calendar: Booking.com shows those rooms closed and nothing is sent to Booking.com for them until they have one. Give a listing a calendar by setting its prices and availability with `PUT /v1/availability/{propertyId}`, or by mapping the same home from Airbnb so its calendar is used. Rooms mapped to an existing listing are not listed: that listing's calendar is pushed as before. */
+            needsCalendar: string[];
+            /** @description Plain-language explanation of `needsCalendar`, present only when it is non-empty. */
+            calendarNote?: string;
         };
         /** @description Body for `POST /v1/channels/airbnb/listings/map`. */
         MapAirbnbListingRequest: {
@@ -17261,7 +17478,7 @@ export interface operations {
                     action: "edit" | "unsend" | "read" | "react";
                     /** @description New message text. Required when `action` is `edit`. */
                     message?: string;
-                    /** @description Reaction to add. Required when `action` is `react`. */
+                    /** @description Reaction to add, e.g. `👍`. Required when `action` is `react`. At most 32 characters; Airbnb decides which reactions it accepts. */
                     reaction?: string;
                 };
             };
@@ -22767,6 +22984,19 @@ export interface operations {
                             /** @description Listings in this workspace priced through this property — all share this markup. */
                             listingIds?: string[];
                         }[];
+                        vrbo?: {
+                            /** @description The Vrbo account, as its connection id (`vrbo:13`). */
+                            accountId?: string;
+                            /** @description The Vrbo listing number this listing is linked to. */
+                            vrboListingNumber?: string;
+                            /**
+                             * @description Percent added on Vrbo, for every listing linked on this account.
+                             * @example 20
+                             */
+                            markupPercent?: number | null;
+                            /** @description Listings in this workspace linked on this Vrbo account — all share this markup. */
+                            listingIds?: string[];
+                        }[];
                     };
                 };
             };
@@ -22795,16 +23025,18 @@ export interface operations {
                  */
                 "application/json": {
                     /** @enum {string} */
-                    channel: "airbnb" | "booking";
+                    channel: "airbnb" | "booking" | "vrbo";
                     /** @description 15 = +15%. `null` removes the markup. */
                     markupPercent: number | null;
                     /** @description Booking.com property — required when the listing is on more than one. */
                     hotelId?: string;
+                    /** @description Vrbo account (`vrbo:13`) — required when the listing is linked on more than one. */
+                    accountId?: string;
                 };
             };
         };
         responses: {
-            /** @description Saved. `{ id, channel, markupPercent, changed, hotelId?, affectedListingIds, pricesResent }`. */
+            /** @description Saved. `{ id, channel, markupPercent, changed, hotelId? | accountId?, affectedListingIds, pricesResent }`. */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -22814,7 +23046,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["ListingInactive"];
             404: components["responses"]["NotFound"];
-            /** @description `ambiguous_booking_mapping` — the listing is on several Booking.com properties; `valid_values` lists them. */
+            /** @description `ambiguous_booking_mapping` — the listing is on several Booking.com properties; `valid_values` lists them. `ambiguous_vrbo_account` — the same for Vrbo accounts. `listing_not_on_vrbo` — `channel: "vrbo"` on a listing with no Vrbo unit linked. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -25519,6 +25751,407 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+        };
+    };
+    getVrboPublishJob: {
+        parameters: {
+            query: {
+                /** @description `job.jobId` from the POST. */
+                jobId: string;
+            };
+            header?: never;
+            path: {
+                /** @description Repull listing id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Job state */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        listingId?: number;
+                        /** @enum {string} */
+                        channel?: "vrbo";
+                        job?: {
+                            /** @description Pass to `GET /v1/listings/{id}/publish/vrbo?jobId=`. */
+                            jobId?: string;
+                            /** @enum {string} */
+                            status?: "running" | "done" | "failed";
+                            listingId?: number;
+                            /** @description The Vrbo account (connection `vrbo:<accountId>`) the listing is created in. */
+                            accountId?: number;
+                            /** @description Steps Vrbo has finished, in order: create, amenities, property type, rooms, photos, headline + description, house rules, rate, booking options, publish, fees, cancellation policy, … */
+                            steps?: string[];
+                            /** @description Vrbo's reason when `status` is `failed`. */
+                            error?: string | null;
+                            /** @description The new Vrbo listing number, once Vrbo has published it. */
+                            vrboListingNumber?: string | null;
+                            /** @description The Vrbo property being built. Send it back as `propertyId` to finish a run that failed part-way. */
+                            propertyId?: string | null;
+                            /** @description The new Vrbo unit is linked to the listing with calendar sync on, and the whole calendar has been queued to Vrbo. */
+                            linked?: boolean;
+                            /** @description Photos Vrbo's review refused (position in the listing's order, and Vrbo's reason). */
+                            rejectedPhotos?: {
+                                photo?: number | null;
+                                reason?: string;
+                            }[];
+                            /** @description POST only: where the Vrbo listing departs from the listing's content because of a Vrbo rule. */
+                            adjustments?: string[];
+                            /** @description POST only: set when an unfinished Vrbo property of this listing is completed instead of starting a new one. */
+                            resumedPropertyId?: string | null;
+                        };
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            404: components["responses"]["NotFound"];
+            /** @description `vrbo_error` */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    publishListingToVrbo: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Repull listing id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @description The Vrbo account, as its connection id (`"vrbo:13"`) or the bare number. Needed only when the workspace has several. */
+                    accountId?: string;
+                    /** @description Finish this unpublished Vrbo property (from a failed run's `job.propertyId`) instead of starting a new one. */
+                    propertyId?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Creation started */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        listingId?: number;
+                        /** @enum {string} */
+                        channel?: "vrbo";
+                        job?: {
+                            /** @description Pass to `GET /v1/listings/{id}/publish/vrbo?jobId=`. */
+                            jobId?: string;
+                            /** @enum {string} */
+                            status?: "running" | "done" | "failed";
+                            listingId?: number;
+                            /** @description The Vrbo account (connection `vrbo:<accountId>`) the listing is created in. */
+                            accountId?: number;
+                            /** @description Steps Vrbo has finished, in order: create, amenities, property type, rooms, photos, headline + description, house rules, rate, booking options, publish, fees, cancellation policy, … */
+                            steps?: string[];
+                            /** @description Vrbo's reason when `status` is `failed`. */
+                            error?: string | null;
+                            /** @description The new Vrbo listing number, once Vrbo has published it. */
+                            vrboListingNumber?: string | null;
+                            /** @description The Vrbo property being built. Send it back as `propertyId` to finish a run that failed part-way. */
+                            propertyId?: string | null;
+                            /** @description The new Vrbo unit is linked to the listing with calendar sync on, and the whole calendar has been queued to Vrbo. */
+                            linked?: boolean;
+                            /** @description Photos Vrbo's review refused (position in the listing's order, and Vrbo's reason). */
+                            rejectedPhotos?: {
+                                photo?: number | null;
+                                reason?: string;
+                            }[];
+                            /** @description POST only: where the Vrbo listing departs from the listing's content because of a Vrbo rule. */
+                            adjustments?: string[];
+                            /** @description POST only: set when an unfinished Vrbo property of this listing is completed instead of starting a new one. */
+                            resumedPropertyId?: string | null;
+                        };
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            /** @description `listing_inactive`, or `vrbo_messaging_access`: the account is connected with messaging access. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            /** @description `listing_already_on_vrbo`, `vrbo_not_connected`, or `ambiguous_vrbo_account` (name it with `accountId`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `listing_incomplete`: the listing lacks something Vrbo requires; `message` names it. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `vrbo_error`: Vrbo did not complete the request. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    get_reservation_summary: {
+        parameters: {
+            query: {
+                /** @description Only the records of one connected account, as `provider:externalAccountId` — the pair from a webhook `account` block, `connect.session.completed`, or `GET /v1/connect/{provider}` → `accounts`. A record belongs to an account when it is on that account's listings and on its channel (a PMS account: came in through that PMS). An account with no listings returns an empty page. */
+                account?: components["parameters"]["Account"];
+                /** @description First day of the period. */
+                from: string;
+                /** @description Last day of the period (inclusive). At most 732 days after `from`. */
+                to: string;
+                /** @description Which date puts a reservation in the period: the nights stayed (`stay`), the check-in date, or the booking date. */
+                basis?: "stay" | "check_in" | "booked";
+                /** @description Up to two of `month`, `listing`, `channel`, comma-separated. Omit for totals only. */
+                group_by?: string;
+                /** @description Count only what was on the books at the end of this day. A reservation cancelled without a reported cancellation date counts as cancelled. */
+                as_of?: string;
+                /** @description One listing only. */
+                listing_id?: number;
+                /** @description One channel only. */
+                platform?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Totals for the period (one row per currency) and, when `group_by` is set, one row per group. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /**
+                         * Format: date
+                         * @example 2026-11-10
+                         */
+                        from: string;
+                        /**
+                         * Format: date
+                         * @example 2027-02-09
+                         */
+                        to: string;
+                        /** @enum {string} */
+                        basis: "stay" | "check_in" | "booked";
+                        groupBy: ("month" | "listing" | "channel")[];
+                        /** Format: date */
+                        asOf: string | null;
+                        /**
+                         * @description Active listings covered (the occupancy denominator).
+                         * @example 19
+                         */
+                        listingCount: number;
+                        totals: {
+                            /**
+                             * @description Present when grouped by `month` (YYYY-MM).
+                             * @example 2026-12
+                             */
+                            month?: string;
+                            /**
+                             * @description Present when grouped by `listing`.
+                             * @example 4011
+                             */
+                            listingId?: string;
+                            /**
+                             * @description Present when grouped by `listing`.
+                             * @example Lakeside Cabin
+                             */
+                            listingName?: string | null;
+                            /**
+                             * @description Present when grouped by `channel`.
+                             * @example airbnb
+                             */
+                            channel?: string;
+                            /**
+                             * @description Money is never added across currencies: a period with two currencies has one row per currency.
+                             * @example CAD
+                             */
+                            currency: string | null;
+                            /**
+                             * @description Guest stays with at least one night counted (owner stays are in `ownerStays`).
+                             * @example 212
+                             */
+                            reservations: number;
+                            /**
+                             * @description Guest nights counted.
+                             * @example 1104
+                             */
+                            nights: number;
+                            /**
+                             * @description What guests paid (`financials.totalPrice`). With `basis=stay`, a stay that crosses the window or a month edge brings only the share of its nights inside.
+                             * @example 18250.4
+                             */
+                            revenue: number;
+                            /**
+                             * @description What the host receives (`financials.host.revenue`), for reservations where it is known.
+                             * @example 18250.4
+                             */
+                            payout: number;
+                            /** @description How many reservations `payout` covers. */
+                            reservationsWithPayout?: number;
+                            /**
+                             * @description Accommodation per night (revenue per night when the accommodation subtotal is unknown).
+                             * @example 178.5
+                             */
+                            averageNightlyRate?: number | null;
+                            /** @example 5.2 */
+                            averageStayNights?: number | null;
+                            /**
+                             * @description Days between booking and check-in.
+                             * @example 41
+                             */
+                            averageLeadTimeDays?: number | null;
+                            /**
+                             * @description Guest nights / available nights, 0–1. Only with `basis=stay`, and not when grouped by `channel`. Blocked nights are not subtracted from availability.
+                             * @example 0.6431
+                             */
+                            occupancy?: number | null;
+                            /**
+                             * @description Active listings × days in the period (one listing per row when grouped by `listing`).
+                             * @example 1716
+                             */
+                            availableNights?: number | null;
+                            /** @example 18 */
+                            cancelled: number;
+                            /** @example 18250.4 */
+                            cancelledRevenue?: number;
+                            /**
+                             * @description Requests awaiting an answer; not in revenue or nights.
+                             * @example 2
+                             */
+                            pending: number;
+                            /** @example 3 */
+                            ownerStays: number;
+                            /** @example 12 */
+                            ownerNights: number;
+                        }[];
+                        groups: {
+                            /**
+                             * @description Present when grouped by `month` (YYYY-MM).
+                             * @example 2026-12
+                             */
+                            month?: string;
+                            /**
+                             * @description Present when grouped by `listing`.
+                             * @example 4011
+                             */
+                            listingId?: string;
+                            /**
+                             * @description Present when grouped by `listing`.
+                             * @example Lakeside Cabin
+                             */
+                            listingName?: string | null;
+                            /**
+                             * @description Present when grouped by `channel`.
+                             * @example airbnb
+                             */
+                            channel?: string;
+                            /**
+                             * @description Money is never added across currencies: a period with two currencies has one row per currency.
+                             * @example CAD
+                             */
+                            currency: string | null;
+                            /**
+                             * @description Guest stays with at least one night counted (owner stays are in `ownerStays`).
+                             * @example 212
+                             */
+                            reservations: number;
+                            /**
+                             * @description Guest nights counted.
+                             * @example 1104
+                             */
+                            nights: number;
+                            /**
+                             * @description What guests paid (`financials.totalPrice`). With `basis=stay`, a stay that crosses the window or a month edge brings only the share of its nights inside.
+                             * @example 18250.4
+                             */
+                            revenue: number;
+                            /**
+                             * @description What the host receives (`financials.host.revenue`), for reservations where it is known.
+                             * @example 18250.4
+                             */
+                            payout: number;
+                            /** @description How many reservations `payout` covers. */
+                            reservationsWithPayout?: number;
+                            /**
+                             * @description Accommodation per night (revenue per night when the accommodation subtotal is unknown).
+                             * @example 178.5
+                             */
+                            averageNightlyRate?: number | null;
+                            /** @example 5.2 */
+                            averageStayNights?: number | null;
+                            /**
+                             * @description Days between booking and check-in.
+                             * @example 41
+                             */
+                            averageLeadTimeDays?: number | null;
+                            /**
+                             * @description Guest nights / available nights, 0–1. Only with `basis=stay`, and not when grouped by `channel`. Blocked nights are not subtracted from availability.
+                             * @example 0.6431
+                             */
+                            occupancy?: number | null;
+                            /**
+                             * @description Active listings × days in the period (one listing per row when grouped by `listing`).
+                             * @example 1716
+                             */
+                            availableNights?: number | null;
+                            /** @example 18 */
+                            cancelled: number;
+                            /** @example 18250.4 */
+                            cancelledRevenue?: number;
+                            /**
+                             * @description Requests awaiting an answer; not in revenue or nights.
+                             * @example 2
+                             */
+                            pending: number;
+                            /** @example 3 */
+                            ownerStays: number;
+                            /** @example 12 */
+                            ownerNights: number;
+                        }[];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
+            422: components["responses"]["UnprocessableEntity"];
+            500: components["responses"]["InternalError"];
         };
     };
 }
