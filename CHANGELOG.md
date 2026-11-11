@@ -5,7 +5,7 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ## 0.2.45 — 2026-11-11
 
-- New: `GET /v1/reservations/summary` (`get_reservation_summary`) — bookings, nights, revenue, payout, average nightly rate, occupancy and cancellations for a period, optionally grouped by `month`, `listing` and/or `channel`. `as_of` gives a like-for-like pace comparison with last year.
+- New: `repull.reservations.summary()` (`GET /v1/reservations/summary`) — bookings, nights, revenue, payout, average nightly rate, occupancy and cancellations for a period, optionally grouped by `month`, `listing` and/or `channel`. `as_of` gives a like-for-like pace comparison with last year.
 - Reservation `listingName`: the listing's name next to its id, on list, get and reservation webhooks.
 - Regenerated from the live spec (also picks up the latest listing, markup and message changes).
 
