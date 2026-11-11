@@ -36,7 +36,7 @@ export default function Home() {
           </h1>
           <p className="muted text-sm md:text-base mt-2 max-w-2xl">
             One SDK over <span className="kbd">api.repull.dev</span> — Airbnb, Booking.com, Vrbo and more
-            channels, plus 15 PMS platforms, behind a single hosted Connect picker. Mint a session, send the user, get
+            channels, plus 14 PMS platforms, behind a single hosted Connect picker. Mint a session, send the user, get
             a connection back.
           </p>
         </div>
