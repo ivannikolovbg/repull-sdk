@@ -9672,6 +9672,94 @@ export interface components {
                  * @example 60
                  */
                 retry_after?: number;
+                /**
+                 * @description The plan the request was counted against. Present on quota refusals (`rate_limit_exceeded`, `daily_limit_exceeded`, `credits_exhausted`).
+                 * @example free
+                 */
+                tier?: string;
+                /**
+                 * @description Which limit refused the request: `monthly` (the plan's request quota), `daily` (the daily loop guard), the daily AI quota, or `per_api_key` (the per-minute limiter: wait `Retry-After`, nothing else).
+                 * @example monthly
+                 */
+                scope?: string;
+                /**
+                 * @description The limit that was reached. Present on quota refusals.
+                 * @example 1000
+                 */
+                limit?: number;
+                /**
+                 * @description How much of `limit` is used. Present on quota refusals.
+                 * @example 1000
+                 */
+                used?: number;
+                /**
+                 * Format: date-time
+                 * @description When the refused quota resets. Present on quota refusals.
+                 * @example 2026-12-01T00:00:00.000Z
+                 */
+                resets_at?: string;
+                /**
+                 * @description This month's requests extrapolated to the whole month — the usage `upgrade` was sized for. Present with `upgrade`.
+                 * @example 2858
+                 */
+                projected_monthly_requests?: number;
+                /** @description The cheapest plan that covers your usage. Present on the monthly quota refusal (`rate_limit_exceeded`, `scope: "monthly"`), `credits_exhausted` and `daily_limit_exceeded`. `monthly_price_usd` is exactly what `checkout_url` charges for `listings`. `plan: "custom"` means no self-serve plan covers the usage (already on Starter, more than Starter's quotas, or more than 100 listings): email `contact_email`. */
+                upgrade?: {
+                    /**
+                     * @example starter
+                     * @enum {string}
+                     */
+                    plan: "starter" | "custom";
+                    /** @example Starter */
+                    name: string;
+                    /**
+                     * @description Monthly price in USD for `listings`: Starter's base plus its per-listing price. Null for `custom`.
+                     * @example 99
+                     */
+                    monthly_price_usd: number | null;
+                    /**
+                     * @description Listings the price covers: active plus held back by your plan, across your workspaces.
+                     * @example 2
+                     */
+                    listings: number | null;
+                    /**
+                     * @description Requests a month the plan includes. Null for `custom`.
+                     * @example 100000
+                     */
+                    monthly_requests: number | null;
+                    /**
+                     * @description The plan's daily request cap. Null for `custom`.
+                     * @example 25000
+                     */
+                    daily_requests: number | null;
+                    /**
+                     * Format: uri
+                     * @description Opens checkout for exactly `monthly_price_usd`. Null for `custom`.
+                     * @example https://repull.dev/dashboard/billing?upgrade=starter
+                     */
+                    checkout_url: string | null;
+                    /**
+                     * Format: email
+                     * @description Where to ask for a plan when `plan` is `custom`.
+                     * @example null
+                     */
+                    contact_email: string | null;
+                };
+                /** @description Pay-as-you-go credits, the alternative to a plan change: past your plan's monthly quota, requests are served while the wallet has a balance. Present with `upgrade`. */
+                credits?: {
+                    /** @example 1 */
+                    usd_per_1000_requests: number;
+                    /**
+                     * Format: uri
+                     * @example https://repull.dev/dashboard/billing
+                     */
+                    top_up_url: string;
+                    /**
+                     * @description Your wallet balance; null when you have no wallet.
+                     * @example null
+                     */
+                    balance_usd: number | null;
+                };
                 /** @description LAST-RESORT contact handle. Only set on errors that genuinely cannot be self-fixed (billing dispute, account-state corruption, OAuth partner intervention). Never fall back to support before trying `fix` and `docs_url`. */
                 support?: {
                     /** Format: email */
@@ -13870,7 +13958,7 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
-        /** @description Quota exceeded. Wait `retry_after` seconds (or until `X-RateLimit-Reset`) before retrying. */
+        /** @description Quota exceeded. On the per-minute limiter (`scope: "per_api_key"`), wait `retry_after` seconds (or until `X-RateLimit-Reset`) before retrying. On the monthly quota (`scope: "monthly"`) and the daily cap (`daily_limit_exceeded`), waiting means until `resets_at`; `upgrade` names the cheapest plan that covers your usage with its exact price and `checkout_url`, and `credits` the pay-as-you-go alternative. */
         TooManyRequests: {
             headers: {
                 /** @description Seconds to wait before retrying. */
