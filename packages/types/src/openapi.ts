@@ -6917,25 +6917,61 @@ export interface components {
              */
             reason?: string | null;
         };
-        /** @description Payload for `reservation.message.received`. A new inbound message arrived on a reservation thread. */
+        /** @description Payload for `reservation.message.received`. A new inbound message arrived on a reservation thread: from the guest, a co-traveler, the booker, or Airbnb Support (`from.type: "airbnb"`). The whole message, the same as `GET /v1/conversations/{threadId}/messages` returns it, plus where it belongs. Dedupe on `externalMessageId` (or `messageId`). */
         ReservationMessageReceivedPayload: {
             /**
              * @description Booking.com only: the hotel (property) id of the conversation's listing. Absent on other channels. A Booking.com Extranet login can cover several hotels, so use this to route the message.
              * @example 10433861
              */
             hotelId?: string | null;
-            /** @example 215906 */
-            reservationId?: number;
-            /** @example thr_01HX5XPQ2K */
+            /**
+             * @description The reservation the conversation belongs to. `null` for an inquiry, or a message that arrived before its booking was imported (`reservation.thread.assigned` fires when it is attached).
+             * @example 215906
+             */
+            reservationId?: number | null;
+            /**
+             * @description The Repull conversation id: the numeric id, as a string. Pass it as `{id}` to `GET /v1/conversations/{id}` and `GET /v1/conversations/{id}/messages`.
+             * @example 532457
+             */
             threadId?: string;
+            /**
+             * @description The channel's own thread id (Airbnb thread id, Booking.com conversation id). Same as `externalThreadId` on `GET /v1/conversations/{id}`.
+             * @example 2603530383
+             */
+            externalThreadId?: string | null;
+            /**
+             * @description The Repull listing the conversation is about.
+             * @example 5668
+             */
+            listingId?: number | null;
+            /**
+             * @description The channel the message came through: `airbnb`, `booking`, `vrbo`, …
+             * @example airbnb
+             */
+            channel?: string;
+            /**
+             * @description Repull message id, as `GET /v1/conversations/{id}/messages` returns it (`id`).
+             * @example 1847801
+             */
+            messageId?: string;
+            /**
+             * @description The channel's own message id. Stable across retries and backfill: dedupe on it.
+             * @example 32837172376
+             */
+            externalMessageId?: string | null;
+            /**
+             * @description The reservation's confirmation code on the channel. `null` when there is no reservation.
+             * @example HMEXAMPLE1
+             */
+            confirmationCode?: string | null;
             from?: {
                 /**
-                 * @description Message author (guest, host, system).
+                 * @description Who wrote it: `guest`, `booker`, `cotraveler`, or `airbnb` (Airbnb Support writing on the thread).
                  * @example guest
                  */
                 type?: string;
                 /** @example Alex Morgan */
-                name?: string;
+                name?: string | null;
             };
             /**
              * @description Empty when the guest sent only a file.
@@ -6944,11 +6980,38 @@ export interface components {
             body?: string;
             /**
              * Format: date-time
+             * @description When the message was sent on the channel.
              * @example 2026-05-01T15:00:00.000Z
              */
             sentAt?: string;
+            /**
+             * @description Always `inbound` on this event.
+             * @enum {string}
+             */
+            direction?: "inbound";
+            /**
+             * @description Sender role as stored, the same as `senderType` on `GET /v1/conversations/{id}/messages`.
+             * @example guest
+             */
+            senderType?: string | null;
+            /** @example Alex Morgan */
+            senderName?: string | null;
+            /** Format: uri */
+            senderAvatar?: string | null;
+            /** @description English translation, when one has been computed. */
+            translatedBody?: string | null;
             /** @description Files the guest sent (photos, videos, documents), same shape as `GET /v1/conversations/{id}/messages`. Empty array when there are none. */
             attachments?: components["schemas"]["ConversationMessageAttachment"][];
+            isAutomated?: boolean;
+            aiGenerated?: boolean;
+            /** @description Stored delivery state. Usually `null` on inbound messages (`GET /v1/conversations/{id}/messages` shows them as `received`). */
+            status?: string | null;
+            /**
+             * Format: date-time
+             * @description Orders two deliveries about the same message without parsing the body.
+             * @example 2026-05-01T15:00:00.000Z
+             */
+            revision?: string | null;
         };
         /** @description Payload for `reservation.message.sent`: a host-side message was sent on a reservation thread. Same fields as `reservation.message.received`, plus `source`. */
         ReservationMessageSentPayload: {
@@ -6959,8 +7022,20 @@ export interface components {
             hotelId?: string | null;
             /** @example 235970 */
             reservationId?: number | null;
-            /** @example 900301 */
+            /**
+             * @description The Repull conversation id (numeric, as a string), for `GET /v1/conversations/{id}`.
+             * @example 900301
+             */
             threadId?: string;
+            /**
+             * @description The channel's own thread id.
+             * @example 2648057088
+             */
+            externalThreadId?: string | null;
+            /** @example 23893 */
+            listingId?: number | null;
+            /** @example airbnb */
+            channel?: string;
             /**
              * @description Repull message id, as `GET /v1/conversations/{id}/messages` returns it.
              * @example 1854462
@@ -6971,8 +7046,8 @@ export interface components {
              * @example 32877308873
              */
             externalMessageId?: string | null;
-            /** @example airbnb */
-            channel?: string;
+            /** @example HMJTFCEDFB */
+            confirmationCode?: string | null;
             /**
              * @description `channel`: sent in the channel's own app (e.g. the Airbnb app). `repull`: sent through Repull — the API, the dashboard, an automation or AI.
              * @enum {string}
@@ -6991,9 +7066,25 @@ export interface components {
             sentAt?: string;
             /** @enum {string} */
             direction?: "outbound";
+            /**
+             * @description Sender role as stored, the same as on `GET /v1/conversations/{id}/messages` (`user` for a message sent through Repull).
+             * @example host
+             */
+            senderType?: string | null;
+            senderName?: string | null;
+            /** Format: uri */
+            senderAvatar?: string | null;
+            translatedBody?: string | null;
+            attachments?: components["schemas"]["ConversationMessageAttachment"][];
             isAutomated?: boolean;
             aiGenerated?: boolean;
-            attachments?: components["schemas"]["ConversationMessageAttachment"][];
+            /**
+             * @description Delivery state: `sending`, `sent` or `failed`, as on `GET /v1/conversations/{id}/messages`. `null` for a message sent in the channel's app.
+             * @example sent
+             */
+            status?: string | null;
+            /** Format: date-time */
+            revision?: string | null;
         };
         /** @description Payload for `reservation.message.updated`: a message was edited on the channel. `body` is the new text; `previousBody` what it replaced. Read receipts and reactions do not fire it: they have their own events, `reservation.message.read` and `reservation.message.reaction`. */
         ReservationMessageUpdatedPayload: {
@@ -7004,14 +7095,23 @@ export interface components {
             hotelId?: string | null;
             /** @example 235970 */
             reservationId?: number | null;
-            /** @example 900301 */
+            /**
+             * @description The Repull conversation id (numeric, as a string), for `GET /v1/conversations/{id}`.
+             * @example 900301
+             */
             threadId?: string;
+            /** @example 2648057088 */
+            externalThreadId?: string | null;
+            /** @example 23893 */
+            listingId?: number | null;
+            /** @example airbnb */
+            channel?: string;
             /** @example 1854462 */
             messageId?: string;
             /** @example 32877308873 */
             externalMessageId?: string | null;
-            /** @example airbnb */
-            channel?: string;
+            /** @example HMJTFCEDFB */
+            confirmationCode?: string | null;
             from?: {
                 /** @example host */
                 type?: string;
@@ -7033,6 +7133,20 @@ export interface components {
             sentAt?: string;
             /** @enum {string} */
             direction?: "inbound" | "outbound";
+            senderType?: string | null;
+            senderName?: string | null;
+            /** Format: uri */
+            senderAvatar?: string | null;
+            translatedBody?: string | null;
+            attachments?: components["schemas"]["ConversationMessageAttachment"][];
+            isAutomated?: boolean;
+            aiGenerated?: boolean;
+            status?: string | null;
+            /**
+             * Format: date-time
+             * @description Same as `editedAt`.
+             */
+            revision?: string | null;
         };
         /** @description Payload for `reservation.message.read`: the guest read the conversation up to and including `messageId`, a message from your side. Every earlier message in it was read by then too. Airbnb reports read receipts; other channels do not fire this event. */
         ReservationMessageReadPayload: {
@@ -7054,7 +7168,7 @@ export interface components {
              * @example 1854462
              */
             messageId?: string;
-            /** @example 33532605539 */
+            /** @example 32877308873 */
             externalMessageId?: string | null;
             /**
              * Format: date-time
@@ -7080,7 +7194,7 @@ export interface components {
              * @example 1854462
              */
             messageId?: string;
-            /** @example 33532605539 */
+            /** @example 32877308873 */
             externalMessageId?: string | null;
             /** @enum {string} */
             action?: "added" | "removed";
