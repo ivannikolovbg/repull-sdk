@@ -6786,7 +6786,7 @@ export interface components {
          * @description Canonical event type identifier. Every webhook delivery declares one of these in its `type` field; SDKs key the discriminated `WebhookEvent` union on this value.
          * @enum {string}
          */
-        WebhookEventType: "reservation.created" | "reservation.updated" | "reservation.cancelled" | "reservation.message.received" | "reservation.message.sent" | "reservation.message.updated" | "reservation.message.read" | "reservation.message.reaction" | "reservation.alteration.created" | "reservation.alteration.responded" | "reservation.request.created" | "reservation.request.updated" | "booking.unacknowledged" | "channel.sync.failed" | "channel.degraded" | "reservation.thread.assigned" | "inquiry.created" | "inquiry.updated" | "listing.created" | "listing.updated" | "listing.deleted" | "listing.suspended" | "listing.reactivated" | "account.created" | "connect.session.completed" | "account.disconnected" | "account.import.started" | "account.import.completed" | "account.import.failed" | "review.created" | "review.responded" | "ai.operation.completed" | "ai.operation.failed" | "payment.completed" | "payment.refunded" | "payout.completed" | "migration.completed" | "migration.failed" | "repull.ping" | "usage.quota.warning";
+        WebhookEventType: "reservation.created" | "reservation.updated" | "reservation.cancelled" | "reservation.message.received" | "reservation.message.sent" | "reservation.message.updated" | "reservation.message.read" | "reservation.message.reaction" | "reservation.alteration.created" | "reservation.alteration.responded" | "reservation.request.created" | "reservation.request.updated" | "booking.unacknowledged" | "channel.sync.failed" | "channel.degraded" | "reservation.thread.assigned" | "inquiry.created" | "inquiry.updated" | "listing.created" | "listing.updated" | "listing.deleted" | "listing.suspended" | "listing.reactivated" | "account.created" | "connect.session.completed" | "connect.session.abandoned" | "account.disconnected" | "account.import.started" | "account.import.completed" | "account.import.failed" | "review.created" | "review.responded" | "ai.operation.completed" | "ai.operation.failed" | "payment.completed" | "payment.refunded" | "payout.completed" | "migration.completed" | "migration.failed" | "repull.ping" | "usage.quota.warning";
         /**
          * @description Lightweight reservation snapshot delivered as `data.object` on every reservation webhook event. Stable across `reservation.created`, `reservation.updated`, and `reservation.cancelled`. Fetch the full reservation via `GET /v1/reservations/{id}` if you need pricing, guest contact info, or audit history — those are deliberately omitted to keep deliveries small.
          *
@@ -7628,6 +7628,47 @@ export interface components {
             purpose?: "connect" | "migrate";
             /** Format: date-time */
             completedAt?: string;
+        };
+        /** @description Payload for `connect.session.abandoned`. A user opened a Connect session and never finished it — the link ran out, or the account was connected but its rooms were never mapped. Use `state` or `sessionId` to find your user, `reason` and `nextStep` to decide what to send them (usually a new Connect link). Sent once per session, only for sessions opened in the last 7 days. */
+        ConnectSessionAbandonedPayload: {
+            /** @example cs_abc123 */
+            sessionId?: string;
+            /**
+             * @description The `state` you passed when creating the session.
+             * @example user_8421
+             */
+            state?: string | null;
+            /**
+             * @description Channel or PMS the user picked: airbnb, booking, booking_extranet, vrbo, hostaway, …
+             * @example booking
+             */
+            provider?: string | null;
+            /**
+             * @description `expired`: the link ran out before the user finished. `awaiting_room_mapping`: the account is connected; its rooms were never matched to listings.
+             * @enum {string}
+             */
+            status?: "expired" | "awaiting_room_mapping";
+            /**
+             * @description `not_finished`: opened and left. `credentials_rejected`: the provider refused the key or token the user entered. `provider_approval_pending`: Booking.com never confirmed the property in the Extranet. `mapping_not_finished`: connected, rooms not mapped. `failed`: another error, see `lastErrorCode`.
+             * @enum {string}
+             */
+            reason?: "not_finished" | "credentials_rejected" | "provider_approval_pending" | "mapping_not_finished" | "failed";
+            /**
+             * @description The last error the user hit on the Connect page, e.g. `invalid_credentials`, `awaiting_designation`.
+             * @example awaiting_designation
+             */
+            lastErrorCode?: string | null;
+            /**
+             * @description Booking.com: the Hotel ID the user entered while waiting for the Extranet approval.
+             * @example 17168363
+             */
+            externalAccountId?: string | null;
+            /** @description What to tell the user, in plain English. */
+            nextStep?: string;
+            /** Format: date-time */
+            createdAt?: string;
+            /** Format: date-time */
+            lastActivityAt?: string;
         };
         /** @description Payload for `account.disconnected`. A PMS or channel connection was revoked, expired, or rejected by the upstream provider. Sent for Airbnb, Booking.com Extranet logins, Vrbo logins and PMS connections (Hostaway, Guesty, Smoobu, Lodgify, Beds24, Hospitable, OwnerRez, iGMS, BookingSync, Track, Mews, Cloudbeds, Zeevou, RentalReady, CiiRUS, …). A PMS connection is reported when the PMS refuses its credentials (API key revoked or invalid, 401/403, token refresh refused); timeouts, rate limits and 5xx errors are retried and never reported. Sent once per disconnect, not on every failed sync. When the connection works again — credentials fixed in the PMS, or reconnected — Repull re-imports the changes made while it was down and sends their `reservation.*` events, so nothing missed has to be fetched by hand. */
         AccountDisconnectedPayload: {
@@ -8645,6 +8686,27 @@ export interface components {
             account?: components["schemas"]["WebhookEventAccount"];
             data: components["schemas"]["ConnectSessionCompletedPayload"];
         };
+        ConnectSessionAbandonedEvent: {
+            /**
+             * @description The event name. This field is `event`, not `type`. (enum property replaced by openapi-typescript)
+             * @enum {string}
+             */
+            event: "connect.session.abandoned";
+            /**
+             * Format: uuid
+             * @description Stable across every delivery and replay of this logical event — dedupe on it.
+             */
+            eventId: string;
+            /** @example 2026-04 */
+            apiVersion: string;
+            /**
+             * Format: date-time
+             * @description When this delivery was built.
+             */
+            timestamp: string;
+            account?: components["schemas"]["WebhookEventAccount"];
+            data: components["schemas"]["ConnectSessionAbandonedPayload"];
+        };
         AccountDisconnectedEvent: {
             /**
              * @description The event name. This field is `event`, not `type`. (enum property replaced by openapi-typescript)
@@ -8925,7 +8987,7 @@ export interface components {
             data: components["schemas"]["MigrationImportPayload"];
         };
         /** @description The full event envelope POSTed to your webhook URL. Discriminated on `type` — narrow `event.data` by switching on `event.type`. Use the matching `*Event` variant directly if your SDK lacks discriminator support. Events about an inactive listing (reservations, messages, alterations, reviews, payments, calendar and listing events) are not delivered. The data keeps syncing while the listing is inactive, but its events are never sent — including after you reactivate it; webhooks resume for events that happen from reactivation on. Account-level events are always delivered. */
-        WebhookEvent: components["schemas"]["ReservationCreatedEvent"] | components["schemas"]["ReservationUpdatedEvent"] | components["schemas"]["ReservationCancelledEvent"] | components["schemas"]["ReservationMessageReceivedEvent"] | components["schemas"]["ReservationMessageSentEvent"] | components["schemas"]["ReservationMessageUpdatedEvent"] | components["schemas"]["ReservationMessageReadEvent"] | components["schemas"]["ReservationMessageReactionEvent"] | components["schemas"]["ReservationAlterationCreatedEvent"] | components["schemas"]["ReservationAlterationRespondedEvent"] | components["schemas"]["ReservationRequestCreatedEvent"] | components["schemas"]["ReservationRequestUpdatedEvent"] | components["schemas"]["BookingUnacknowledgedEvent"] | components["schemas"]["ChannelSyncFailedEvent"] | components["schemas"]["ChannelDegradedEvent"] | components["schemas"]["ReservationThreadAssignedEvent"] | components["schemas"]["InquiryCreatedEvent"] | components["schemas"]["InquiryUpdatedEvent"] | components["schemas"]["ListingCreatedEvent"] | components["schemas"]["ListingUpdatedEvent"] | components["schemas"]["ListingDeletedEvent"] | components["schemas"]["ListingSuspendedEvent"] | components["schemas"]["ListingReactivatedEvent"] | components["schemas"]["AccountCreatedEvent"] | components["schemas"]["ConnectSessionCompletedEvent"] | components["schemas"]["AccountDisconnectedEvent"] | components["schemas"]["AccountImportStartedEvent"] | components["schemas"]["AccountImportCompletedEvent"] | components["schemas"]["AccountImportFailedEvent"] | components["schemas"]["ReviewCreatedEvent"] | components["schemas"]["ReviewRespondedEvent"] | components["schemas"]["AiOperationCompletedEvent"] | components["schemas"]["AiOperationFailedEvent"] | components["schemas"]["PaymentCompletedEvent"] | components["schemas"]["PaymentRefundedEvent"] | components["schemas"]["PayoutCompletedEvent"] | components["schemas"]["RepullPingEvent"] | components["schemas"]["UsageQuotaWarningEvent"] | components["schemas"]["MigrationCompletedEvent"] | components["schemas"]["MigrationFailedEvent"];
+        WebhookEvent: components["schemas"]["ReservationCreatedEvent"] | components["schemas"]["ReservationUpdatedEvent"] | components["schemas"]["ReservationCancelledEvent"] | components["schemas"]["ReservationMessageReceivedEvent"] | components["schemas"]["ReservationMessageSentEvent"] | components["schemas"]["ReservationMessageUpdatedEvent"] | components["schemas"]["ReservationMessageReadEvent"] | components["schemas"]["ReservationMessageReactionEvent"] | components["schemas"]["ReservationAlterationCreatedEvent"] | components["schemas"]["ReservationAlterationRespondedEvent"] | components["schemas"]["ReservationRequestCreatedEvent"] | components["schemas"]["ReservationRequestUpdatedEvent"] | components["schemas"]["BookingUnacknowledgedEvent"] | components["schemas"]["ChannelSyncFailedEvent"] | components["schemas"]["ChannelDegradedEvent"] | components["schemas"]["ReservationThreadAssignedEvent"] | components["schemas"]["InquiryCreatedEvent"] | components["schemas"]["InquiryUpdatedEvent"] | components["schemas"]["ListingCreatedEvent"] | components["schemas"]["ListingUpdatedEvent"] | components["schemas"]["ListingDeletedEvent"] | components["schemas"]["ListingSuspendedEvent"] | components["schemas"]["ListingReactivatedEvent"] | components["schemas"]["AccountCreatedEvent"] | components["schemas"]["ConnectSessionCompletedEvent"] | components["schemas"]["ConnectSessionAbandonedEvent"] | components["schemas"]["AccountDisconnectedEvent"] | components["schemas"]["AccountImportStartedEvent"] | components["schemas"]["AccountImportCompletedEvent"] | components["schemas"]["AccountImportFailedEvent"] | components["schemas"]["ReviewCreatedEvent"] | components["schemas"]["ReviewRespondedEvent"] | components["schemas"]["AiOperationCompletedEvent"] | components["schemas"]["AiOperationFailedEvent"] | components["schemas"]["PaymentCompletedEvent"] | components["schemas"]["PaymentRefundedEvent"] | components["schemas"]["PayoutCompletedEvent"] | components["schemas"]["RepullPingEvent"] | components["schemas"]["UsageQuotaWarningEvent"] | components["schemas"]["MigrationCompletedEvent"] | components["schemas"]["MigrationFailedEvent"];
         /** @description A listing paired with its Airbnb connections. The list endpoint groups every Airbnb connection of the same `listingId` under a single `connections[]` array. */
         AirbnbListing: {
             /**
@@ -10480,7 +10542,7 @@ export interface components {
              * @example 3
              */
             activeListingLimit: number | null;
-            /** @example 40 more connected listings are held inactive because your plan allows 3 active listings. They stay connected and keep syncing. */
+            /** @example 40 more connected listings are held inactive because your plan allows 3 active listings. They stay connected and keep syncing. Starter serves all 43 for $264 a month: https://repull.dev/dashboard/billing?upgrade=starter */
             message: string;
             fix: string;
             /**
@@ -10488,6 +10550,22 @@ export interface components {
              * @example https://repull.dev/dashboard/billing
              */
             billingUrl: string;
+            /**
+             * @description On a free plan: the listings Starter would serve and bill, active plus held back, across the plan's workspaces.
+             * @example 43
+             */
+            starterListings?: number;
+            /**
+             * @description Starter's monthly price in USD for `starterListings` — exactly what checkout charges. Present up to 100 listings; above that the message says how to ask for a plan.
+             * @example 264
+             */
+            starterMonthlyPrice?: number;
+            /**
+             * Format: uri
+             * @description Opens Starter checkout at `starterMonthlyPrice`. Present up to 100 listings.
+             * @example https://repull.dev/dashboard/billing?upgrade=starter
+             */
+            checkoutUrl?: string;
         };
         ListingPhotoUploadUrlRequest: {
             /**
