@@ -9956,6 +9956,7 @@ export interface components {
         };
         PropertyListResponse: {
             planNotice?: components["schemas"]["PlanNotice"];
+            billingNotice?: components["schemas"]["BillingNotice"];
             data?: components["schemas"]["Property"][];
             pagination?: components["schemas"]["Pagination"];
         };
@@ -9986,6 +9987,7 @@ export interface components {
         };
         ConnectionListResponse: {
             planNotice?: components["schemas"]["PlanNotice"];
+            billingNotice?: components["schemas"]["BillingNotice"];
             data?: components["schemas"]["Connection"][];
             pagination?: components["schemas"]["Pagination"];
         };
@@ -10830,6 +10832,51 @@ export interface components {
              */
             checkoutUrl?: string;
         };
+        /** @description Added to the body of every successful (2xx) JSON object response while the plan's last renewal payment failed (the subscription is past_due or unpaid). It never blocks a request: API access keeps working while Stripe retries the card. Tell the user: pay the invoice at `payUrl`, or update the card at `billingUrl`. It disappears once the invoice is paid. */
+        BillingNotice: {
+            /**
+             * @description "payment_failed": the last renewal payment failed and is still owed.
+             * @enum {string}
+             */
+            code: "payment_failed";
+            /**
+             * @description The amount owed, in major units of `currency`.
+             * @example 99
+             */
+            amount: number | null;
+            /**
+             * @description Lower-case ISO 4217 code.
+             * @example usd
+             */
+            currency: string;
+            /**
+             * Format: date-time
+             * @description When the payment failed.
+             * @example 2026-11-12T14:52:17.000Z
+             */
+            failedAt: string | null;
+            /**
+             * Format: date-time
+             * @description When Stripe retries the card automatically; null when no retry is left.
+             * @example 2026-11-14T20:52:16.000Z
+             */
+            nextRetryAt: string | null;
+            /**
+             * Format: uri
+             * @description Stripe's hosted invoice: pay it there with any card.
+             * @example https://invoice.stripe.com/i/acct_1TUV6uDYjA8GNo6e/live_abc
+             */
+            payUrl: string | null;
+            /** @example Your $99.00 Repull plan payment failed on Nov 12, 2026. Your API calls keep working. Stripe retries the card automatically on Nov 14, 2026. */
+            message: string;
+            /** @example Pay the invoice at `payUrl`, or update the card at https://repull.dev/dashboard/billing (Manage billing) so the next retry goes through. This notice disappears once it is paid. */
+            fix: string;
+            /**
+             * Format: uri
+             * @example https://repull.dev/dashboard/billing
+             */
+            billingUrl: string;
+        };
         ListingPhotoUploadUrlRequest: {
             /**
              * @description Original file name, e.g. "living-room.jpg".
@@ -11377,6 +11424,7 @@ export interface components {
         CursorPagination: components["schemas"]["Pagination"];
         ListingListResponse: {
             planNotice?: components["schemas"]["PlanNotice"];
+            billingNotice?: components["schemas"]["BillingNotice"];
             data?: components["schemas"]["Listing"][];
             pagination?: components["schemas"]["CursorPagination"];
         };
@@ -20810,6 +20858,7 @@ export interface operations {
                         };
                         range?: string;
                         planNotice?: components["schemas"]["PlanNotice"];
+                        billingNotice?: components["schemas"]["BillingNotice"];
                     };
                 };
             };
