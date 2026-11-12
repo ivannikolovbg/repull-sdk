@@ -485,6 +485,8 @@ export interface paths {
          *
          *     **Account ids.** `externalAccountId` is the platform's own account id (Airbnb host id, Booking.com hotel id, the Booking.com account id behind an Extranet login, the PMS account id; `null` when the platform does not give us one) and `id` is our connection record, the `X-Account-Id`.
          *
+         *     **Access level.** Every connection carries `accessType`: `read_only`, `messaging` or `full_access`, or `null` when unknown. Airbnb: the tier the host's token was granted with. Vrbo: bookings and messages only (`messaging`) or with the calendar push (`full_access`). Booking.com: always `full_access`. Booking.com Extranet: always `messaging` (reads reservations, messages and reviews and replies; never writes rates or availability). PMS: `read_only` when every write-policy switch is off, else `full_access`. See the `ConnectionAccessType` schema.
+         *
          *     **One entry per Booking.com Extranet login.** Each Booking.com account that invites the Repull user connects as its own login, with its own `externalAccountId` — the Booking.com account id (handle `booking_extranet:{externalAccountId}`). A new login adds an entry next to the existing ones and never replaces them; the entries share the workspace's Extranet `id`, and each login's listings, reservations, conversations and reviews stay under its own account (filter them with `?account=booking_extranet:{externalAccountId}`).
          *
          *     **Spot connections that need attention.** A connection whose `status` is not `active` may need the host to do something before it works — most commonly a Booking.com Extranet connection where the invited user was granted only partial access (`status: "needs_permissions"`). A Smoobu connection still on a legacy single API key carries `action.reason: "reauth_required"` while its `status` is `active`: Smoobu stops accepting those keys on October 31, 2026, and `fixUrl` opens the form for a new API key + secret (the connection id stays the same). These connections carry two extra fields:
@@ -561,6 +563,8 @@ export interface paths {
         /**
          * Get connection status
          * @description Returns the current connection status for a provider, including host metadata (display name + avatar) for Airbnb so clients can render an account-level confirmation UI.
+         *
+         *     **Access level.** `accessType` says what the connection may do: `read_only`, `messaging` or `full_access` (`null` when unknown). Airbnb reports it per host on `accounts[]` (the tier each host's token was granted with) and at the top level for the host in `externalAccountId`; Vrbo (`vrbo-login`) per account; Booking.com is always `full_access`, the Booking.com Extranet always `messaging`; a PMS is `read_only` when every `writePolicy` switch is off, else `full_access`. See the `ConnectionAccessType` schema for the meaning per provider.
          */
         get: operations["get_connect_status"];
         put?: never;
@@ -6295,6 +6299,8 @@ export interface components {
              * @example 20123456
              */
             externalAccountId?: string | null;
+            /** @description What this connection may do: `read_only`, `messaging` or `full_access` (see `ConnectionAccessType` for the meaning per provider). Airbnb: the tier of the host in `externalAccountId`. `null` when unknown. */
+            accessType?: components["schemas"]["ConnectionAccessType"] | null;
             /** Format: date-time */
             createdAt?: string;
             /** @description Host metadata for the linked account. Currently populated for Airbnb only; null for other providers. */
@@ -6309,6 +6315,12 @@ export interface components {
             /** @description The account's latest import — `status: running` while the first sync (or a later one) is going, then `completed` or `failed`. `null` when no import has been recorded. The same run is announced by the `account.import.*` webhooks; the history is on `GET /v1/connections/{id}/imports`. */
             import?: components["schemas"]["AccountImport"] | null;
         };
+        /**
+         * @description What the connection may do on the platform, read from what we store. `null` when we do not know (e.g. an OTA we do not grade, or an Airbnb token from before the tiers existed). `read_only`: reads only, never writes. Airbnb: the read-only OAuth tier (no replies to guests, no writes). PMS: every `writePolicy` switch is off. `messaging`: reads reservations and messages and replies to guests; never writes prices or availability. Airbnb: the messaging OAuth tier ("Messaging & reviews": messages and review replies, no property management). Vrbo: bookings and messages, no calendar push. Booking.com Extranet (`booking_extranet`): always — it reads reservations, messages and reviews and replies, and never writes rates or availability. `full_access`: reads and writes, including prices and availability. Airbnb: the full OAuth tier. Vrbo: also pushes prices and availability. Booking.com (`booking`, the official connection): always. PMS: at least one `writePolicy` switch is on (`writePolicy` on `GET /v1/connect/{provider}` says which). Airbnb's tier is set when the host connects (`accessType` on `POST /v1/connect`); reconnect to change it.
+         * @example messaging
+         * @enum {string}
+         */
+        ConnectionAccessType: "read_only" | "messaging" | "full_access";
         /** @description A host action a connection needs before it can work. */
         ConnectionAction: {
             /** @description Whether a host action is pending. */
@@ -6625,9 +6637,11 @@ export interface components {
             externalAccountId?: string | null;
             /** Format: date-time */
             createdAt?: string;
+            /** @description What the connection may do: `read_only`, `messaging` or `full_access` (see `ConnectionAccessType` for the meaning per provider). Airbnb: the tier of the host in `externalAccountId`; each host's own is on `accounts[].accessType`. Absent when `connected` is false and on `GET /v1/connect/vrbo-login` (per account there); `null` when unknown. */
+            accessType?: components["schemas"]["ConnectionAccessType"] | null;
             /** @description Host metadata, populated for Airbnb when the host row exists. Null for other providers (per-provider enrichment is incremental). */
             host?: components["schemas"]["ConnectHost"] | null;
-            /** @description Airbnb: every Airbnb account this workspace has connected, including ones since disconnected. Pass `externalAccountId` as `accountId` to `DELETE /v1/connect/airbnb` to disconnect one account. Vrbo (`GET /v1/connect/vrbo-login`): every signed-in Vrbo account, each with `accessType` and `import` (a `VrboImportStatus`), plus a top-level `dataFreshness`. `externalAccountId` is the platform's own id (Airbnb host id, Vrbo account id; `null` for a Vrbo sign-in whose account id is not captured yet) and `connectionId` our connection record. */
+            /** @description Airbnb: every Airbnb account this workspace has connected, including ones since disconnected, each with its own `accessType`. Pass `externalAccountId` as `accountId` to `DELETE /v1/connect/airbnb` to disconnect one account. Vrbo (`GET /v1/connect/vrbo-login`): every signed-in Vrbo account, each with `accessType` and `import` (a `VrboImportStatus`), plus a top-level `dataFreshness`. `externalAccountId` is the platform's own id (Airbnb host id, Vrbo account id; `null` for a Vrbo sign-in whose account id is not captured yet) and `connectionId` our connection record. */
             accounts?: {
                 /**
                  * @description Airbnb: the host id, as a string (it can exceed 2^53). Vrbo: Vrbo's own account id; `null` until it is captured at sign-in.
@@ -6651,11 +6665,8 @@ export interface components {
                 connected?: boolean;
                 /** @description Vrbo only: the account email. */
                 email?: string | null;
-                /**
-                 * @description Vrbo only.
-                 * @enum {string|null}
-                 */
-                accessType?: "messaging" | "full_access" | null;
+                /** @description What this account may do. Airbnb: the tier the host's token was granted with (`read_only`, `messaging`, `full_access`). Vrbo: `messaging` (bookings and messages, no calendar push) or `full_access` (also pushes prices and availability). `null` when unknown. */
+                accessType?: components["schemas"]["ConnectionAccessType"] | null;
                 /** @description Vrbo only. The address the host can add on Vrbo as a secondary email (with message and reservation notifications on) so new bookings, inquiries and messages arrive within a minute instead of at the scheduled check. Ask every host to add it: notifications are how Vrbo updates reach Repull, the scheduled check is the backup. Hosted Connect shows it on its mapping screen; show it in your own app when you create sessions with `mapping: "api"`. */
                 notificationEmail?: string | null;
                 /** @description Vrbo only: where the account import stands. */
