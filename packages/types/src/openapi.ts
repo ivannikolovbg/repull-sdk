@@ -483,7 +483,9 @@ export interface paths {
          * List PMS/OTA connections
          * @description Returns every PMS and OTA connection in the workspace, each with its `status`.
          *
-         *     **One entry per Booking.com Extranet hotel login.** Each hotel that invites the Repull user connects as its own login, with its own `externalAccountId` (handle `booking_extranet:{externalAccountId}`). A new hotel adds an entry next to the existing ones and never replaces them; the entries share the workspace's Extranet `id`, and each hotel's listings, reservations, conversations and reviews stay under its own login (filter them with `?account=booking_extranet:{externalAccountId}`).
+         *     **Account ids.** `externalAccountId` is the platform's own account id (Airbnb host id, Booking.com hotel id, the Booking.com account id behind an Extranet login, the PMS account id; `null` when the platform does not give us one) and `id` is our connection record, the `X-Account-Id`.
+         *
+         *     **One entry per Booking.com Extranet login.** Each Booking.com account that invites the Repull user connects as its own login, with its own `externalAccountId` — the Booking.com account id (handle `booking_extranet:{externalAccountId}`). A new login adds an entry next to the existing ones and never replaces them; the entries share the workspace's Extranet `id`, and each login's listings, reservations, conversations and reviews stay under its own account (filter them with `?account=booking_extranet:{externalAccountId}`).
          *
          *     **Spot connections that need attention.** A connection whose `status` is not `active` may need the host to do something before it works — most commonly a Booking.com Extranet connection where the invited user was granted only partial access (`status: "needs_permissions"`). A Smoobu connection still on a legacy single API key carries `action.reason: "reauth_required"` while its `status` is `active`: Smoobu stops accepting those keys on October 31, 2026, and `fixUrl` opens the form for a new API key + secret (the connection id stays the same). These connections carry two extra fields:
          *
@@ -577,7 +579,7 @@ export interface paths {
          * Disconnect provider
          * @description Disconnect ONE connected account of a provider from this workspace. Supported for `airbnb`, `booking`, `vrbo-login` and every PMS (`guesty`, `hostaway`, `hospitable`, …).
          *
-         *     **Which account.** Pass `accountId` — for Airbnb the host id (`accounts[].externalAccountId` from `GET /v1/connect/airbnb`), for Booking.com the hotel id, for `vrbo-login` the sign-in's `accounts[].externalAccountId` from `GET /v1/connect/vrbo-login`. It is optional only when the workspace has exactly one account for the provider. With several and no `accountId`, the call returns `422` with the account ids in `valid_values` instead of guessing. An `accountId` that is not connected to this workspace returns `404`. Disconnecting one account leaves the others connected.
+         *     **Which account.** Pass `accountId` — for Airbnb the host id (`accounts[].externalAccountId` from `GET /v1/connect/airbnb`), for Booking.com the hotel id, for `vrbo-login` the sign-in's Vrbo account id (`accounts[].externalAccountId` from `GET /v1/connect/vrbo-login`; the old sign-in id still works until 2027-02-12). It is optional only when the workspace has exactly one account for the provider. With several and no `accountId`, the call returns `422` with the account ids in `valid_values` instead of guessing. An `accountId` that is not connected to this workspace returns `404`. Disconnecting one account leaves the others connected.
          *
          *     **What happens.** The account's stored authorization is removed and it stops syncing. Its listings are **deactivated**, not deleted: they stop counting toward your plan's listing limit, their data is kept, and they are returned in `listingsDeactivated`. A listing that is still connected through another account or channel stays active. Reconnect the account, then activate the listings with `POST /v1/listings/status`.
          *
@@ -5315,6 +5317,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/workspaces/{workspaceId}/deactivate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Deactivate a workspace
+         * @description Offboard one of your customers. Disconnects every account still connected in the sub-workspace (Airbnb hosts, Booking.com properties, Vrbo sign-ins, PMSs), deactivates its listings so they stop counting toward your plan, and marks the workspace inactive. Nothing is deleted: its listings, reservations and conversations are kept, and it stays in `GET /v1/workspaces` with `active: false` and `deactivatedAt`. Nothing is changed on the channels themselves. Calling it again is safe. Undo it with `POST /v1/workspaces/{workspaceId}/reactivate`. Workspace names don't have to be unique; the `workspaceId` (or your own `externalRef`) identifies a workspace.
+         */
+        post: operations["deactivateWorkspace"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspaces/{workspaceId}/reactivate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reactivate a workspace
+         * @description Undo `POST /v1/workspaces/{workspaceId}/deactivate`. The workspace is active again and the listings the deactivation switched off are switched back on; listings that were already inactive before it stay inactive. Reactivated listings count toward your plan again, so a reactivation that would exceed your plan's listing cap is refused with `402 listings_limit_exceeded` and nothing changes. Accounts stay disconnected: have your customer reconnect each one through Connect (`POST /v1/connect` with `X-Workspace-Id` set to this workspace). Calling it on an active workspace changes nothing.
+         */
+        post: operations["reactivateWorkspace"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -6248,6 +6290,10 @@ export interface components {
              * @enum {string}
              */
             status?: "active" | "inactive" | "error" | "pending" | "disconnected" | "needs_permissions";
+            /**
+             * @description The platform's own account id: Airbnb host id; Booking.com hotel id (`booking`); the Booking.com account id behind the Extranet login (`booking_extranet`); Vrbo's account id (`vrbo`); the PMS's own account or company id. `null` when the platform id is not known yet (a Vrbo sign-in before its account id is captured, a PMS that does not expose one); never a Repull id. Use `id` for our record.
+             * @example 20123456
+             */
             externalAccountId?: string | null;
             /** Format: date-time */
             createdAt?: string;
@@ -6388,7 +6434,13 @@ export interface components {
              * @enum {string|null}
              */
             createdVia?: "connect" | "migrate" | null;
+            /** @description `false` once the workspace was deactivated (`POST /v1/workspaces/{workspaceId}/deactivate`, or a deleted migration). Its data is kept. */
             active: boolean;
+            /**
+             * Format: date-time
+             * @description When the workspace was deactivated; null while active.
+             */
+            deactivatedAt?: string | null;
             /** Format: date-time */
             createdAt: string;
         };
@@ -6552,17 +6604,22 @@ export interface components {
             /** @example airbnb */
             provider?: string;
             /**
-             * @description Repull-side connection ID. Stable across token refreshes.
+             * @description Repull-side connection ID (the `X-Account-Id`). Stable across token refreshes.
              * @example 3
              */
             id?: string;
+            /**
+             * @description Same as `id`: our connection record.
+             * @example 3
+             */
+            connectionId?: string;
             /**
              * @example active
              * @enum {string}
              */
             status?: "active" | "inactive" | "error";
             /**
-             * @description Provider-side account ID (e.g. the Airbnb host ID).
+             * @description The platform's own account id: Airbnb host id; Booking.com hotel id (`booking`); the Booking.com account id behind the Extranet login (`booking_extranet`); Vrbo's account id (`vrbo`); the PMS's own account or company id. `null` when the platform id is not known yet (a Vrbo sign-in before its account id is captured, a PMS that does not expose one); never a Repull id.
              * @example 10000001
              */
             externalAccountId?: string | null;
@@ -6570,13 +6627,18 @@ export interface components {
             createdAt?: string;
             /** @description Host metadata, populated for Airbnb when the host row exists. Null for other providers (per-provider enrichment is incremental). */
             host?: components["schemas"]["ConnectHost"] | null;
-            /** @description Airbnb: every Airbnb account this workspace has connected, including ones since disconnected. Pass `externalAccountId` as `accountId` to `DELETE /v1/connect/airbnb` to disconnect one account. Vrbo (`GET /v1/connect/vrbo-login`): every signed-in Vrbo account, each with `accessType` and `import` (a `VrboImportStatus`), plus a top-level `dataFreshness`. */
+            /** @description Airbnb: every Airbnb account this workspace has connected, including ones since disconnected. Pass `externalAccountId` as `accountId` to `DELETE /v1/connect/airbnb` to disconnect one account. Vrbo (`GET /v1/connect/vrbo-login`): every signed-in Vrbo account, each with `accessType` and `import` (a `VrboImportStatus`), plus a top-level `dataFreshness`. `externalAccountId` is the platform's own id (Airbnb host id, Vrbo account id; `null` for a Vrbo sign-in whose account id is not captured yet) and `connectionId` our connection record. */
             accounts?: {
                 /**
-                 * @description Airbnb host ID, as a string (it can exceed 2^53).
+                 * @description Airbnb: the host id, as a string (it can exceed 2^53). Vrbo: Vrbo's own account id; `null` until it is captured at sign-in.
                  * @example 79730216
                  */
-                externalAccountId?: string;
+                externalAccountId?: string | null;
+                /**
+                 * @description Our connection record (`X-Account-Id`). Airbnb: the workspace's Airbnb connection. Vrbo: the workspace's Vrbo connection, `null` when it has none.
+                 * @example 135
+                 */
+                connectionId?: string | null;
                 /** @example Casey */
                 name?: string | null;
                 pictureUrl?: string | null;
@@ -6786,7 +6848,7 @@ export interface components {
          * @description Canonical event type identifier. Every webhook delivery declares one of these in its `type` field; SDKs key the discriminated `WebhookEvent` union on this value.
          * @enum {string}
          */
-        WebhookEventType: "reservation.created" | "reservation.updated" | "reservation.cancelled" | "reservation.message.received" | "reservation.message.sent" | "reservation.message.updated" | "reservation.message.read" | "reservation.message.reaction" | "reservation.alteration.created" | "reservation.alteration.responded" | "reservation.request.created" | "reservation.request.updated" | "booking.unacknowledged" | "channel.sync.failed" | "channel.degraded" | "reservation.thread.assigned" | "inquiry.created" | "inquiry.updated" | "listing.created" | "listing.updated" | "listing.deleted" | "listing.suspended" | "listing.reactivated" | "account.created" | "connect.session.completed" | "connect.session.abandoned" | "account.disconnected" | "account.import.started" | "account.import.completed" | "account.import.failed" | "review.created" | "review.responded" | "ai.operation.completed" | "ai.operation.failed" | "payment.completed" | "payment.refunded" | "payout.completed" | "migration.completed" | "migration.failed" | "repull.ping" | "usage.quota.warning";
+        WebhookEventType: "reservation.created" | "reservation.updated" | "reservation.cancelled" | "reservation.message.received" | "reservation.message.sent" | "reservation.message.updated" | "reservation.message.read" | "reservation.message.reaction" | "reservation.alteration.created" | "reservation.alteration.responded" | "reservation.request.created" | "reservation.request.updated" | "booking.unacknowledged" | "channel.sync.failed" | "channel.degraded" | "reservation.thread.assigned" | "inquiry.created" | "inquiry.updated" | "listing.created" | "listing.updated" | "listing.deleted" | "listing.suspended" | "listing.reactivated" | "account.created" | "connect.session.completed" | "connect.session.abandoned" | "account.disconnected" | "account.import.started" | "account.import.completed" | "account.import.failed" | "account.units.added" | "review.created" | "review.responded" | "ai.operation.completed" | "ai.operation.failed" | "payment.completed" | "payment.refunded" | "payout.completed" | "migration.completed" | "migration.failed" | "repull.ping" | "usage.quota.warning";
         /**
          * @description Lightweight reservation snapshot delivered as `data.object` on every reservation webhook event. Stable across `reservation.created`, `reservation.updated`, and `reservation.cancelled`. Fetch the full reservation via `GET /v1/reservations/{id}` if you need pricing, guest contact info, or audit history — those are deliberately omitted to keep deliveries small.
          *
@@ -7614,15 +7676,18 @@ export interface components {
             state?: string | null;
             /**
              * @description Channel or PMS: airbnb, booking, booking_extranet, vrbo, hostaway, …
-             * @example vrbo
+             * @example booking_extranet
              */
             provider?: string | null;
             /**
-             * @description The provider's own account id — Airbnb host id, Booking.com hotel id, Vrbo account id, or the PMS account.
-             * @example 36
+             * @description The platform's own account id: Airbnb host id; Booking.com hotel id (`booking`); the Booking.com account id behind the Extranet login (`booking_extranet`); Vrbo's account id (`vrbo`); the PMS's own account or company id. `null` when the platform id is not known yet (a Vrbo sign-in before its account id is captured, a PMS that does not expose one); never a Repull id.
+             * @example 20123456
              */
             externalAccountId?: string | null;
-            /** @description Repull connection id, when the account has one (the `X-Account-Id` value). */
+            /**
+             * @description Our connection record id: the `X-Account-Id` value, the same as `account.id`. `null` only when the account has no connection record (e.g. a Vrbo sign-in in a workspace with no Vrbo connection).
+             * @example 482
+             */
             connectionId?: number | null;
             /** @enum {string} */
             purpose?: "connect" | "migrate";
@@ -7677,9 +7742,15 @@ export interface components {
              * @example 47f8883d-28c2-4d2c-b020-c7cef1aff62c
              */
             workspaceId?: string;
-            /** @example acc_01HX5XPQ2K */
-            accountId?: string;
-            /** @description Stable connection identifier — alias of accountId for this event variant. */
+            /**
+             * @description The disconnected account's `externalAccountId` — the platform's own account id: Airbnb host id; Booking.com hotel id (`booking`); the Booking.com account id behind the Extranet login (`booking_extranet`); Vrbo's account id (`vrbo`); the PMS's own account or company id. `null` when the platform id is not known yet (a Vrbo sign-in before its account id is captured, a PMS that does not expose one); never a Repull id.
+             * @example 79730216
+             */
+            accountId?: string | null;
+            /**
+             * @description Our connection record id: the `X-Account-Id` value, the same as `account.id`. `null` only when the account has no connection record (e.g. a Vrbo sign-in in a workspace with no Vrbo connection). A string in this event.
+             * @example 135
+             */
             connectionId?: string | null;
             /**
              * @description Channel or PMS id: `airbnb`, `booking_extranet`, `vrbo`, or the PMS (`hostaway`, `guesty`, `smoobu`, …).
@@ -7915,7 +7986,7 @@ export interface components {
                 disconnectedAt: string | null;
             }[];
         };
-        /** @description The connected account a record belongs to — keyed exactly like the webhook `account` block and `connect.session.completed`, so one `provider:externalAccountId` key routes reads and events to the same user. `null` when it cannot be resolved (never guessed). */
+        /** @description The connected account a record belongs to — keyed exactly like the webhook `account` block and `connect.session.completed`, so one `provider:externalAccountId` key routes reads and events to the same user. `null` when it cannot be resolved (never guessed). Until 2027-02-12 the `?account=` filter and connection handles also accept the old Extranet / Vrbo login ids (e.g. `booking_extranet:88`); they are never sent. */
         RecordAccount: {
             /**
              * @description airbnb, booking, booking_extranet, vrbo, or the PMS id (hostaway, cloudbeds, …).
@@ -7923,29 +7994,32 @@ export interface components {
              */
             provider?: string;
             /**
-             * @description The provider's own account id — Airbnb host id, Booking.com hotel id, Extranet login, Vrbo account, or the PMS account.
+             * @description The platform's own account id: Airbnb host id; Booking.com hotel id (`booking`); the Booking.com account id behind the Extranet login (`booking_extranet`); Vrbo's account id (`vrbo`); the PMS's own account or company id. `null` when the platform id is not known yet (a Vrbo sign-in before its account id is captured, a PMS that does not expose one); never a Repull id.
              * @example 79730216
              */
-            externalAccountId?: string;
+            externalAccountId?: string | null;
             /**
-             * @description Repull connection id (`X-Account-Id`), when the account has one. A string, like every id in API responses.
+             * @description Our connection record id: the `X-Account-Id` value, the same as `account.id`. `null` only when the account has no connection record (e.g. a Vrbo sign-in in a workspace with no Vrbo connection). A string, like every id in API responses.
              * @example 126
              */
             connectionId?: string | null;
             /**
-             * @description Booking.com only: the hotel (property) id the record belongs to. On a `booking_extranet` account, `externalAccountId` is the login, which can cover several hotels.
+             * @description Booking.com only: the hotel (property) id the record belongs to. A `booking_extranet` account (a Booking.com account) can cover several hotels; this says which one.
              * @example 10433861
              */
             hotelId?: string;
         } | null;
         /** @description Which connected account produced this event. Null when it cannot be resolved — present-but-null rather than omitted, so a receiver can tell "unresolvable" from "an old event". */
         WebhookEventAccount: {
-            /** @description Repull connection id. */
+            /**
+             * @description Our connection record id: the `X-Account-Id` value, the same as `account.id`. `null` only when the account has no connection record (e.g. a Vrbo sign-in in a workspace with no Vrbo connection).
+             * @example 135
+             */
             id?: number | null;
             /** @example airbnb */
             provider?: string | null;
             /**
-             * @description The provider's own account id.
+             * @description The platform's own account id: Airbnb host id; Booking.com hotel id (`booking`); the Booking.com account id behind the Extranet login (`booking_extranet`); Vrbo's account id (`vrbo`); the PMS's own account or company id. `null` when the platform id is not known yet (a Vrbo sign-in before its account id is captured, a PMS that does not expose one); never a Repull id.
              * @example 79730216
              */
             externalAccountId?: string | null;
@@ -8265,7 +8339,7 @@ export interface components {
                 customerId: number;
                 /** @example booking */
                 provider: string;
-                /** @description The provider's own account, host or hotel id. */
+                /** @description The platform's own account id: Airbnb host id; Booking.com hotel id (`booking`); the Booking.com account id behind the Extranet login (`booking_extranet`); Vrbo's account id (`vrbo`); the PMS's own account or company id. `null` when the platform id is not known yet (a Vrbo sign-in before its account id is captured, a PMS that does not expose one); never a Repull id. */
                 externalAccountId?: string | null;
                 /** @enum {string} */
                 status: "degraded" | "down";
@@ -8598,6 +8672,88 @@ export interface components {
             counts?: components["schemas"]["AccountImportCounts"];
             /** @description `account.import.failed` only. */
             reason?: string | null;
+        };
+        /** @description Payload for `account.units.added`. A connected Booking.com Extranet login gained a property (the hotel added the same Booking.com user to it) or a room on a property it already had. One event per property; never for the first import of a fresh connection (`connect.session.completed` and `account.import.*` cover that), never twice for the same rooms. */
+        AccountUnitsAddedPayload: {
+            /** @description The workspace the login is connected in. */
+            workspaceId: number;
+            /**
+             * @description The channel. Today only Booking.com Extranet logins send this event.
+             * @enum {string}
+             */
+            provider: "booking_extranet";
+            /**
+             * @description The Booking.com account id behind the Extranet login — the same value as `account.externalAccountId`.
+             * @example 20123456
+             */
+            accountId: string | null;
+            /**
+             * @description Our connection record id: the `X-Account-Id` value, the same as `account.id`.
+             * @example 482
+             */
+            connectionId: string | null;
+            /**
+             * @description The connection handle the units and mappings endpoints take: `booking_extranet:{accountId}`.
+             * @example booking_extranet:20123456
+             */
+            handle: string;
+            /** @description The property the new units belong to. */
+            hotels: {
+                /** @description Booking.com property ID. */
+                hotelId: string;
+                name: string | null;
+                /** @description `true` when the login had no unit on this property before; `false` when rooms were added to a property it already had. */
+                isNew: boolean;
+            }[];
+            /** @description The new units, as `GET /v1/connections/{id}/units` lists them. */
+            units: {
+                /** @description The `unit_id` to pass to `POST /v1/connections/{id}/mappings`. */
+                unitId: string;
+                name: string;
+                /** @description Booking.com property ID. */
+                hotelId: string;
+                /** @description Booking.com room ID. */
+                roomId: string | null;
+                /** @description Whether the unit is already mapped to a listing. New units are almost always unmapped: their bookings, messages and reviews import once you map them. */
+                mapped: boolean;
+                /** @description The listing the unit is mapped to, when `mapped`. */
+                listingId: number | null;
+            }[];
+            /**
+             * Format: date-time
+             * @description When the sync found the new units.
+             */
+            addedAt: string;
+            /** @description What to call next: list the units, then map them. */
+            nextSteps: {
+                /** @enum {string} */
+                method: "GET" | "POST";
+                /** @example /v1/connections/booking_extranet:20123456/units */
+                path: string;
+                description: string;
+            }[];
+        };
+        /** @description A connected login gained a property or room. Map the new units to listings to import their bookings. */
+        AccountUnitsAddedEvent: {
+            /**
+             * @description The event name. This field is `event`, not `type`. (enum property replaced by openapi-typescript)
+             * @enum {string}
+             */
+            event: "account.units.added";
+            /**
+             * Format: uuid
+             * @description Stable across every delivery and replay of this logical event — dedupe on it.
+             */
+            eventId: string;
+            /** @example 2026-04 */
+            apiVersion: string;
+            /**
+             * Format: date-time
+             * @description When this delivery was built.
+             */
+            timestamp: string;
+            account?: components["schemas"]["WebhookEventAccount"];
+            data: components["schemas"]["AccountUnitsAddedPayload"];
         };
         /** @description An account import began. */
         AccountImportStartedEvent: {
@@ -8987,7 +9143,7 @@ export interface components {
             data: components["schemas"]["MigrationImportPayload"];
         };
         /** @description The full event envelope POSTed to your webhook URL. Discriminated on `type` — narrow `event.data` by switching on `event.type`. Use the matching `*Event` variant directly if your SDK lacks discriminator support. Events about an inactive listing (reservations, messages, alterations, reviews, payments, calendar and listing events) are not delivered. The data keeps syncing while the listing is inactive, but its events are never sent — including after you reactivate it; webhooks resume for events that happen from reactivation on. Account-level events are always delivered. */
-        WebhookEvent: components["schemas"]["ReservationCreatedEvent"] | components["schemas"]["ReservationUpdatedEvent"] | components["schemas"]["ReservationCancelledEvent"] | components["schemas"]["ReservationMessageReceivedEvent"] | components["schemas"]["ReservationMessageSentEvent"] | components["schemas"]["ReservationMessageUpdatedEvent"] | components["schemas"]["ReservationMessageReadEvent"] | components["schemas"]["ReservationMessageReactionEvent"] | components["schemas"]["ReservationAlterationCreatedEvent"] | components["schemas"]["ReservationAlterationRespondedEvent"] | components["schemas"]["ReservationRequestCreatedEvent"] | components["schemas"]["ReservationRequestUpdatedEvent"] | components["schemas"]["BookingUnacknowledgedEvent"] | components["schemas"]["ChannelSyncFailedEvent"] | components["schemas"]["ChannelDegradedEvent"] | components["schemas"]["ReservationThreadAssignedEvent"] | components["schemas"]["InquiryCreatedEvent"] | components["schemas"]["InquiryUpdatedEvent"] | components["schemas"]["ListingCreatedEvent"] | components["schemas"]["ListingUpdatedEvent"] | components["schemas"]["ListingDeletedEvent"] | components["schemas"]["ListingSuspendedEvent"] | components["schemas"]["ListingReactivatedEvent"] | components["schemas"]["AccountCreatedEvent"] | components["schemas"]["ConnectSessionCompletedEvent"] | components["schemas"]["ConnectSessionAbandonedEvent"] | components["schemas"]["AccountDisconnectedEvent"] | components["schemas"]["AccountImportStartedEvent"] | components["schemas"]["AccountImportCompletedEvent"] | components["schemas"]["AccountImportFailedEvent"] | components["schemas"]["ReviewCreatedEvent"] | components["schemas"]["ReviewRespondedEvent"] | components["schemas"]["AiOperationCompletedEvent"] | components["schemas"]["AiOperationFailedEvent"] | components["schemas"]["PaymentCompletedEvent"] | components["schemas"]["PaymentRefundedEvent"] | components["schemas"]["PayoutCompletedEvent"] | components["schemas"]["RepullPingEvent"] | components["schemas"]["UsageQuotaWarningEvent"] | components["schemas"]["MigrationCompletedEvent"] | components["schemas"]["MigrationFailedEvent"];
+        WebhookEvent: components["schemas"]["ReservationCreatedEvent"] | components["schemas"]["ReservationUpdatedEvent"] | components["schemas"]["ReservationCancelledEvent"] | components["schemas"]["ReservationMessageReceivedEvent"] | components["schemas"]["ReservationMessageSentEvent"] | components["schemas"]["ReservationMessageUpdatedEvent"] | components["schemas"]["ReservationMessageReadEvent"] | components["schemas"]["ReservationMessageReactionEvent"] | components["schemas"]["ReservationAlterationCreatedEvent"] | components["schemas"]["ReservationAlterationRespondedEvent"] | components["schemas"]["ReservationRequestCreatedEvent"] | components["schemas"]["ReservationRequestUpdatedEvent"] | components["schemas"]["BookingUnacknowledgedEvent"] | components["schemas"]["ChannelSyncFailedEvent"] | components["schemas"]["ChannelDegradedEvent"] | components["schemas"]["ReservationThreadAssignedEvent"] | components["schemas"]["InquiryCreatedEvent"] | components["schemas"]["InquiryUpdatedEvent"] | components["schemas"]["ListingCreatedEvent"] | components["schemas"]["ListingUpdatedEvent"] | components["schemas"]["ListingDeletedEvent"] | components["schemas"]["ListingSuspendedEvent"] | components["schemas"]["ListingReactivatedEvent"] | components["schemas"]["AccountCreatedEvent"] | components["schemas"]["ConnectSessionCompletedEvent"] | components["schemas"]["ConnectSessionAbandonedEvent"] | components["schemas"]["AccountDisconnectedEvent"] | components["schemas"]["AccountImportStartedEvent"] | components["schemas"]["AccountImportCompletedEvent"] | components["schemas"]["AccountImportFailedEvent"] | components["schemas"]["AccountUnitsAddedEvent"] | components["schemas"]["ReviewCreatedEvent"] | components["schemas"]["ReviewRespondedEvent"] | components["schemas"]["AiOperationCompletedEvent"] | components["schemas"]["AiOperationFailedEvent"] | components["schemas"]["PaymentCompletedEvent"] | components["schemas"]["PaymentRefundedEvent"] | components["schemas"]["PayoutCompletedEvent"] | components["schemas"]["RepullPingEvent"] | components["schemas"]["UsageQuotaWarningEvent"] | components["schemas"]["MigrationCompletedEvent"] | components["schemas"]["MigrationFailedEvent"];
         /** @description A listing paired with its Airbnb connections. The list endpoint groups every Airbnb connection of the same `listingId` under a single `connections[]` array. */
         AirbnbListing: {
             /**
@@ -9718,7 +9874,7 @@ export interface components {
                      */
                     monthly_price_usd: number | null;
                     /**
-                     * @description Listings the price covers: active plus held back by your plan, across your workspaces.
+                     * @description Listings the price covers: your active ones, across your workspaces (what checkout bills). Held-back listings are not included; upgrading does not switch them on.
                      * @example 2
                      */
                     listings: number | null;
@@ -10630,7 +10786,7 @@ export interface components {
              * @example 3
              */
             activeListingLimit: number | null;
-            /** @example 40 more connected listings are held inactive because your plan allows 3 active listings. They stay connected and keep syncing. Starter serves all 43 for $264 a month: https://repull.dev/dashboard/billing?upgrade=starter */
+            /** @example 40 more connected listings are held inactive because your plan allows 3 active listings. They stay connected and keep syncing. Upgrade to Starter ($99 a month, 10 listings included), then choose which listings to switch on: $5 a month per listing from the 11th to the 100th: https://repull.dev/dashboard/billing?upgrade=starter */
             message: string;
             fix: string;
             /**
@@ -10639,13 +10795,13 @@ export interface components {
              */
             billingUrl: string;
             /**
-             * @description On a free plan: the listings Starter would serve and bill, active plus held back, across the plan's workspaces.
-             * @example 43
+             * @description On a free plan: the listings Starter checkout bills today, the active ones across the plan's workspaces. Held-back listings are not included: upgrading does not switch them on.
+             * @example 3
              */
             starterListings?: number;
             /**
-             * @description Starter's monthly price in USD for `starterListings` — exactly what checkout charges. Present up to 100 listings; above that the message says how to ask for a plan.
-             * @example 264
+             * @description Starter's monthly price in USD for `starterListings` — exactly what checkout charges. Each listing switched on afterwards adds Starter's per-listing price ($5 a month from the 11th to the 100th). Present up to 100 connected listings; above that the message says how to ask for a plan.
+             * @example 99
              */
             starterMonthlyPrice?: number;
             /**
@@ -13266,6 +13422,23 @@ export interface components {
             needsCalendar: string[];
             /** @description Plain-language explanation of `needsCalendar`, present only when it is non-empty. */
             calendarNote?: string;
+            /** @description Whether Booking.com has the property open for bookings. A property still being built on Booking.com is checked and opened as the last Connect step; one that is already open, or that its host closed, is left as it is. `null` when no room was mapped. */
+            propertyStatus?: {
+                propertyId?: string;
+                /**
+                 * @description `opened`: it was being built and is now open. `not_needed`: it was already past that stage. `blocked`: Booking.com will not open it yet — see `blockers`. `status_unknown`: its status could not be read. `failed`: Booking.com did not answer the open request.
+                 * @enum {string}
+                 */
+                outcome?: "opened" | "blocked" | "not_needed" | "status_unknown" | "failed";
+                /** @description Booking.com's status for the property before this step, e.g. `XML: Being built`. */
+                statusBefore?: string | null;
+                /** @description Booking.com's own reasons it will not open the property yet. */
+                blockers?: string[];
+                /** @description What is wrong and how to fix it, in plain words. Null when the property is open. */
+                message?: string | null;
+            } | null;
+            /** @description `propertyStatus.message`, present only when the property is not open. */
+            propertyNote?: string;
         };
         /** @description Body for `POST /v1/channels/airbnb/listings/map`. */
         MapAirbnbListingRequest: {
@@ -14035,7 +14208,7 @@ export interface components {
          *     **Watermark.** The bound is inclusive (`updatedAt >= value`), so the last row of the final page is the watermark for the next poll — re-polling with it re-emits that row. Delivery is at-least-once; upsert by `id`.
          */
         UpdatedSince: string;
-        /** @description Only the records of one connected account, as `provider:externalAccountId` — the pair from a webhook `account` block, `connect.session.completed`, or `GET /v1/connect/{provider}` → `accounts`. A record belongs to an account when it is on that account's listings and on its channel (a PMS account: came in through that PMS). An account with no listings returns an empty page. */
+        /** @description Only the records of one connected account, as `provider:externalAccountId` — the pair from a webhook `account` block, `connect.session.completed`, or `GET /v1/connect/{provider}` → `accounts`. `externalAccountId` is the platform's own id (e.g. `airbnb:79730216`, `booking:17627428`, `booking_extranet:20123456`). The old Extranet / Vrbo login ids (`booking_extranet:88`, `vrbo:46`) still work until 2027-02-12. A record belongs to an account when it is on that account's listings and on its channel (a PMS account: came in through that PMS). An account with no listings returns an empty page. */
         Account: string;
         /** @description First-class alias for cursor-based pagination. Mutually exclusive with `cursor` — passing both returns 422. Accepts integers in `[0, 10000]`; deeper walks must use `cursor` (constant per-page cost). The response always includes `pagination.nextCursor` so consumers can switch from offset → cursor mid-walk for deep pagination without re-keying. */
         Offset: number;
@@ -14074,7 +14247,7 @@ export interface operations {
     list_properties: {
         parameters: {
             query?: {
-                /** @description Only the records of one connected account, as `provider:externalAccountId` — the pair from a webhook `account` block, `connect.session.completed`, or `GET /v1/connect/{provider}` → `accounts`. A record belongs to an account when it is on that account's listings and on its channel (a PMS account: came in through that PMS). An account with no listings returns an empty page. */
+                /** @description Only the records of one connected account, as `provider:externalAccountId` — the pair from a webhook `account` block, `connect.session.completed`, or `GET /v1/connect/{provider}` → `accounts`. `externalAccountId` is the platform's own id (e.g. `airbnb:79730216`, `booking:17627428`, `booking_extranet:20123456`). The old Extranet / Vrbo login ids (`booking_extranet:88`, `vrbo:46`) still work until 2027-02-12. A record belongs to an account when it is on that account's listings and on its channel (a PMS account: came in through that PMS). An account with no listings returns an empty page. */
                 account?: components["parameters"]["Account"];
                 /** @description Page size (max 100). Requests over the cap return 422. */
                 limit?: number;
@@ -14234,7 +14407,7 @@ export interface operations {
     list_reservations: {
         parameters: {
             query?: {
-                /** @description Only the records of one connected account, as `provider:externalAccountId` — the pair from a webhook `account` block, `connect.session.completed`, or `GET /v1/connect/{provider}` → `accounts`. A record belongs to an account when it is on that account's listings and on its channel (a PMS account: came in through that PMS). An account with no listings returns an empty page. */
+                /** @description Only the records of one connected account, as `provider:externalAccountId` — the pair from a webhook `account` block, `connect.session.completed`, or `GET /v1/connect/{provider}` → `accounts`. `externalAccountId` is the platform's own id (e.g. `airbnb:79730216`, `booking:17627428`, `booking_extranet:20123456`). The old Extranet / Vrbo login ids (`booking_extranet:88`, `vrbo:46`) still work until 2027-02-12. A record belongs to an account when it is on that account's listings and on its channel (a PMS account: came in through that PMS). An account with no listings returns an empty page. */
                 account?: components["parameters"]["Account"];
                 /** @description Page size (max 100). Requests over the cap return 422. */
                 limit?: number;
@@ -14713,7 +14886,7 @@ export interface operations {
     listConversations: {
         parameters: {
             query?: {
-                /** @description Only the records of one connected account, as `provider:externalAccountId` — the pair from a webhook `account` block, `connect.session.completed`, or `GET /v1/connect/{provider}` → `accounts`. A record belongs to an account when it is on that account's listings and on its channel (a PMS account: came in through that PMS). An account with no listings returns an empty page. */
+                /** @description Only the records of one connected account, as `provider:externalAccountId` — the pair from a webhook `account` block, `connect.session.completed`, or `GET /v1/connect/{provider}` → `accounts`. `externalAccountId` is the platform's own id (e.g. `airbnb:79730216`, `booking:17627428`, `booking_extranet:20123456`). The old Extranet / Vrbo login ids (`booking_extranet:88`, `vrbo:46`) still work until 2027-02-12. A record belongs to an account when it is on that account's listings and on its channel (a PMS account: came in through that PMS). An account with no listings returns an empty page. */
                 account?: components["parameters"]["Account"];
                 /** @description Opaque cursor returned in the previous response's `pagination.nextCursor`. Omit to fetch the first page. */
                 cursor?: string;
@@ -14927,7 +15100,7 @@ export interface operations {
     listReviews: {
         parameters: {
             query?: {
-                /** @description Only the records of one connected account, as `provider:externalAccountId` — the pair from a webhook `account` block, `connect.session.completed`, or `GET /v1/connect/{provider}` → `accounts`. A record belongs to an account when it is on that account's listings and on its channel (a PMS account: came in through that PMS). An account with no listings returns an empty page. */
+                /** @description Only the records of one connected account, as `provider:externalAccountId` — the pair from a webhook `account` block, `connect.session.completed`, or `GET /v1/connect/{provider}` → `accounts`. `externalAccountId` is the platform's own id (e.g. `airbnb:79730216`, `booking:17627428`, `booking_extranet:20123456`). The old Extranet / Vrbo login ids (`booking_extranet:88`, `vrbo:46`) still work until 2027-02-12. A record belongs to an account when it is on that account's listings and on its channel (a PMS account: came in through that PMS). An account with no listings returns an empty page. */
                 account?: components["parameters"]["Account"];
                 /** @description Opaque cursor returned in the previous response's `pagination.nextCursor`. */
                 cursor?: string;
@@ -15059,7 +15232,7 @@ export interface operations {
                      */
                     reservationHistoryMonths?: number;
                     /**
-                     * @description Where the channel's units get linked to listings. `hosted` (default): after a Vrbo or Booking.com Extranet sign-in, Connect shows a mapping step and returns to `redirectUrl` when it's confirmed. `api`: Connect skips that step and finishes right after sign-in. The connection reaches you in the `connect.session.completed` webhook as `account.externalAccountId` (its `connectionId` is null for these two), and as `connectionId` in the popup message and `accountId` on the redirect, all the same id; its handle is `vrbo:{id}` or `booking_extranet:{id}`; you list the units with `GET /v1/connections/{id}/units` and link them with `POST /v1/connections/{id}/mappings`. Nothing is imported until you post the mappings. Other providers ignore it.
+                     * @description Where the channel's units get linked to listings. `hosted` (default): after a Vrbo or Booking.com Extranet sign-in, Connect shows a mapping step and returns to `redirectUrl` when it's confirmed. `api`: Connect skips that step and finishes right after sign-in. The connection reaches you in the `connect.session.completed` webhook, the popup message and the redirect (`externalAccountId` + `connectionId`): `externalAccountId` is the Vrbo account id or the Booking.com account id, `connectionId` our connection record; its handle is `vrbo:{externalAccountId}` or `booking_extranet:{externalAccountId}`; you list the units with `GET /v1/connections/{id}/units` and link them with `POST /v1/connections/{id}/mappings`. Nothing is imported until you post the mappings. Other providers ignore it.
                      * @default hosted
                      * @enum {string}
                      */
@@ -23265,8 +23438,8 @@ export interface operations {
                             listingIds?: string[];
                         }[];
                         vrbo?: {
-                            /** @description The Vrbo account, as its connection id (`vrbo:13`). */
-                            accountId?: string;
+                            /** @description The Vrbo account, as its handle `vrbo:{Vrbo account id}`. `null` until Vrbo's account id is captured for the sign-in. */
+                            accountId?: string | null;
                             /** @description The Vrbo listing number this listing is linked to. */
                             vrboListingNumber?: string;
                             /**
@@ -23310,7 +23483,7 @@ export interface operations {
                     markupPercent: number | null;
                     /** @description Booking.com property — required when the listing is on more than one. */
                     hotelId?: string;
-                    /** @description Vrbo account (`vrbo:13`) — required when the listing is linked on more than one. */
+                    /** @description Vrbo account (`vrbo:7001234`, Vrbo's own account id) — required when the listing is linked on more than one. The old sign-in ids (`vrbo:13`) still resolve until 2027-02-12. */
                     accountId?: string;
                 };
             };
@@ -24297,7 +24470,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Connection handle `{channel}:{externalAccountId}`, e.g. `vrbo:12` or `booking_extranet:36`. */
+                /** @description Connection handle `{channel}:{externalAccountId}`, where `externalAccountId` is the platform's own account id: `booking_extranet:20123456` (the Booking.com account id) or `vrbo:7001234` (the Vrbo account id). The old forms with our login id (`booking_extranet:88`, `vrbo:46`) still resolve until 2027-02-12 and are never returned. */
                 id: string;
             };
             cookie?: never;
@@ -24343,7 +24516,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Connection handle `{channel}:{externalAccountId}`, e.g. `vrbo:12` or `booking_extranet:36`. */
+                /** @description Connection handle `{channel}:{externalAccountId}`, where `externalAccountId` is the platform's own account id: `booking_extranet:20123456` (the Booking.com account id) or `vrbo:7001234` (the Vrbo account id). The old forms with our login id (`booking_extranet:88`, `vrbo:46`) still resolve until 2027-02-12 and are never returned. */
                 id: string;
             };
             cookie?: never;
@@ -24387,7 +24560,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                /** @description Connection handle `{channel}:{externalAccountId}`, e.g. `vrbo:12` or `booking_extranet:36`. */
+                /** @description Connection handle `{channel}:{externalAccountId}`, where `externalAccountId` is the platform's own account id: `booking_extranet:20123456` (the Booking.com account id) or `vrbo:7001234` (the Vrbo account id). The old forms with our login id (`booking_extranet:88`, `vrbo:46`) still resolve until 2027-02-12 and are never returned. */
                 id: string;
             };
             cookie?: never;
@@ -24471,7 +24644,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                /** @description Connection handle `{channel}:{externalAccountId}`. */
+                /** @description Connection handle `{channel}:{externalAccountId}`, where `externalAccountId` is the platform's own account id: `booking_extranet:20123456` (the Booking.com account id) or `vrbo:7001234` (the Vrbo account id). The old forms with our login id (`booking_extranet:88`, `vrbo:46`) still resolve until 2027-02-12 and are never returned. */
                 id: string;
             };
             cookie?: never;
@@ -25333,7 +25506,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                /** @description Connection handle `{provider}:{externalAccountId}`, e.g. `booking_extranet:36`, `vrbo:12`, `airbnb:1234567`, `hostaway:27434` — the `provider` and `externalAccountId` of a connection on `GET /v1/connect`, or the account of an `account.*` webhook. */
+                /** @description Connection handle `{provider}:{externalAccountId}`, e.g. `booking_extranet:20123456`, `vrbo:7001234`, `airbnb:1234567`, `hostaway:27434` (`externalAccountId` is always the platform's own account id; the old Extranet / Vrbo login-id forms resolve until 2027-02-12) — the `provider` and `externalAccountId` of a connection on `GET /v1/connect`, or the account of an `account.*` webhook. */
                 id: string;
             };
             cookie?: never;
@@ -26064,8 +26237,8 @@ export interface operations {
                             /** @enum {string} */
                             status?: "running" | "done" | "failed";
                             listingId?: number;
-                            /** @description The Vrbo account (connection `vrbo:<accountId>`) the listing is created in. */
-                            accountId?: number;
+                            /** @description The Vrbo account the listing is created in, as its handle `vrbo:{Vrbo account id}`. `null` until Vrbo's account id is captured for the sign-in. */
+                            accountId?: string | null;
                             /** @description Steps Vrbo has finished, in order: create, amenities, property type, rooms, photos, headline + description, house rules, rate, booking options, publish, fees, cancellation policy, … */
                             steps?: string[];
                             /** @description Vrbo's reason when `status` is `failed`. */
@@ -26115,7 +26288,7 @@ export interface operations {
         requestBody?: {
             content: {
                 "application/json": {
-                    /** @description The Vrbo account, as its connection id (`"vrbo:13"`) or the bare number. Needed only when the workspace has several. */
+                    /** @description The Vrbo account, as its handle (`"vrbo:7001234"`, Vrbo's own account id) or the bare id. Needed only when the workspace has several. The old sign-in ids (`"vrbo:13"`) still resolve until 2027-02-12. */
                     accountId?: string;
                     /** @description Finish this unpublished Vrbo property (from a failed run's `job.propertyId`) instead of starting a new one. */
                     propertyId?: string;
@@ -26139,8 +26312,8 @@ export interface operations {
                             /** @enum {string} */
                             status?: "running" | "done" | "failed";
                             listingId?: number;
-                            /** @description The Vrbo account (connection `vrbo:<accountId>`) the listing is created in. */
-                            accountId?: number;
+                            /** @description The Vrbo account the listing is created in, as its handle `vrbo:{Vrbo account id}`. `null` until Vrbo's account id is captured for the sign-in. */
+                            accountId?: string | null;
                             /** @description Steps Vrbo has finished, in order: create, amenities, property type, rooms, photos, headline + description, house rules, rate, booking options, publish, fees, cancellation policy, … */
                             steps?: string[];
                             /** @description Vrbo's reason when `status` is `failed`. */
@@ -26207,7 +26380,7 @@ export interface operations {
     get_reservation_summary: {
         parameters: {
             query: {
-                /** @description Only the records of one connected account, as `provider:externalAccountId` — the pair from a webhook `account` block, `connect.session.completed`, or `GET /v1/connect/{provider}` → `accounts`. A record belongs to an account when it is on that account's listings and on its channel (a PMS account: came in through that PMS). An account with no listings returns an empty page. */
+                /** @description Only the records of one connected account, as `provider:externalAccountId` — the pair from a webhook `account` block, `connect.session.completed`, or `GET /v1/connect/{provider}` → `accounts`. `externalAccountId` is the platform's own id (e.g. `airbnb:79730216`, `booking:17627428`, `booking_extranet:20123456`). The old Extranet / Vrbo login ids (`booking_extranet:88`, `vrbo:46`) still work until 2027-02-12. A record belongs to an account when it is on that account's listings and on its channel (a PMS account: came in through that PMS). An account with no listings returns an empty page. */
                 account?: components["parameters"]["Account"];
                 /** @description First day of the period. */
                 from: string;
@@ -26430,6 +26603,101 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["ListingInactive"];
+            422: components["responses"]["UnprocessableEntity"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    deactivateWorkspace: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A `workspaceId` from `GET /v1/workspaces`. */
+                workspaceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deactivated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data?: {
+                            workspaceId?: string;
+                            /** @enum {boolean} */
+                            active?: false;
+                            /** Format: date-time */
+                            deactivatedAt?: string;
+                            /** @description True when the workspace was already inactive before this call. */
+                            alreadyInactive?: boolean;
+                            /** @description Accounts that were still connected and are now disconnected. */
+                            disconnected?: {
+                                /** @example airbnb */
+                                provider?: string;
+                                accountId?: string;
+                            }[];
+                            /** @description Listings this call switched off. `reactivate` switches these back on. */
+                            listingsDeactivated?: string[];
+                        };
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["UnprocessableEntity"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    reactivateWorkspace: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A `workspaceId` from `GET /v1/workspaces`. */
+                workspaceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Reactivated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data?: {
+                            workspaceId?: string;
+                            /** @enum {boolean} */
+                            active?: true;
+                            /**
+                             * Format: date-time
+                             * @description Null when the workspace was already active.
+                             */
+                            reactivatedAt?: string | null;
+                            /** @description True when the workspace was already active — nothing was changed. */
+                            alreadyActive?: boolean;
+                            /** @description Listings switched back on. */
+                            listingsReactivated?: string[];
+                            /**
+                             * @description Accounts are never reconnected by this call.
+                             * @enum {boolean}
+                             */
+                            accountsReconnectRequired?: true;
+                            /** @description What to do next: reconnect the accounts through Connect. */
+                            nextStep?: string;
+                        };
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            402: components["responses"]["PaymentRequired"];
+            404: components["responses"]["NotFound"];
             422: components["responses"]["UnprocessableEntity"];
             500: components["responses"]["InternalError"];
         };
