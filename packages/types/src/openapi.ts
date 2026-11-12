@@ -13365,6 +13365,25 @@ export interface components {
                 failed?: number;
                 /** @description Channels whose token has expired — these need reconnecting, not retrying. */
                 authErrors?: number;
+                /** @description One entry per listing per connected channel: which channel took the write and which refused it. */
+                channels?: {
+                    listingId?: string;
+                    /**
+                     * @description `airbnb`, `booking`, `vrbo`, or another connected channel.
+                     * @example booking
+                     */
+                    channel?: string;
+                    /** @description The channel's own id for the listing or room. */
+                    channelListingId?: string | null;
+                    /**
+                     * @description `accepted`: the channel took the write in this request. `queued` (Vrbo): sent within minutes and read back; `GET /v1/listings/{id}/calendar-sync` shows the outcome. `failed`: the channel refused it; see `error`.
+                     * @enum {string}
+                     */
+                    status?: "accepted" | "queued" | "failed";
+                    error?: string | null;
+                    /** @description True when the channel's authorization has expired: reconnect, don't retry. */
+                    authError?: boolean;
+                }[];
             };
             /** @description Present only when one or more channel pushes failed. */
             warning?: string;

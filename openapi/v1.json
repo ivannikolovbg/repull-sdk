@@ -16822,6 +16822,45 @@
               "authErrors": {
                 "type": "integer",
                 "description": "Channels whose token has expired — these need reconnecting, not retrying."
+              },
+              "channels": {
+                "type": "array",
+                "description": "One entry per listing per connected channel: which channel took the write and which refused it.",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "listingId": {
+                      "type": "string"
+                    },
+                    "channel": {
+                      "type": "string",
+                      "example": "booking",
+                      "description": "`airbnb`, `booking`, `vrbo`, or another connected channel."
+                    },
+                    "channelListingId": {
+                      "type": "string",
+                      "nullable": true,
+                      "description": "The channel's own id for the listing or room."
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "accepted",
+                        "queued",
+                        "failed"
+                      ],
+                      "description": "`accepted`: the channel took the write in this request. `queued` (Vrbo): sent within minutes and read back; `GET /v1/listings/{id}/calendar-sync` shows the outcome. `failed`: the channel refused it; see `error`."
+                    },
+                    "error": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "authError": {
+                      "type": "boolean",
+                      "description": "True when the channel's authorization has expired: reconnect, don't retry."
+                    }
+                  }
+                }
               }
             }
           },
