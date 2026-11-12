@@ -333,9 +333,11 @@ export interface paths {
          *
          *     **Inactive listings:** conversations that belong to an inactive listing (by the thread's listing or its reservation's listing) are left out of the page and of `pagination.total`. Inactive listings keep syncing; activate the listing to use it here.
          *
-         *     **Order:** newest conversation first (by when the conversation started), unless you pass `updated_since`.
+         *     **Order:** most recent activity first (`lastMessageAt` descending) by default (`order=recent`). `lastMessageAt` is the conversation's newest activity: the time of its newest message (after an import, the newest imported message's own time, not the import time), or of a later change to the conversation.
          *
-         *     **Incremental sync (`?updated_since=<ISO8601>`):** only conversations with activity (a new message or another change) at or after that instant, ordered oldest change first (`updatedAt ASC`). Walk every page with `cursor`, keeping `updated_since` on each request; the last row's `updatedAt` is your next watermark. A cursor from one kind of walk is refused on the other.
+         *     **Full sync — use `order=created`:** a recent-order walk is a live view: a conversation that gets a new message while you page moves to the front, behind your walk, and that walk does not return it (the next walk or an `updated_since` poll will). To walk every conversation exactly once, pass `order=created` — newest conversation first (by when it started), stable for the whole walk. A cursor keeps the order its walk started in: cursors issued before recency ordering continue in creation order, and a recent-order cursor is refused with `order=created`.
+         *
+         *     **Incremental sync (`?updated_since=<ISO8601>`):** only conversations whose record changed (a new message or another change) at or after that instant, ordered oldest change first (`updatedAt ASC`); `order` does not apply. Walk every page with `cursor`, keeping `updated_since` on each request; the last row's `updatedAt` is your next watermark. A cursor from one kind of walk is refused on the other.
          */
         get: operations["listConversations"];
         put?: never;
@@ -6044,7 +6046,10 @@ export interface components {
             reservationId?: string | null;
             /** @description Thread subject (email/website channels) or null when not applicable. */
             subject?: string | null;
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @description The conversation's newest activity: the time of its newest message (after an import, the newest imported message's own time, not the import time), or of a later change to the conversation. `GET /v1/conversations` sorts on it by default.
+             */
             lastMessageAt?: string | null;
             /** @description Short preview of the most recent message body for list-UI rendering. */
             lastMessagePreview?: string | null;
@@ -6056,7 +6061,10 @@ export interface components {
             status?: "open" | "archived";
             /** Format: date-time */
             createdAt?: string;
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @description When the conversation record last changed; the watermark for `updated_since`.
+             */
             updatedAt?: string;
         };
         /** @description Linked host metadata for a conversation thread. Currently populated for Airbnb threads (resolved through `airbnb_hosts`); null for other channels until per-channel host enrichment lands. */
@@ -14908,10 +14916,12 @@ export interface operations {
                 /** @description Restrict to threads on a single channel. */
                 platform?: "airbnb" | "booking" | "vrbo" | "website" | "email";
                 /**
-                 * @description ISO 8601 instant. Only conversations with activity at or after it, oldest change first. Keep it on every page of the walk; use the last row's `updatedAt` as the next value.
+                 * @description ISO 8601 instant. Only conversations whose record changed at or after it, oldest change first. Keep it on every page of the walk; use the last row's `updatedAt` as the next value.
                  * @example 2026-10-09T18:00:00Z
                  */
                 updated_since?: string;
+                /** @description `recent` (default): most recent activity first — for an inbox or "what changed lately". A conversation that gets a new message while you page moves to the front, behind your walk, so a walk can miss it. `created`: newest conversation first, stable for the whole walk — use it to sync every conversation exactly once. Ignored with `updated_since` (always oldest change first). Keep the same value on every page of a walk. */
+                order?: "recent" | "created";
                 /** @description Filter by archive status. `archived` currently always returns an empty page — kept for forward-compat. */
                 status?: "open" | "archived";
             };
