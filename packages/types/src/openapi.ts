@@ -491,11 +491,11 @@ export interface paths {
          *
          *     **Access level.** Every connection carries `accessType`: `read_only`, `messaging` or `full_access`, or `null` when unknown. Airbnb: the tier the host's token was granted with. Vrbo: bookings and messages only (`messaging`) or with the calendar push (`full_access`). Booking.com: always `full_access`. Booking.com Extranet: always `messaging` (reads reservations, messages and reviews and replies; never writes rates or availability). PMS: `read_only` when every write-policy switch is off, else `full_access`. See the `ConnectionAccessType` schema.
          *
-         *     **One entry per Booking.com Extranet login.** Each Booking.com account that invites the Repull user connects as its own login, with its own `externalAccountId` — the Booking.com account id (handle `booking_extranet:{externalAccountId}`). A new login adds an entry next to the existing ones and never replaces them; the entries share the workspace's Extranet `id`, and each login's listings, reservations, conversations and reviews stay under its own account (filter them with `?account=booking_extranet:{externalAccountId}`).
+         *     **One entry per Booking.com Extranet login.** Each Booking.com account that invites the Repull user connects as its own login, with its own `externalAccountId` — the Booking.com account id (handle `booking_extranet:{externalAccountId}`). A new login adds an entry next to the existing ones and never replaces them. Each login is its own connection with its own `id` (the `X-Account-Id`, and `account.id` in webhooks), and each login's listings, reservations, conversations and reviews stay under its own account (filter them with `?account=booking_extranet:{externalAccountId}`).
          *
-         *     **Spot connections that need attention.** A connection whose `status` is not `active` may need the host to do something before it works — most commonly a Booking.com Extranet connection where the invited user was granted only partial access (`status: "needs_permissions"`). A Smoobu connection still on a legacy single API key carries `action.reason: "reauth_required"` while its `status` is `active`: Smoobu stops accepting those keys on October 31, 2026, and `fixUrl` opens the form for a new API key + secret (the connection id stays the same). These connections carry two extra fields:
+         *     **Spot connections that need attention.** A connection whose `status` is not `active` may need the host to do something before it works — most commonly a Booking.com Extranet connection where the invited user was granted only partial access (`status: "needs_permissions"`). A Smoobu connection still on a legacy single API key carries `action.reason: "reauth_required"` while its `status` is `active`: Smoobu stops accepting those keys on October 31, 2026, and `fixUrl` opens the form for a new API key + secret (the connection id stays the same). A Booking.com Extranet login whose rooms are imported but none matched to a listing carries `action.reason: "needs_mapping"` while its `status` is `active`: nothing syncs until the host maps the rooms, and `fixUrl` opens the room-mapping step. These connections carry two extra fields:
          *
-         *     - `action` — `{ required: true, reason, message }`. `reason` is a stable machine code (e.g. `needs_permissions`); `message` is a host-facing one-liner describing what to do.
+         *     - `action` — `{ required: true, reason, message }`. `reason` is a stable machine code (`needs_permissions`, `needs_mapping`, `reauth_required`); `message` is a host-facing one-liner describing what to do.
          *     - `fixUrl` — a durable link that reopens the hosted Connect flow **bound to that account, on the fix screen** (e.g. "grant full access" + a Re-check button). It is safe to store and show in your own dashboard.
          *
          *     **Self-serve repair:** when `action.required` is true, surface a "Fix" button that opens `fixUrl` in a new tab (or embed it). The host resolves the issue (e.g. grants the user full access in Booking.com) and clicks Re-check; the import finishes on its own and the connection flips back to `active` — no re-invite, no support ticket. Poll this endpoint (or read it after the host returns) to confirm `action` has cleared.
@@ -7763,10 +7763,20 @@ export interface components {
              */
             lastErrorCode?: string | null;
             /**
-             * @description Booking.com: the Hotel ID the user entered while waiting for the Extranet approval.
+             * @description Booking.com: the Hotel ID the user entered while waiting for the Extranet approval. Booking.com Extranet in `awaiting_room_mapping`: the Booking.com account id of the connected login.
              * @example 17168363
              */
             externalAccountId?: string | null;
+            /**
+             * @description Booking.com Extranet in `awaiting_room_mapping`: the connection record of the connected login (the `X-Account-Id`). Absent otherwise.
+             * @example 1701
+             */
+            connectionId?: string | null;
+            /**
+             * Format: uri
+             * @description Booking.com Extranet in `awaiting_room_mapping`: a durable link that reopens Connect on the room-mapping step for this login. Send the host there to finish. `null` when there is nothing to resume.
+             */
+            fixUrl?: string | null;
             /** @description What to tell the user, in plain English. */
             nextStep?: string;
             /** Format: date-time */
