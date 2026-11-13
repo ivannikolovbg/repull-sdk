@@ -3,6 +3,11 @@
 All notable changes to `@repull/sdk` and `@repull/types` are recorded here.
 This project follows [Semantic Versioning](https://semver.org/).
 
+## 0.2.49 — 2026-11-13
+
+- New: `POST /v1/connections/{id}/imports`
+- Regenerated from the live spec (automated spec refresh).
+
 ## 0.2.48 — 2026-11-12
 
 - New: `POST /v1/workspaces/{workspaceId}/deactivate`
