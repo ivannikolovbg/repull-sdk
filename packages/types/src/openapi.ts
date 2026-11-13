@@ -2311,7 +2311,7 @@ export interface paths {
          * Deactivate or reactivate a listing
          * @description Toggle a listing's active state. Send `{ "active": false }` to **deactivate** (exclude the listing from Repull) or `{ "active": true }` to **reactivate** it.
          *
-         *     "Deactivate" keeps the listing row — it is NOT a hard delete, and it NEVER touches the upstream channel (Airbnb / Hospitable / Booking.com). Repull only mutates its own copy of the inventory. Deactivating is the self-serve way to get back under the plan-listings cap without paying.
+         *     "Deactivate" keeps the listing row — it is NOT a hard delete, and it NEVER touches the upstream channel (Airbnb / Hospitable / Booking.com). Repull only mutates its own copy of the inventory. Activating opens the listing's Booking.com property if Booking.com still has it in a build stage and its check passes; `bookingProperties` in the response says what happened. Deactivating is the self-serve way to get back under the plan-listings cap without paying.
          *
          *     Reactivation respects the plan-listings cap: if activating this listing would push you over the cap for your tier, the call returns `402 listings_limit_exceeded` and the listing stays inactive. Deactivate another listing or upgrade first.
          *
@@ -2865,7 +2865,7 @@ export interface paths {
         get: operations["get_booking_property"];
         put?: never;
         /**
-         * Take a property off sale / put it back (unlist/relist)
+         * Take a property off sale / put it back, or open / close it (unlist/relist/open/close)
          * @description Stop this listing's Booking.com property being sold, or start it again. `id` is a **Repull listing id**, not a Booking.com hotel id, as on the GET.
          *
          *     **Booking.com has no unlist, so this is an availability write.** Airbnb has a real deactivate; Booking.com does not. `unlist` closes the mapped room across the whole forward window, so the property stops selling. `relist` is not its mirror image: it re-syncs the true calendar, so dates that are genuinely blocked (a reservation, an owner stay) stay blocked and only the closure `unlist` wrote lifts. Re-opening everything would sell dates that are not for sale.
@@ -2873,6 +2873,10 @@ export interface paths {
          *     **Which property gets closed.** A listing can be mapped to more than one Booking.com property — the same unit re-listed under a new property keeps its old mapping, and workspaces routinely sit on five or six. With exactly one, send nothing. With several, name one with `hotelId` (or `?hotel_id=`); omit it and the request is refused with **`409 ambiguous_booking_mapping`** listing the candidates, and nothing is written. That refusal matters more here than on a publish: writing content into the wrong property is recoverable, closing the wrong property's availability takes real inventory off sale while the property you meant keeps selling. Naming a property this listing is not mapped to is a `404` that names the ones it is.
          *
          *     **This does not change the listing in Repull.** `active` — what Repull bills and serves — is untouched by both actions and is deliberately not echoed in the response, so the two ideas can never be read as one field. To take a listing off the market on every channel at once, use `POST /v1/listings/{id}/offline`.
+         *
+         *     **Opening and closing the property on Booking.com.** `open` runs Booking.com's readiness check and, only if it passes, opens the property. On a property that is not ready it changes nothing and answers **`422 booking_rejected`** with Booking.com's own reasons in `blockers` (for example "Room 1554900501 does not have kitchen or kitchenette"), so it is safe to ask. It opens a property Booking.com has in a build stage (`XML: Being built`, `XML: Ready to open`) or closed; an open property answers `changed: false`. `close` closes the property on Booking.com, with an optional `reason` (default `PROPERTY_NOT_AVAILABLE`). An inactive listing cannot be opened (`403 listing_inactive`), and neither can a property another inactive listing shares.
+         *
+         *     **When Repull opens a property by itself.** Repull opens a Booking.com property automatically only while every listing mapped to it is active. Keep a listing that is not ready inactive and its property is never opened; activate it and Repull opens the property, provided Booking.com's own readiness check passes. Activate with `POST /v1/listings/status` (or `PATCH /v1/listings/{id}`); its response has a `bookingProperties` entry per property saying whether it opened. Deactivating never closes a property that is already open — use `close` for that.
          *
          *     Any other action returns a structured `422` naming the ones that are supported. To push content use `POST /v1/listings/{id}/publish/booking`; to map rooms use `POST /v1/connect/booking/map-rooms`.
          *
@@ -3514,7 +3518,9 @@ export interface paths {
          * Activate or deactivate listings in bulk
          * @description Sets up to 500 listings active or inactive in one call. Send `{ "listingIds": ["4118", "4119"], "active": false }` to deactivate them, or `"active": true` to activate them.
          *
-         *     An inactive listing is not counted toward your plan's listing limit or billed. It is NOT deleted and the upstream channel (Airbnb / Booking.com / your PMS) is never touched — its data keeps syncing, so it is complete the moment you activate it again. Until then it cannot be read, changed, or receive webhooks.
+         *     An inactive listing is not counted toward your plan's listing limit or billed. It is NOT deleted and nothing is pushed to the upstream channel (Airbnb / Booking.com / your PMS) — its data keeps syncing, so it is complete the moment you activate it again. Until then it cannot be read, changed, or receive webhooks.
+         *
+         *     **Activating opens the listing's Booking.com property.** Repull opens a Booking.com property automatically only while every listing mapped to it is active. Keep a listing that is not ready inactive and its property is never opened; activate it and Repull opens the property, provided Booking.com's own readiness check passes. `bookingProperties` in the response says, per property, whether it was opened or what Booking.com said is missing. Sending `active: true` again for a listing that is already active retries the open. Deactivating never closes a property that is already open — use the `close` action on `POST /v1/channels/booking/properties/{id}`.
          *
          *     **All or nothing.** Nothing changes unless the whole request can be applied:
          *     - If any id is not one of your listings, the call returns `404` naming those ids.
@@ -10458,6 +10464,24 @@ export interface components {
             id?: string;
             /** @description The resulting active state after the toggle. */
             active?: boolean;
+            /** @description Only when activating: what happened to the Booking.com properties this listing is mapped to. Activating a listing opens its Booking.com property if Booking.com still has it in a build stage. Empty when the listing has no Booking.com property. */
+            bookingProperties?: components["schemas"]["BookingPropertyOpenResult"][];
+        };
+        /** @description What happened to one Booking.com property when its listing was activated. Repull opens a Booking.com property automatically only while every listing mapped to it is active. Keep a listing that is not ready inactive and its property is never opened; activate it and Repull opens the property, provided Booking.com's own readiness check passes. */
+        BookingPropertyOpenResult: {
+            /** @description The Booking.com property (hotel id). */
+            hotelId: string;
+            /** @description The listings in this request that are mapped to the property. */
+            listingIds: string[];
+            /**
+             * @description `opened`: Booking.com's check passed and the property is now open. `refused`: Booking.com's check did not pass — `blockers` has its own reasons — and nothing changed. `not_needed`: Booking.com already has the property past its build stage (open, or closed by you), so it was left alone; use the `open` action on `POST /v1/channels/booking/properties/{id}` to reopen a closed property. `listing_inactive`: another listing on the same property is still inactive. `no_listing`: no listing is mapped to the property. `failed`: Booking.com did not answer; nothing changed — send the request again.
+             * @enum {string}
+             */
+            outcome: "opened" | "refused" | "not_needed" | "listing_inactive" | "no_listing" | "failed";
+            /** @description Booking.com's status for the property before anything was sent, e.g. `XML: Ready to open`, when it was read. */
+            bookingStatus: string | null;
+            /** @description Booking.com's own reasons it will not open the property, e.g. "Room 1554900501 does not have kitchen or kitchenette". Empty unless `outcome` is `refused`. */
+            blockers: string[];
         };
         ListingStatusBatchRequest: {
             /** @description Listing ids to change, 1 to 500, each at most once. Send them as returned by `GET /v1/listings` (strings); plain integers are accepted too. */
@@ -10472,6 +10496,8 @@ export interface components {
             updated: string[];
             /** @description Listing ids that were already in the requested state, in request order. */
             unchanged: string[];
+            /** @description Only when `active` is true: one entry per Booking.com property the listings in the request are mapped to, saying whether it was opened. Every listing in the request counts, including those in `unchanged`, so sending `active: true` again retries an open Booking.com refused. Empty when none of the listings has a Booking.com property. */
+            bookingProperties?: components["schemas"]["BookingPropertyOpenResult"][];
         };
         /** @description Canonical PMS-owned listing content. Every field is optional — this is a partial update, only the fields you send are written; absent fields are left untouched. This is a LOCAL write only: it does NOT push to Airbnb/Booking.com. Distribution is a separate explicit publish step. `photos` are ingested by URL and attached to the listing in order (full-replace by default, or append via `photosMode`). */
         ListingContentUpdateRequest: {
@@ -13519,10 +13545,10 @@ export interface components {
             propertyStatus?: {
                 propertyId?: string;
                 /**
-                 * @description `opened`: it was being built and is now open. `not_needed`: it was already past that stage. `blocked`: Booking.com will not open it yet — see `blockers`. `status_unknown`: its status could not be read. `failed`: Booking.com did not answer the open request.
+                 * @description `opened`: it was being built and is now open. `not_needed`: it was already past that stage. `blocked`: Booking.com will not open it yet — see `blockers`. `status_unknown`: its status could not be read. `failed`: Booking.com did not answer the open request. `listing_inactive`: a listing mapped to the property is inactive, so it was not opened — activate it when it is ready and Repull opens the property. `no_listing`: no listing is mapped to it.
                  * @enum {string}
                  */
-                outcome?: "opened" | "blocked" | "not_needed" | "status_unknown" | "failed";
+                outcome?: "opened" | "blocked" | "not_needed" | "status_unknown" | "failed" | "listing_inactive" | "no_listing";
                 /** @description Booking.com's status for the property before this step, e.g. `XML: Being built`. */
                 statusBefore?: string | null;
                 /** @description Booking.com's own reasons it will not open the property yet. */
@@ -13808,13 +13834,20 @@ export interface components {
             /** @description One entry per channel item acted on — Airbnb connections first, then the Booking.com property. Never empty: a listing connected to nothing is refused with `422 no_connected_channels` rather than answered with an empty array. */
             channels: components["schemas"]["ChannelMarketStateItem"][];
         };
-        /** @description Take this listing's Booking.com property off sale, or put it back. */
+        /** @description Take this listing's Booking.com property off sale or put it back (`unlist` / `relist`), or open or close the property itself on Booking.com (`open` / `close`). */
         BookingPropertyActionRequest: {
             /**
              * @description `unlist` closes the room's availability across the whole forward window, so the property stops selling. `relist` re-syncs the real calendar: dates that are genuinely blocked (a reservation, an owner stay) stay blocked, and only the closure `unlist` wrote lifts. They are not mirror images, and that is deliberate.
+             *
+             *     `open` runs Booking.com's readiness check and opens the property only if it passes — on a property that is not ready it changes nothing and answers `422 booking_rejected` with Booking.com's reasons in `blockers`. It opens a property Booking.com has in a build stage (`XML: Being built`, `XML: Ready to open`) or closed. `close` closes the property on Booking.com with `reason`.
              * @enum {string}
              */
-            action: "unlist" | "relist";
+            action: "unlist" | "relist" | "open" | "close";
+            /**
+             * @description `close` only: the reason Booking.com records for closing the property. Default `PROPERTY_NOT_AVAILABLE`.
+             * @enum {string}
+             */
+            reason?: "SEASON" | "RENOVATION" | "PROPERTY_NOT_AVAILABLE" | "FULLY_BOOKED" | "ISSUES_GUESTS" | "ISSUES_BOOKING" | "STRATEGY" | "OTHER";
             /** @description Booking.com property to act on, for a listing mapped to more than one. Without it the request is refused with `409 ambiguous_booking_mapping` and nothing is written. `?hotel_id=` means the same thing; the body wins if you send both. */
             hotelId?: string;
         };
@@ -13823,13 +13856,22 @@ export interface components {
             /** @enum {string} */
             channel: "booking";
             /** @enum {string} */
-            action: "unlist" | "relist";
+            action: "unlist" | "relist" | "open" | "close";
+            /**
+             * @description `open` / `close` only: the property's state on Booking.com after the call.
+             * @enum {string}
+             */
+            propertyStatus?: "open" | "closed";
+            /** @description `open` / `close` only: false when the property was already in that state, so nothing was sent. */
+            changed?: boolean;
+            /** @description `open` / `close` only: Booking.com's status for the property before the call, e.g. `XML: Ready to open`. */
+            bookingStatus?: string | null;
             /** @description The Booking.com property that was acted on. Always read it back — a listing can be mapped to several, and this states which one changed. */
             hotelId: string;
             /** @description Booking.com's own room id the availability write addressed. */
             roomBookingId?: string | null;
-            /** @description Whether the property is now on sale. **This is the state of the property on Booking.com, not of the listing in Repull** — `active` (what Repull bills and serves) is untouched by both actions and is deliberately not echoed here so the two can never be read as one field. */
-            selling: boolean;
+            /** @description `unlist` / `relist` only. Whether the property is now on sale. **This is the state of the property on Booking.com, not of the listing in Repull** — `active` (what Repull bills and serves) is untouched by both actions and is deliberately not echoed here so the two can never be read as one field. */
+            selling?: boolean;
         };
         /** @description Write one locale's copy. Airbnb keeps a separate description per locale, which is why the locale is explicit: writing Italian copy into the English row is how a translation gets lost. Only the fields you send are written. */
         AirbnbDescriptionWriteRequest: {
