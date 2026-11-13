@@ -5074,7 +5074,19 @@ export interface paths {
          */
         get: operations["listConnectionImports"];
         put?: never;
-        post?: never;
+        /**
+         * Refresh a connection's listings
+         * @description Refresh listings: picks up listings you've added on Airbnb since you connected. Re-reads the connected account's listings and their calendars (pricing and availability) now; a new property comes in as a new listing and existing listings are refreshed. Nothing else is re-imported: no reservations, conversations, reviews or payouts.
+         *
+         *     The same import runs on its own once a day for every connected Airbnb account, and when the host reconnects. Call this when you know a property was just added and do not want to wait.
+         *
+         *     New listings obey your plan's active-listing limit: past it, and when the property is unlisted on Airbnb, they arrive inactive. Existing listings keep their status.
+         *
+         *     The import runs in the background (`202`). It is recorded like any other import (trigger `resync`, one `listings` stage): follow it on `GET /v1/connections/{id}/imports` or wait for `account.import.completed`, then read the new listings with `GET /v1/listings`.
+         *
+         *     Airbnb connections only for now. Returns `409 conflict` while a listings import of the account is already running, and `409 connection_reauth_required` when the account is disconnected.
+         */
+        post: operations["startConnectionImport"];
         delete?: never;
         options?: never;
         head?: never;
@@ -25665,6 +25677,55 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+        };
+    };
+    startConnectionImport: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Airbnb connection handle `airbnb:{hostId}` — the `provider` and `externalAccountId` of an Airbnb connection on `GET /v1/connect`, or the account of an `account.*` webhook. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /**
+                     * @description What to import. `listings` = the account's listings and their calendars (pricing and availability). The only scope; the full import runs when an account is connected.
+                     * @default listings
+                     * @enum {string}
+                     */
+                    scope?: "listings";
+                };
+            };
+        };
+        responses: {
+            /** @description The import is queued. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data?: {
+                            /** @description The connection handle, e.g. `airbnb:1234567`. */
+                            connection: string;
+                            /** @enum {string} */
+                            scope: "listings";
+                            /** @enum {string} */
+                            status: "queued";
+                            /** Format: date-time */
+                            queuedAt: string;
+                        };
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
         };
     };
     bulk_listing_promotions: {
