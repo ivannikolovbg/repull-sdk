@@ -837,6 +837,8 @@ export interface paths {
          *     The credentials are validated against Vrbo before anything is persisted, so an invalid pair returns `invalid_credentials` rather than creating a dead connection. On success the `pms_connections` row is written and the Connect session moves to its terminal state.
          *
          *     No API key required when called with a `sessionId` — the session is the capability token.
+         *
+         *     **Lost the password?** It is returned once. Send the same request with `"rotate": true` to replace it and get the new one back; the old password stops working, so paste the new one into Vrbo. Without `rotate`, a second request for the same advertiser returns `409 credentials_already_provisioned`.
          */
         post: operations["submitVrboCredentials"];
         delete?: never;
@@ -6669,10 +6671,10 @@ export interface components {
             accessType?: components["schemas"]["ConnectionAccessType"] | null;
             /** @description Host metadata, populated for Airbnb when the host row exists. Null for other providers (per-provider enrichment is incremental). */
             host?: components["schemas"]["ConnectHost"] | null;
-            /** @description Airbnb: every Airbnb account this workspace has connected, including ones since disconnected, each with its own `accessType`. Pass `externalAccountId` as `accountId` to `DELETE /v1/connect/airbnb` to disconnect one account. Vrbo (`GET /v1/connect/vrbo-login`): every signed-in Vrbo account, each with `accessType` and `import` (a `VrboImportStatus`), plus a top-level `dataFreshness`. `externalAccountId` is the platform's own id (Airbnb host id, Vrbo account id; `null` for a Vrbo sign-in whose account id is not captured yet) and `connectionId` our connection record. */
+            /** @description One entry per connected account, for every provider: Airbnb, every host account connected (including ones since disconnected), each with its own `accessType`; Booking.com, every hotel (`externalAccountId` is the hotel id); Vrbo, every sign-in; Booking.com Extranet, every hotel login; a PMS, its one account. Pass `externalAccountId` as `accountId` to `DELETE /v1/connect/{provider}` to disconnect one. The top-level fields describe one record and stay for existing integrations; show `accounts[]` to list what is connected. Vrbo sign-ins also carry `accessType` and `import` (a `VrboImportStatus`), with a top-level `dataFreshness` on `GET /v1/connect/vrbo-login`. */
             accounts?: {
                 /**
-                 * @description Airbnb: the host id, as a string (it can exceed 2^53). Vrbo: Vrbo's own account id; `null` until it is captured at sign-in.
+                 * @description Airbnb: the host id, as a string (it can exceed 2^53). Booking.com: the hotel id. Vrbo: Vrbo's own account id; `null` until it is captured at sign-in. Extranet: the Booking.com account id. PMS: the PMS account id.
                  * @example 79730216
                  */
                 externalAccountId?: string | null;
@@ -6695,6 +6697,10 @@ export interface components {
                 email?: string | null;
                 /** @description What this account may do. Airbnb: the tier the host's token was granted with (`read_only`, `messaging`, `full_access`). Vrbo: `messaging` (bookings and messages, no calendar push) or `full_access` (also pushes prices and availability). `null` when unknown. */
                 accessType?: components["schemas"]["ConnectionAccessType"] | null;
+                /** @description Booking.com: `{ required, reason: "needs_mapping", message }` while a room of this hotel is matched to no listing (nothing syncs for that room). Null when nothing is needed. */
+                action?: Record<string, never> | null;
+                /** @description Booking.com: a link that opens room mapping for this hotel (no new Connect session needed). Send the host to it when `action` is set. */
+                fixUrl?: string | null;
                 /** @description Vrbo only. The address the host can add on Vrbo as a secondary email (with message and reservation notifications on) so new bookings, inquiries and messages arrive within a minute instead of at the scheduled check. Ask every host to add it: notifications are how Vrbo updates reach Repull, the scheduled check is the backup. Hosted Connect shows it on its mapping screen; show it in your own app when you create sessions with `mapping: "api"`. */
                 notificationEmail?: string | null;
                 /** @description Vrbo only: where the account import stands. */
@@ -16007,10 +16013,12 @@ export interface operations {
                 "application/json": {
                     /** @description Connect session id from `POST /v1/connect/vrbo`. */
                     sessionId?: string;
-                    /** @description Activation handshake — Repull mints the Basic-Auth pair the host pastes into Vrbo Partner Central. */
-                    credentials: {
-                        [key: string]: unknown;
-                    };
+                    /** @description The host's Vrbo advertiser id. Repull mints the Basic-Auth pair for it, which the host pastes into Vrbo Partner Central. */
+                    advertiserExternalId: string;
+                    /** @description Optional. Vrbo Partner Central sets this itself. */
+                    endpointUrl?: string;
+                    /** @description Replace the advertiser's existing password and return the new one. The old password stops working. */
+                    rotate?: boolean;
                 };
             };
         };
