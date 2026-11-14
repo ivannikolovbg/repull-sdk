@@ -4569,7 +4569,7 @@ export interface paths {
         put?: never;
         /**
          * Sign in with a Vrbo host account
-         * @description `action: login` checks the email and password and answers in seconds: `connected`, `otp_required` (Vrbo sent a code to `destination`) or `failed` with a `reason` (`bad_credentials`, `blocked`, …). `action: otp` submits the code; a refused code comes back as `otp_required` with `reason: bad_code`.
+         * @description `action: login` checks the email and password and answers in seconds: `connected`, `otp_required` (Vrbo sent a code to `destination`) or `failed` with a `reason` (`bad_credentials`, `blocked`, …). `action: otp` submits the code; a refused code comes back as `otp_required` with `reason: bad_code`. `action: resend` (with `accountId`) signs in again with the details already given, so Vrbo sends a new code.
          *
          *     Signing in imports nothing. `accessType` (`full_access` or `messaging`, when the session did not lock it) is the host's choice of whether mapped listings push the calendar. The import starts when the mapping is confirmed.
          *
@@ -6333,11 +6333,11 @@ export interface components {
             createdAt?: string;
             /** @description Host metadata for the linked account. Currently populated for Airbnb only; null for other providers. */
             host?: components["schemas"]["ConnectHost"] | null;
-            /** @description Set when the host must do something before the connection works (e.g. grant the invited Booking.com Extranet user full access). `null` when no action is pending. */
+            /** @description Set when the host must do something before the connection works (e.g. grant the invited Booking.com Extranet user full access), or has units still to map (`reason: needs_mapping` — Booking.com Extranet rooms, Vrbo units; `required` is false when only some Vrbo units are left). `null` when no action is pending. */
             action?: components["schemas"]["ConnectionAction"] | null;
             /**
              * Format: uri
-             * @description Durable link that reopens the hosted Connect flow bound to this account on the fix screen — send the host here to resolve `action`. Present only when `action.required` is true; `null` otherwise.
+             * @description Durable link that reopens the hosted Connect flow bound to this account on the fix screen — send the host here to resolve `action`. For `needs_mapping` it opens the unit mapping directly (no new sign-in). Present whenever `action` is set; `null` otherwise.
              */
             fixUrl?: string | null;
             /** @description The account's latest import — `status: running` while the first sync (or a later one) is going, then `completed` or `failed`. `null` when no import has been recorded. The same run is announced by the `account.import.*` webhooks; the history is on `GET /v1/connections/{id}/imports`. */
@@ -24594,7 +24594,7 @@ export interface operations {
                 "application/json": {
                     sessionId: string;
                     /** @enum {string} */
-                    action: "login" | "otp";
+                    action: "login" | "otp" | "resend";
                     email?: string;
                     password?: string;
                     accountId?: number;
