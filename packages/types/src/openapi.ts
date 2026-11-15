@@ -6701,6 +6701,11 @@ export interface components {
                 action?: Record<string, never> | null;
                 /** @description Booking.com: a link that opens room mapping for this hotel (no new Connect session needed). Send the host to it when `action` is set. */
                 fixUrl?: string | null;
+                /**
+                 * Format: date-time
+                 * @description Vrbo only. When Vrbo's first notification reached `notificationEmail`, i.e. the host added it with notifications on. `null` until then.
+                 */
+                notificationReceivedAt?: string | null;
                 /** @description Vrbo only. The address the host can add on Vrbo as a secondary email (with message and reservation notifications on) so new bookings, inquiries and messages arrive within a minute instead of at the scheduled check. Ask every host to add it: notifications are how Vrbo updates reach Repull, the scheduled check is the backup. Hosted Connect shows it on its mapping screen; show it in your own app when you create sessions with `mapping: "api"`. */
                 notificationEmail?: string | null;
                 /** @description Vrbo only: where the account import stands. */
