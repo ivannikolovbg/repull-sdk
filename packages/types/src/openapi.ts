@@ -3612,7 +3612,7 @@ export interface paths {
          *
          *     **This is Repull's stored copy, not a live call to Airbnb.** Values come from the local Airbnb mirror that the sync workers fill, so the response always carries `dataFreshness` — check `dataFreshness.stale` (and `dataFreshness.accounts[]` when the workspace has several Airbnb accounts) before treating a value as current.
          *
-         *     **Not exposed by Airbnb.** The pre-reservation message and automatic stay extension have no field on Airbnb's `booking_settings` resource, so neither can be read or written here; set the pre-reservation message in the Airbnb host dashboard, and handle extensions through `/v1/channels/airbnb/alterations`. Airbnb also expresses the same-day cutoff only as whole hours of advance notice, so `advanceNotice.hours` is as precise as the cutoff gets.
+         *     **Not exposed by Airbnb.** The pre-reservation message and automatic stay extension have no field on Airbnb's `booking_settings` resource, so neither can be read or written here; set the pre-reservation message in the Airbnb host dashboard, and handle extensions through `/v1/channels/airbnb/alterations`. The same-day cutoff is Airbnb's advance-notice hours counted back from 11:59 PM on the check-in day: read it as `advanceNotice.sameDayCutoff` (e.g. `23:00`) or `advanceNotice.hours` (e.g. `1`), and write either one.
          *
          *     Returns `404` when the listing has no Airbnb connection in this workspace, and `403 listing_inactive` when the listing is inactive — an inactive listing keeps syncing but cannot be read or changed through the API until it is activated.
          */
@@ -5641,6 +5641,12 @@ export interface components {
              */
             updatedAt: string | null;
         };
+        /**
+         * @description Whether `phone` is the guest's own number or an Airbnb relay number. Since late October 2026 Airbnb never shares a guest's real phone number. For an Airbnb stay where the listing, host and guest are all in the same country and that country is the US or Canada, Airbnb gives a temporary relay number instead (`airbnb_relay`); every other Airbnb stay has no phone at all. A relay number forwards SMS only (no MMS, RCS or images; about 1,000 characters including Airbnb's prefix, not split). It stops working 48 hours after checkout or when the reservation is cancelled, and it can change during the stay without a reservation webhook (re-read the reservation for the current one). The same relay number is used for other guests of other hosts, so never use it to identify or match a guest. Texting from a number Airbnb does not know: the first message must be the reservation's confirmation code (for example `HM12345678`); text from the host's Airbnb contact number for automatic delivery. `guest` means the number as the channel or the host recorded it.
+         * @example airbnb_relay
+         * @enum {string}
+         */
+        GuestPhoneType: "airbnb_relay" | "guest";
         /** @description Inline guest summary resolved by JOIN-ing the `guests` table. Populated for every reservation that has a linked guest row; OMITTED entirely (not null) for owner-blocks / pre-arrival rows / partial-sync gaps. Always optional-chain in SDK consumers. */
         ReservationPrimaryGuest: {
             /** @description Internal Repull guest ID. Use `GET /v1/guests/{id}` for the full profile. */
@@ -5652,8 +5658,16 @@ export interface components {
              * @description Primary email contact (or first non-primary if no primary set).
              */
             email?: string | null;
-            /** @description Primary phone contact (or first non-primary if no primary set). */
+            /** @description Primary phone contact (or first non-primary if no primary set). For an Airbnb stay this may be an Airbnb relay number — check `phoneType`. */
             phone?: string | null;
+            /** @description Present whenever `phone` is. `airbnb_relay` when `phone` is a temporary Airbnb relay number (SMS only, expires 48h after checkout, shared across hosts, never a guest identifier); `guest` otherwise. */
+            phoneType?: components["schemas"]["GuestPhoneType"];
+            /**
+             * Format: date-time
+             * @description Only next to an Airbnb relay number: when it stops working (checkout + 48 hours). `null` when Airbnb did not give the checkout time with its offset. A cancelled reservation's relay number stops working at cancellation, whatever this says.
+             * @example 2026-11-22T16:00:00.000Z
+             */
+            phoneExpiresAt?: string | null;
             /** @description Guest's preferred language (BCP-47 / ISO 639-1). */
             language?: string | null;
         };
@@ -5887,6 +5901,11 @@ export interface components {
             pmsReservationId?: string | null;
             /** @description Door codes for the stay from the PMS's lock manager (today: Guesty Locks Manager), refreshed about every 30 minutes for stays checking in within 14 days that have not checked out. `null` when the reservation's codes are not read from a PMS. `[]` when they are and there is none yet, and for a cancelled stay. */
             accessCodes?: components["schemas"]["ReservationAccessCode"][] | null;
+            /**
+             * @description Airbnb reservations only, when Airbnb sends it: the door code Airbnb suggests — the last 4 digits of the booker's verified phone number, or random digits when there is none. Use it instead of deriving a code from the guest's phone, which Airbnb no longer shares. Omitted on every other reservation.
+             * @example 5446
+             */
+            suggestedDoorCode?: string;
             /** @description Inline guest summary. May be undefined for owner-blocks / pre-arrival rows. */
             primaryGuest?: components["schemas"]["ReservationPrimaryGuest"];
             /** @description Normalized guest counts. May be undefined when the source channel did not provide counts. */
@@ -5949,8 +5968,10 @@ export interface components {
             language?: string | null;
             /** @description Guest country (from profile metadata or address). */
             country?: string | null;
-            /** @description Primary phone contact (or first non-primary if no primary set). */
+            /** @description Primary phone contact (or first non-primary if no primary set). May be an Airbnb relay number — check `phoneType`. */
             phone?: string | null;
+            /** @description `airbnb_relay` when `phone` is a temporary Airbnb relay number (SMS only, expires 48h after checkout, shared across hosts, never a guest identifier); `guest` otherwise; `null` when there is no phone. */
+            phoneType?: components["schemas"]["GuestPhoneType"] | null;
             /**
              * Format: email
              * @description Primary email contact.
@@ -5983,6 +6004,8 @@ export interface components {
             isPrimary?: boolean;
             /** Format: date-time */
             lastUsed?: string | null;
+            /** @description Phone contacts only: `airbnb_relay` when this is a temporary Airbnb relay number (SMS only, expires 48h after checkout, shared across hosts, never a guest identifier); `guest` otherwise. */
+            phoneType?: components["schemas"]["GuestPhoneType"];
         };
         /** @description A risk/operational flag attached to a guest profile (e.g. blacklist, do-not-host, VIP). */
         GuestFlag: {
@@ -6018,7 +6041,10 @@ export interface components {
             avatarUrl?: string | null;
             language?: string | null;
             country?: string | null;
+            /** @description Primary phone contact. May be an Airbnb relay number — check `phoneType`. */
             phone?: string | null;
+            /** @description `airbnb_relay` when `phone` is a temporary Airbnb relay number; `guest` otherwise; `null` when there is no phone. */
+            phoneType?: components["schemas"]["GuestPhoneType"] | null;
             /** Format: email */
             email?: string | null;
             totalReservations?: number;
@@ -21526,10 +21552,15 @@ export interface operations {
                             };
                             /** @description How much notice a booking needs. */
                             advanceNotice?: {
-                                /** @description Whole hours of notice. `0` allows same-day bookings. */
+                                /** @description Airbnb's advance notice: 0-24, 48, 72 or 168. Airbnb counts it back from 11:59 PM on the check-in day, in the listing's time zone, so 0-23 is a same-day cutoff: `0` = same-day bookings until midnight, `1` = until 11 PM, `3` = until 9 PM. `24` and above = no same-day bookings. */
                                 hours?: number | null;
-                                /** @description Derived: `hours === 0`. */
+                                /** @description Derived: `hours < 24`. */
                                 sameDayBookingsAllowed?: boolean | null;
+                                /**
+                                 * @description Derived: the last time a same-day booking is accepted, `HH:mm` in the listing's time (`00:00` = midnight). `null` when same-day bookings are off.
+                                 * @example 23:00
+                                 */
+                                sameDayCutoff?: string | null;
                                 /** @description Whether a guest may still REQUEST to book inside the notice window. */
                                 allowRequestToBook?: boolean | null;
                             };
@@ -21609,9 +21640,18 @@ export interface operations {
                             discountPercent?: number | null;
                         };
                     };
-                    /** @description Send `hours`, `allowRequestToBook`, or both. The half you omit keeps the value Airbnb currently holds. */
+                    /** @description Send `hours` (or `sameDayCutoff`), `allowRequestToBook`, or both. The half you omit keeps the value Airbnb currently holds. `hours` and `sameDayCutoff` are the same setting: send one. */
                     advanceNotice?: {
-                        hours?: number | null;
+                        /**
+                         * @description Counted back from 11:59 PM on the check-in day (listing time): `0` = same-day bookings until midnight, `1` = until 11 PM, `24` = no same-day bookings.
+                         * @enum {integer|null}
+                         */
+                        hours?: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20 | 21 | 22 | 23 | 24 | 48 | 72 | 168 | null;
+                        /**
+                         * @description The last time a same-day booking is accepted, whole hours in the listing's time (`23:00` = 11 PM, `00:00` = midnight). Converted to `hours` (`23:00` = 1).
+                         * @example 23:00
+                         */
+                        sameDayCutoff?: string | null;
                         allowRequestToBook?: boolean | null;
                     };
                     preparationTime?: {
@@ -21664,10 +21704,15 @@ export interface operations {
                                 };
                                 /** @description How much notice a booking needs. */
                                 advanceNotice?: {
-                                    /** @description Whole hours of notice. `0` allows same-day bookings. */
+                                    /** @description Airbnb's advance notice: 0-24, 48, 72 or 168. Airbnb counts it back from 11:59 PM on the check-in day, in the listing's time zone, so 0-23 is a same-day cutoff: `0` = same-day bookings until midnight, `1` = until 11 PM, `3` = until 9 PM. `24` and above = no same-day bookings. */
                                     hours?: number | null;
-                                    /** @description Derived: `hours === 0`. */
+                                    /** @description Derived: `hours < 24`. */
                                     sameDayBookingsAllowed?: boolean | null;
+                                    /**
+                                     * @description Derived: the last time a same-day booking is accepted, `HH:mm` in the listing's time (`00:00` = midnight). `null` when same-day bookings are off.
+                                     * @example 23:00
+                                     */
+                                    sameDayCutoff?: string | null;
                                     /** @description Whether a guest may still REQUEST to book inside the notice window. */
                                     allowRequestToBook?: boolean | null;
                                 };
