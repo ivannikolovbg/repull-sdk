@@ -405,6 +405,10 @@ export interface paths {
          *
          *     Send `Idempotency-Key` — without it, retrying after a network timeout sends the guest the same message twice.
          *
+         *     ### Vrbo: `202` while Vrbo is busy
+         *
+         *     A Vrbo reply is delivered in the call when Vrbo takes it (about 20 seconds at most) and returns `200` with `status: "sent"`. When Vrbo is busy, the reply is recorded and delivered in the background: the call returns **`202` with `status: "queued"`** and the message `id`. Do not send it again — a retry with the same `Idempotency-Key` returns the same `202`. The outcome arrives as the message's `status` on `GET /v1/conversations/{id}/messages` (`sent`, or `failed` with `statusReason`) and as the `conversation.message.status_changed` webhook.
+         *
          *     ### Attachments
          *
          *     Send files with `attachments: [{ url, contentType?, filename? }]` — public `https://` URLs, up to 5 per request, 10 MB each. `message` may be omitted when there are attachments (except on Booking.com). Repull downloads each file, reads its real type from the bytes, keeps a durable copy and delivers it through the channel's own file flow. **Every file is checked before anything is sent**: if one is unreachable, too large or of a type the channel refuses, the call returns 422 naming the file (`index`) and the guest receives nothing.
@@ -6203,11 +6207,11 @@ export interface components {
             /** @enum {string} */
             direction?: "inbound" | "outbound";
             /**
-             * @description Delivery state. Inbound messages are `received`. An outbound message is `sending` while it is queued to the channel, `sent` once the channel accepted it, or `failed`. Only `sent` (or `received`) means the guest can see it.
+             * @description Delivery state. Inbound messages are `received`. An outbound message is `sending` while it is handed to the channel, `queued` when the channel was busy and Repull is still delivering it in the background (Vrbo), `sent` once the channel accepted it, or `failed`. Only `sent` (or `received`) means the guest can see it. A change from `queued` is sent as `conversation.message.status_changed`.
              * @enum {string}
              */
-            status?: "received" | "sending" | "sent" | "failed";
-            /** @description Why a message is still `sending` or `failed`, in plain words. `null` otherwise. */
+            status?: "received" | "sending" | "queued" | "sent" | "failed";
+            /** @description Why a message is still `sending` or `queued`, or why it `failed`, in plain words. `null` otherwise. */
             statusReason?: string | null;
             /** @description Free-form sender role from the channel (e.g. `guest`, `host`, `system`, `airbnb`). Use `direction` for binary inbound/outbound logic. */
             senderType?: string | null;
@@ -6729,9 +6733,12 @@ export interface components {
                 fixUrl?: string | null;
                 /**
                  * Format: date-time
-                 * @description Vrbo only. When Vrbo's first notification reached `notificationEmail`, i.e. the host added it with notifications on. `null` until then.
+                 * @deprecated
+                 * @description Deprecated: use `notifications`. Vrbo only. When Vrbo's FIRST notification reached `notificationEmail`; it stays set even if notifications later stop. `null` until then.
                  */
                 notificationReceivedAt?: string | null;
+                /** @description Vrbo only. Whether Vrbo's notification emails reach Repull now (`state`), when the last one did, and the address to add. When `state` is `missing`, ask the host to add `address` on Vrbo; `account.notifications_missing` is sent when that happens. */
+                notifications?: components["schemas"]["VrboNotifications"];
                 /** @description Vrbo only. Whether another tool (such as a PMS) manages this account's calendar; while `calendar.managedBy` is set, calendar sync is off for all its units. */
                 calendar?: components["schemas"]["VrboCalendarAccess"] | null;
                 /** @description Vrbo only. The address the host can add on Vrbo as a secondary email (with message and reservation notifications on) so new bookings, inquiries and messages arrive within a minute instead of at the scheduled check. Ask every host to add it: notifications are how Vrbo updates reach Repull, the scheduled check is the backup. Hosted Connect shows it on its mapping screen; show it in your own app when you create sessions with `mapping: "api"`. */
@@ -6926,7 +6933,7 @@ export interface components {
          * @description Canonical event type identifier. Every webhook delivery declares one of these in its `type` field; SDKs key the discriminated `WebhookEvent` union on this value.
          * @enum {string}
          */
-        WebhookEventType: "reservation.created" | "reservation.updated" | "reservation.cancelled" | "reservation.message.received" | "reservation.message.sent" | "reservation.message.updated" | "reservation.message.read" | "reservation.message.reaction" | "reservation.alteration.created" | "reservation.alteration.responded" | "reservation.request.created" | "reservation.request.updated" | "booking.unacknowledged" | "channel.sync.failed" | "channel.degraded" | "reservation.thread.assigned" | "inquiry.created" | "inquiry.updated" | "listing.created" | "listing.updated" | "listing.deleted" | "listing.suspended" | "listing.reactivated" | "account.created" | "connect.session.completed" | "connect.session.abandoned" | "account.disconnected" | "account.import.started" | "account.import.completed" | "account.import.failed" | "account.units.added" | "account.calendar_access_changed" | "review.created" | "review.responded" | "ai.operation.completed" | "ai.operation.failed" | "payment.completed" | "payment.refunded" | "payout.completed" | "migration.completed" | "migration.failed" | "repull.ping" | "usage.quota.warning";
+        WebhookEventType: "reservation.created" | "reservation.updated" | "reservation.cancelled" | "reservation.message.received" | "conversation.message.status_changed" | "reservation.message.sent" | "reservation.message.updated" | "reservation.message.read" | "reservation.message.reaction" | "reservation.alteration.created" | "reservation.alteration.responded" | "reservation.request.created" | "reservation.request.updated" | "booking.unacknowledged" | "channel.sync.failed" | "channel.degraded" | "reservation.thread.assigned" | "inquiry.created" | "inquiry.updated" | "listing.created" | "listing.updated" | "listing.deleted" | "listing.suspended" | "listing.reactivated" | "account.created" | "connect.session.completed" | "connect.session.abandoned" | "account.disconnected" | "account.import.started" | "account.import.completed" | "account.import.failed" | "account.units.added" | "account.calendar_access_changed" | "account.notifications_missing" | "review.created" | "review.responded" | "ai.operation.completed" | "ai.operation.failed" | "payment.completed" | "payment.refunded" | "payout.completed" | "migration.completed" | "migration.failed" | "repull.ping" | "usage.quota.warning";
         /**
          * @description Lightweight reservation snapshot delivered as `data.object` on every reservation webhook event. Stable across `reservation.created`, `reservation.updated`, and `reservation.cancelled`. Fetch the full reservation via `GET /v1/reservations/{id}` if you need pricing, guest contact info, or audit history — those are deliberately omitted to keep deliveries small.
          *
@@ -8878,6 +8885,106 @@ export interface components {
             account?: components["schemas"]["WebhookEventAccount"];
             data: components["schemas"]["AccountCalendarAccessChangedPayload"];
         };
+        /** @description Whether Vrbo's notification emails for this account reach Repull. Each one brings a new guest message or booking in within about a minute; without them Repull relies on its scheduled check, which is slower. */
+        VrboNotifications: {
+            /**
+             * @description `active`: notifications arrive for this account's guest messages. `missing`: Repull found new guest messages and no notification came for them — ask the host to add `address` on Vrbo (or turn its notifications back on). `unknown`: no guest messages yet to judge by.
+             * @enum {string}
+             */
+            state: "active" | "missing" | "unknown";
+            /**
+             * Format: date-time
+             * @description When the last Vrbo notification reached `address`. `null` when none ever has.
+             */
+            lastReceivedAt: string | null;
+            /**
+             * @description The address the host adds on Vrbo as a secondary email, with message and reservation notifications on.
+             * @example in+vrbo-1234-321@repull.dev
+             */
+            address: string | null;
+        };
+        /** @description Payload for `conversation.message.status_changed`: a message you sent changed delivery status after the send call returned — a Vrbo reply accepted as `queued` (`202`) was delivered (`sent`) or gave up (`failed`). */
+        ConversationMessageStatusChangedPayload: {
+            /**
+             * @description The conversation (`GET /v1/conversations/{id}`).
+             * @example 549555
+             */
+            conversationId: string;
+            /**
+             * @description The message, as `id` on the send response and on `GET /v1/conversations/{id}/messages`.
+             * @example 1861207
+             */
+            messageId: string;
+            /**
+             * @description The new delivery status.
+             * @enum {string}
+             */
+            status: "sent" | "failed";
+            /** @description Why it `failed`, in plain words. `null` when `sent`. */
+            statusReason: string | null;
+        };
+        /** @description A message you sent was delivered or gave up after the send call returned. Update the message you show from `status` and `statusReason`. */
+        ConversationMessageStatusChangedEvent: {
+            /**
+             * @description The event name. This field is `event`, not `type`. (enum property replaced by openapi-typescript)
+             * @enum {string}
+             */
+            event: "conversation.message.status_changed";
+            /**
+             * Format: uuid
+             * @description Stable across every delivery and replay of this logical event — dedupe on it.
+             */
+            eventId: string;
+            /** @example 2026-04 */
+            apiVersion: string;
+            /**
+             * Format: date-time
+             * @description When this delivery was built.
+             */
+            timestamp: string;
+            account?: components["schemas"]["WebhookEventAccount"];
+            data: components["schemas"]["ConversationMessageStatusChangedPayload"];
+        };
+        /** @description Payload for `account.notifications_missing`: a Vrbo account had new guest messages and no notification email arrived for them. */
+        AccountNotificationsMissingPayload: {
+            workspaceId: number;
+            /** @enum {string} */
+            provider: "vrbo";
+            /** @description Vrbo's account number (`accounts[].externalAccountId` on `GET /v1/connect/vrbo-login`). */
+            accountId: string | null;
+            /** @description The workspace's Vrbo connection record. */
+            connectionId: number | null;
+            notifications: components["schemas"]["VrboNotifications"];
+            /** Format: date-time */
+            detectedAt: string;
+            /**
+             * Format: uri
+             * @example https://repull.dev/docs/channels/vrbo/notifications
+             */
+            docsUrl?: string;
+        };
+        /** @description A Vrbo account's notification emails are not arriving. Ask the host to add `data.notifications.address` on Vrbo as a secondary email with message and reservation notifications on. */
+        AccountNotificationsMissingEvent: {
+            /**
+             * @description The event name. This field is `event`, not `type`. (enum property replaced by openapi-typescript)
+             * @enum {string}
+             */
+            event: "account.notifications_missing";
+            /**
+             * Format: uuid
+             * @description Stable across every delivery and replay of this logical event — dedupe on it.
+             */
+            eventId: string;
+            /** @example 2026-04 */
+            apiVersion: string;
+            /**
+             * Format: date-time
+             * @description When this delivery was built.
+             */
+            timestamp: string;
+            account?: components["schemas"]["WebhookEventAccount"];
+            data: components["schemas"]["AccountNotificationsMissingPayload"];
+        };
         /** @description A connected login gained a property or room. Map the new units to listings to import their bookings. */
         AccountUnitsAddedEvent: {
             /**
@@ -9288,7 +9395,7 @@ export interface components {
             data: components["schemas"]["MigrationImportPayload"];
         };
         /** @description The full event envelope POSTed to your webhook URL. Discriminated on `type` — narrow `event.data` by switching on `event.type`. Use the matching `*Event` variant directly if your SDK lacks discriminator support. Events about an inactive listing (reservations, messages, alterations, reviews, payments, calendar and listing events) are not delivered. The data keeps syncing while the listing is inactive, but its events are never sent — including after you reactivate it; webhooks resume for events that happen from reactivation on. Account-level events are always delivered. */
-        WebhookEvent: components["schemas"]["ReservationCreatedEvent"] | components["schemas"]["ReservationUpdatedEvent"] | components["schemas"]["ReservationCancelledEvent"] | components["schemas"]["ReservationMessageReceivedEvent"] | components["schemas"]["ReservationMessageSentEvent"] | components["schemas"]["ReservationMessageUpdatedEvent"] | components["schemas"]["ReservationMessageReadEvent"] | components["schemas"]["ReservationMessageReactionEvent"] | components["schemas"]["ReservationAlterationCreatedEvent"] | components["schemas"]["ReservationAlterationRespondedEvent"] | components["schemas"]["ReservationRequestCreatedEvent"] | components["schemas"]["ReservationRequestUpdatedEvent"] | components["schemas"]["BookingUnacknowledgedEvent"] | components["schemas"]["ChannelSyncFailedEvent"] | components["schemas"]["ChannelDegradedEvent"] | components["schemas"]["ReservationThreadAssignedEvent"] | components["schemas"]["InquiryCreatedEvent"] | components["schemas"]["InquiryUpdatedEvent"] | components["schemas"]["ListingCreatedEvent"] | components["schemas"]["ListingUpdatedEvent"] | components["schemas"]["ListingDeletedEvent"] | components["schemas"]["ListingSuspendedEvent"] | components["schemas"]["ListingReactivatedEvent"] | components["schemas"]["AccountCreatedEvent"] | components["schemas"]["ConnectSessionCompletedEvent"] | components["schemas"]["ConnectSessionAbandonedEvent"] | components["schemas"]["AccountDisconnectedEvent"] | components["schemas"]["AccountImportStartedEvent"] | components["schemas"]["AccountImportCompletedEvent"] | components["schemas"]["AccountImportFailedEvent"] | components["schemas"]["AccountUnitsAddedEvent"] | components["schemas"]["AccountCalendarAccessChangedEvent"] | components["schemas"]["ReviewCreatedEvent"] | components["schemas"]["ReviewRespondedEvent"] | components["schemas"]["AiOperationCompletedEvent"] | components["schemas"]["AiOperationFailedEvent"] | components["schemas"]["PaymentCompletedEvent"] | components["schemas"]["PaymentRefundedEvent"] | components["schemas"]["PayoutCompletedEvent"] | components["schemas"]["RepullPingEvent"] | components["schemas"]["UsageQuotaWarningEvent"] | components["schemas"]["MigrationCompletedEvent"] | components["schemas"]["MigrationFailedEvent"];
+        WebhookEvent: components["schemas"]["ReservationCreatedEvent"] | components["schemas"]["ReservationUpdatedEvent"] | components["schemas"]["ReservationCancelledEvent"] | components["schemas"]["ReservationMessageReceivedEvent"] | components["schemas"]["ConversationMessageStatusChangedEvent"] | components["schemas"]["ReservationMessageSentEvent"] | components["schemas"]["ReservationMessageUpdatedEvent"] | components["schemas"]["ReservationMessageReadEvent"] | components["schemas"]["ReservationMessageReactionEvent"] | components["schemas"]["ReservationAlterationCreatedEvent"] | components["schemas"]["ReservationAlterationRespondedEvent"] | components["schemas"]["ReservationRequestCreatedEvent"] | components["schemas"]["ReservationRequestUpdatedEvent"] | components["schemas"]["BookingUnacknowledgedEvent"] | components["schemas"]["ChannelSyncFailedEvent"] | components["schemas"]["ChannelDegradedEvent"] | components["schemas"]["ReservationThreadAssignedEvent"] | components["schemas"]["InquiryCreatedEvent"] | components["schemas"]["InquiryUpdatedEvent"] | components["schemas"]["ListingCreatedEvent"] | components["schemas"]["ListingUpdatedEvent"] | components["schemas"]["ListingDeletedEvent"] | components["schemas"]["ListingSuspendedEvent"] | components["schemas"]["ListingReactivatedEvent"] | components["schemas"]["AccountCreatedEvent"] | components["schemas"]["ConnectSessionCompletedEvent"] | components["schemas"]["ConnectSessionAbandonedEvent"] | components["schemas"]["AccountDisconnectedEvent"] | components["schemas"]["AccountImportStartedEvent"] | components["schemas"]["AccountImportCompletedEvent"] | components["schemas"]["AccountImportFailedEvent"] | components["schemas"]["AccountUnitsAddedEvent"] | components["schemas"]["AccountCalendarAccessChangedEvent"] | components["schemas"]["AccountNotificationsMissingEvent"] | components["schemas"]["ReviewCreatedEvent"] | components["schemas"]["ReviewRespondedEvent"] | components["schemas"]["AiOperationCompletedEvent"] | components["schemas"]["AiOperationFailedEvent"] | components["schemas"]["PaymentCompletedEvent"] | components["schemas"]["PaymentRefundedEvent"] | components["schemas"]["PayoutCompletedEvent"] | components["schemas"]["RepullPingEvent"] | components["schemas"]["UsageQuotaWarningEvent"] | components["schemas"]["MigrationCompletedEvent"] | components["schemas"]["MigrationFailedEvent"];
         /** @description A listing paired with its Airbnb connections. The list endpoint groups every Airbnb connection of the same `listingId` under a single `connections[]` array. */
         AirbnbListing: {
             /**
@@ -13481,7 +13588,10 @@ export interface components {
             externalMessageId?: string | null;
             /** @description The channel the message actually went out on. */
             channel?: string | null;
-            /** @example sent */
+            /**
+             * @description `sent`: delivered. `queued` (with HTTP `202`): recorded, and still being delivered in the background because the channel was busy (Vrbo) — do not resend; the outcome arrives as the message's `status` on `GET /v1/conversations/{id}/messages` and as `conversation.message.status_changed`.
+             * @example sent
+             */
             status?: string;
             /** @enum {string} */
             direction?: "outbound";
@@ -15304,6 +15414,15 @@ export interface operations {
                     "application/json": components["schemas"]["SendMessageResponse"];
                 };
             };
+            /** @description Accepted, not yet delivered (Vrbo, while Vrbo is busy): the message is recorded with `status: "queued"` and delivered in the background. Do not resend — the same `Idempotency-Key` replays this `202`. Follow the outcome on `GET /v1/conversations/{id}/messages` (`status` becomes `sent`, or `failed` with `statusReason`) or the `conversation.message.status_changed` webhook. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SendMessageResponse"];
+                };
+            };
             401: components["responses"]["Unauthorized"];
             /** @description `listing_inactive` — the conversation belongs to an inactive listing, so nothing was sent. The error names the listing. `connection_reauth_required` — no connected account can send on this conversation (`reconnectRequired: true`); nothing was sent and the text was not refused. On Airbnb the message names each account on the listing — owner and co-hosts — and its state (e.g. `Team Co-Host (228981432), co-host, was disconnected on 2026-09-30`). Connect one of them via `POST /v1/connect/{provider}`, or send as another connected account with `account`, then send again. */
             403: {
@@ -15341,7 +15460,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description A temporary fault on Repull's side — never a verdict on the message. `internal_error`: the send failed inside Repull (a dropped database connection, a timeout) before the channel refused anything. `sent` says whether the message reached the channel: with `messageId: null` and `sent: false` nothing was delivered or recorded, and retrying the same request with the same `Idempotency-Key` after `retry_after` seconds sends it once. With a `messageId`, check that message in `GET /v1/conversations/{id}/messages` before resending. `attachment_storage_failed`: a file could not be stored for delivery; nothing was sent, retry the same way. A 503 is never stored against the `Idempotency-Key`, so the retry runs for real. Do not edit the text: it was not refused. */
+            /** @description A temporary fault on Repull's side — never a verdict on the message. `internal_error`: the send failed inside Repull (a dropped database connection, a timeout) before the channel refused anything. With `sent: null` Repull did not get the result in time and the message may still be delivered: check `GET /v1/conversations/{id}/messages` before resending. `sent` says whether the message reached the channel: with `messageId: null` and `sent: false` nothing was delivered or recorded, and retrying the same request with the same `Idempotency-Key` after `retry_after` seconds sends it once. With a `messageId`, check that message in `GET /v1/conversations/{id}/messages` before resending. `attachment_storage_failed`: a file could not be stored for delivery; nothing was sent, retry the same way. A 503 is never stored against the `Idempotency-Key`, so the retry runs for real. Do not edit the text: it was not refused. */
             503: {
                 headers: {
                     [name: string]: unknown;
