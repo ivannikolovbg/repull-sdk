@@ -5078,7 +5078,7 @@ export interface paths {
         put?: never;
         /**
          * Refresh a connection's listings
-         * @description Refresh listings: picks up listings you've added on Airbnb since you connected. Re-reads the connected account's listings and their calendars (pricing and availability) now; a new property comes in as a new listing and existing listings are refreshed. Nothing else is re-imported: no reservations, conversations, reviews or payouts.
+         * @description Refresh listings: picks up listings you've added on Airbnb since you connected. Re-reads the connected account's listings now: a new property comes in as a new listing, together with its calendar (pricing and availability), and existing listings are refreshed. On a full-access connection Repull is the source of your calendars, so the calendars of listings already in Repull are not re-read from Airbnb; on read-only and messaging connections they are. Nothing else is re-imported: no reservations, conversations, reviews or payouts.
          *
          *     The same import runs on its own once a day for every connected Airbnb account, and when the host reconnects. Call this when you know a property was just added and do not want to wait.
          *
@@ -6706,6 +6706,8 @@ export interface components {
                  * @description Vrbo only. When Vrbo's first notification reached `notificationEmail`, i.e. the host added it with notifications on. `null` until then.
                  */
                 notificationReceivedAt?: string | null;
+                /** @description Vrbo only. Whether another tool (such as a PMS) manages this account's calendar; while `calendar.managedBy` is set, calendar sync is off for all its units. */
+                calendar?: components["schemas"]["VrboCalendarAccess"] | null;
                 /** @description Vrbo only. The address the host can add on Vrbo as a secondary email (with message and reservation notifications on) so new bookings, inquiries and messages arrive within a minute instead of at the scheduled check. Ask every host to add it: notifications are how Vrbo updates reach Repull, the scheduled check is the backup. Hosted Connect shows it on its mapping screen; show it in your own app when you create sessions with `mapping: "api"`. */
                 notificationEmail?: string | null;
                 /** @description Vrbo only: where the account import stands. */
@@ -6898,7 +6900,7 @@ export interface components {
          * @description Canonical event type identifier. Every webhook delivery declares one of these in its `type` field; SDKs key the discriminated `WebhookEvent` union on this value.
          * @enum {string}
          */
-        WebhookEventType: "reservation.created" | "reservation.updated" | "reservation.cancelled" | "reservation.message.received" | "reservation.message.sent" | "reservation.message.updated" | "reservation.message.read" | "reservation.message.reaction" | "reservation.alteration.created" | "reservation.alteration.responded" | "reservation.request.created" | "reservation.request.updated" | "booking.unacknowledged" | "channel.sync.failed" | "channel.degraded" | "reservation.thread.assigned" | "inquiry.created" | "inquiry.updated" | "listing.created" | "listing.updated" | "listing.deleted" | "listing.suspended" | "listing.reactivated" | "account.created" | "connect.session.completed" | "connect.session.abandoned" | "account.disconnected" | "account.import.started" | "account.import.completed" | "account.import.failed" | "account.units.added" | "review.created" | "review.responded" | "ai.operation.completed" | "ai.operation.failed" | "payment.completed" | "payment.refunded" | "payout.completed" | "migration.completed" | "migration.failed" | "repull.ping" | "usage.quota.warning";
+        WebhookEventType: "reservation.created" | "reservation.updated" | "reservation.cancelled" | "reservation.message.received" | "reservation.message.sent" | "reservation.message.updated" | "reservation.message.read" | "reservation.message.reaction" | "reservation.alteration.created" | "reservation.alteration.responded" | "reservation.request.created" | "reservation.request.updated" | "booking.unacknowledged" | "channel.sync.failed" | "channel.degraded" | "reservation.thread.assigned" | "inquiry.created" | "inquiry.updated" | "listing.created" | "listing.updated" | "listing.deleted" | "listing.suspended" | "listing.reactivated" | "account.created" | "connect.session.completed" | "connect.session.abandoned" | "account.disconnected" | "account.import.started" | "account.import.completed" | "account.import.failed" | "account.units.added" | "account.calendar_access_changed" | "review.created" | "review.responded" | "ai.operation.completed" | "ai.operation.failed" | "payment.completed" | "payment.refunded" | "payout.completed" | "migration.completed" | "migration.failed" | "repull.ping" | "usage.quota.warning";
         /**
          * @description Lightweight reservation snapshot delivered as `data.object` on every reservation webhook event. Stable across `reservation.created`, `reservation.updated`, and `reservation.cancelled`. Fetch the full reservation via `GET /v1/reservations/{id}` if you need pricing, guest contact info, or audit history — those are deliberately omitted to keep deliveries small.
          *
@@ -8793,6 +8795,63 @@ export interface components {
                 description: string;
             }[];
         };
+        /** @description Whether another tool manages a Vrbo account's calendar. Vrbo reports it per account; Repull asks when the account connects and once a day. While `managedBy` is set, Vrbo refuses price and availability changes from anyone else, so calendar sync is off for every unit of the account and turning it on returns `409 calendar_managed_elsewhere`. Bookings and messages keep working. */
+        VrboCalendarAccess: {
+            /**
+             * @description `integrated_software`: Vrbo says connected software (such as a PMS) manages the calendar. `null`: Repull may manage it.
+             * @enum {string|null}
+             */
+            managedBy: "integrated_software" | null;
+            /**
+             * Format: date-time
+             * @description When `managedBy` was first seen. `null` when not managed.
+             */
+            detectedAt: string | null;
+            /**
+             * Format: date-time
+             * @description When Vrbo was last asked. `null` until the first check.
+             */
+            checkedAt: string | null;
+            /**
+             * Format: uri
+             * @example https://repull.dev/docs/channels/vrbo/calendar-managed-elsewhere
+             */
+            docsUrl: string;
+        };
+        AccountCalendarAccessChangedPayload: {
+            workspaceId: number;
+            /** @enum {string} */
+            provider: "vrbo";
+            /** @description Vrbo's account number (`accounts[].externalAccountId` on `GET /v1/connect/vrbo-login`). */
+            accountId: string | null;
+            /** @description The workspace's Vrbo connection record. */
+            connectionId: number | null;
+            calendar: components["schemas"]["VrboCalendarAccess"];
+            /** Format: date-time */
+            changedAt: string;
+        };
+        /** @description Another tool (such as a PMS) started or stopped managing a Vrbo account's calendar. Started: calendar sync is now off for every unit of the account. Stopped: nothing is switched back on; turn it on with `POST /v1/connections/{id}/mappings` (`calendarSync: true`). */
+        AccountCalendarAccessChangedEvent: {
+            /**
+             * @description The event name. This field is `event`, not `type`. (enum property replaced by openapi-typescript)
+             * @enum {string}
+             */
+            event: "account.calendar_access_changed";
+            /**
+             * Format: uuid
+             * @description Stable across every delivery and replay of this logical event — dedupe on it.
+             */
+            eventId: string;
+            /** @example 2026-04 */
+            apiVersion: string;
+            /**
+             * Format: date-time
+             * @description When this delivery was built.
+             */
+            timestamp: string;
+            account?: components["schemas"]["WebhookEventAccount"];
+            data: components["schemas"]["AccountCalendarAccessChangedPayload"];
+        };
         /** @description A connected login gained a property or room. Map the new units to listings to import their bookings. */
         AccountUnitsAddedEvent: {
             /**
@@ -9203,7 +9262,7 @@ export interface components {
             data: components["schemas"]["MigrationImportPayload"];
         };
         /** @description The full event envelope POSTed to your webhook URL. Discriminated on `type` — narrow `event.data` by switching on `event.type`. Use the matching `*Event` variant directly if your SDK lacks discriminator support. Events about an inactive listing (reservations, messages, alterations, reviews, payments, calendar and listing events) are not delivered. The data keeps syncing while the listing is inactive, but its events are never sent — including after you reactivate it; webhooks resume for events that happen from reactivation on. Account-level events are always delivered. */
-        WebhookEvent: components["schemas"]["ReservationCreatedEvent"] | components["schemas"]["ReservationUpdatedEvent"] | components["schemas"]["ReservationCancelledEvent"] | components["schemas"]["ReservationMessageReceivedEvent"] | components["schemas"]["ReservationMessageSentEvent"] | components["schemas"]["ReservationMessageUpdatedEvent"] | components["schemas"]["ReservationMessageReadEvent"] | components["schemas"]["ReservationMessageReactionEvent"] | components["schemas"]["ReservationAlterationCreatedEvent"] | components["schemas"]["ReservationAlterationRespondedEvent"] | components["schemas"]["ReservationRequestCreatedEvent"] | components["schemas"]["ReservationRequestUpdatedEvent"] | components["schemas"]["BookingUnacknowledgedEvent"] | components["schemas"]["ChannelSyncFailedEvent"] | components["schemas"]["ChannelDegradedEvent"] | components["schemas"]["ReservationThreadAssignedEvent"] | components["schemas"]["InquiryCreatedEvent"] | components["schemas"]["InquiryUpdatedEvent"] | components["schemas"]["ListingCreatedEvent"] | components["schemas"]["ListingUpdatedEvent"] | components["schemas"]["ListingDeletedEvent"] | components["schemas"]["ListingSuspendedEvent"] | components["schemas"]["ListingReactivatedEvent"] | components["schemas"]["AccountCreatedEvent"] | components["schemas"]["ConnectSessionCompletedEvent"] | components["schemas"]["ConnectSessionAbandonedEvent"] | components["schemas"]["AccountDisconnectedEvent"] | components["schemas"]["AccountImportStartedEvent"] | components["schemas"]["AccountImportCompletedEvent"] | components["schemas"]["AccountImportFailedEvent"] | components["schemas"]["AccountUnitsAddedEvent"] | components["schemas"]["ReviewCreatedEvent"] | components["schemas"]["ReviewRespondedEvent"] | components["schemas"]["AiOperationCompletedEvent"] | components["schemas"]["AiOperationFailedEvent"] | components["schemas"]["PaymentCompletedEvent"] | components["schemas"]["PaymentRefundedEvent"] | components["schemas"]["PayoutCompletedEvent"] | components["schemas"]["RepullPingEvent"] | components["schemas"]["UsageQuotaWarningEvent"] | components["schemas"]["MigrationCompletedEvent"] | components["schemas"]["MigrationFailedEvent"];
+        WebhookEvent: components["schemas"]["ReservationCreatedEvent"] | components["schemas"]["ReservationUpdatedEvent"] | components["schemas"]["ReservationCancelledEvent"] | components["schemas"]["ReservationMessageReceivedEvent"] | components["schemas"]["ReservationMessageSentEvent"] | components["schemas"]["ReservationMessageUpdatedEvent"] | components["schemas"]["ReservationMessageReadEvent"] | components["schemas"]["ReservationMessageReactionEvent"] | components["schemas"]["ReservationAlterationCreatedEvent"] | components["schemas"]["ReservationAlterationRespondedEvent"] | components["schemas"]["ReservationRequestCreatedEvent"] | components["schemas"]["ReservationRequestUpdatedEvent"] | components["schemas"]["BookingUnacknowledgedEvent"] | components["schemas"]["ChannelSyncFailedEvent"] | components["schemas"]["ChannelDegradedEvent"] | components["schemas"]["ReservationThreadAssignedEvent"] | components["schemas"]["InquiryCreatedEvent"] | components["schemas"]["InquiryUpdatedEvent"] | components["schemas"]["ListingCreatedEvent"] | components["schemas"]["ListingUpdatedEvent"] | components["schemas"]["ListingDeletedEvent"] | components["schemas"]["ListingSuspendedEvent"] | components["schemas"]["ListingReactivatedEvent"] | components["schemas"]["AccountCreatedEvent"] | components["schemas"]["ConnectSessionCompletedEvent"] | components["schemas"]["ConnectSessionAbandonedEvent"] | components["schemas"]["AccountDisconnectedEvent"] | components["schemas"]["AccountImportStartedEvent"] | components["schemas"]["AccountImportCompletedEvent"] | components["schemas"]["AccountImportFailedEvent"] | components["schemas"]["AccountUnitsAddedEvent"] | components["schemas"]["AccountCalendarAccessChangedEvent"] | components["schemas"]["ReviewCreatedEvent"] | components["schemas"]["ReviewRespondedEvent"] | components["schemas"]["AiOperationCompletedEvent"] | components["schemas"]["AiOperationFailedEvent"] | components["schemas"]["PaymentCompletedEvent"] | components["schemas"]["PaymentRefundedEvent"] | components["schemas"]["PayoutCompletedEvent"] | components["schemas"]["RepullPingEvent"] | components["schemas"]["UsageQuotaWarningEvent"] | components["schemas"]["MigrationCompletedEvent"] | components["schemas"]["MigrationFailedEvent"];
         /** @description A listing paired with its Airbnb connections. The list endpoint groups every Airbnb connection of the same `listingId` under a single `connections[]` array. */
         AirbnbListing: {
             /**
@@ -24393,6 +24452,16 @@ export interface operations {
                              */
                             status: "in_sync" | "problems" | "off";
                             /**
+                             * @description Vrbo only, when Repull turned calendar sync off: Vrbo says another tool (such as a PMS) manages the account's calendar. Absent when the host turned it off.
+                             * @enum {string}
+                             */
+                            offReason?: "calendar_managed_elsewhere";
+                            /**
+                             * Format: uri
+                             * @description Explains `offReason` and how to turn calendar sync back on.
+                             */
+                            docsUrl?: string;
+                            /**
                              * Format: date-time
                              * @description When a push last wrote to this listing's calendar.
                              */
@@ -24656,7 +24725,7 @@ export interface operations {
                         unitId: string;
                         listingId?: number | null;
                         create?: boolean;
-                        /** @description Vrbo: push this listing's prices and availability to Vrbo. Omit to follow the connection's access type (`messaging` = off, `full_access` = on). A new listing (`create`) always follows the access type. Other channels ignore it. */
+                        /** @description Vrbo: push this listing's prices and availability to Vrbo. Omit to follow the connection's access type (`messaging` = off, `full_access` = on). A new listing (`create`) always follows the access type. Other channels ignore it. `true` returns `409 calendar_managed_elsewhere` while Vrbo says another tool (such as a PMS) manages the account's calendar (`calendar.managedBy` on `GET /v1/connect/vrbo-login`); see https://repull.dev/docs/channels/vrbo/calendar-managed-elsewhere. */
                         calendarSync?: boolean;
                     }[];
                 };
@@ -24680,6 +24749,15 @@ export interface operations {
                             error?: string;
                         }[];
                     };
+                };
+            };
+            /** @description `calendar_managed_elsewhere` (Vrbo): `calendarSync: true` was sent while Vrbo says another tool (such as a PMS) manages the account's calendar. Nothing was applied. `units` lists the units that asked for it; `docs_url` explains how to change it. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
@@ -24753,13 +24831,14 @@ export interface operations {
                         status?: "importing" | "ready" | "completed";
                         /** @description Vrbo only. Ask the host to add this address on Vrbo as a secondary email, with message and reservation notifications on. It is how new bookings, inquiries and guest messages reach Repull within a minute; without it they arrive at the next scheduled check. Hosted Connect asks for it on its mapping screen, so show it in your own flow when you map with `mapping: "api"`. */
                         notification_email?: string | null;
+                        calendar?: components["schemas"]["VrboCalendarAccess"];
                         units?: {
                             unit_id?: string;
                             unit_name?: string;
                             grain?: string;
                             current_listing_id?: number | null;
                             suggested_listing_id?: number | null;
-                            /** @description Channel details that identify the unit. Booking.com Extranet: `hotel` (property name), `hotelId` (Booking.com property ID), `roomId` (Booking.com room ID), `city`. Vrbo: `headline`, `address`, `vrboStatus`; the Vrbo listing ID is `unit_id`. */
+                            /** @description Channel details that identify the unit. Booking.com Extranet: `hotel` (property name), `hotelId` (Booking.com property ID), `roomId` (Booking.com room ID), `city`. Vrbo: `headline`, `address`, `vrboStatus`, `calendarSync` (whether the unit's prices and availability are pushed to Vrbo) and, while Vrbo says another tool manages the account's calendar, `calendarSyncBlocked: "calendar_managed_elsewhere"`; the Vrbo listing ID is `unit_id`. */
                             meta?: Record<string, never>;
                         }[];
                         listing_options?: {
@@ -25716,7 +25795,7 @@ export interface operations {
             content: {
                 "application/json": {
                     /**
-                     * @description What to import. `listings` = the account's listings and their calendars (pricing and availability). The only scope; the full import runs when an account is connected.
+                     * @description What to import. `listings` = the account's listings. New listings come in with their calendar (pricing and availability); on a full-access connection, calendars of listings already in Repull are not re-read. The only scope; the full import runs when an account is connected.
                      * @default listings
                      * @enum {string}
                      */
