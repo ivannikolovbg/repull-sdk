@@ -5389,6 +5389,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/listings/{id}/ical": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Repull iCal backup feed
+         * @description The listing's Repull iCal backup feed: an iCal calendar named "Repull" with the listing's bookings and blocks as all-day events, at an unguessable address on `api.repull.dev` (created on first request, one per listing). Channels that import iCal close those nights from it on their own schedule — availability only, never prices.
+         *
+         *     **Vrbo:** Repull imports this feed into every calendar-synced Vrbo unit by itself, as a backup for the direct calendar push, and removes other tools' imported feeds while Repull is the unit's master calendar. `vrbo` says, per unit, whether Vrbo imports it (as last checked, once a day). When `status` is `failed`, ask the host to add `url` in Vrbo → Calendar → Import calendar, named "Repull". Changes arrive as `listing.ical_feed_changed`.
+         *
+         *     The address is a credential: anyone with it can read the listing's booked dates (no guest details). Returns `403 listing_inactive` for an inactive listing.
+         */
+        get: operations["get_listing_ical"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -6933,7 +6957,7 @@ export interface components {
          * @description Canonical event type identifier. Every webhook delivery declares one of these in its `type` field; SDKs key the discriminated `WebhookEvent` union on this value.
          * @enum {string}
          */
-        WebhookEventType: "reservation.created" | "reservation.updated" | "reservation.cancelled" | "reservation.message.received" | "conversation.message.status_changed" | "reservation.message.sent" | "reservation.message.updated" | "reservation.message.read" | "reservation.message.reaction" | "reservation.alteration.created" | "reservation.alteration.responded" | "reservation.request.created" | "reservation.request.updated" | "booking.unacknowledged" | "channel.sync.failed" | "channel.degraded" | "reservation.thread.assigned" | "inquiry.created" | "inquiry.updated" | "listing.created" | "listing.updated" | "listing.deleted" | "listing.suspended" | "listing.reactivated" | "account.created" | "connect.session.completed" | "connect.session.abandoned" | "account.disconnected" | "account.import.started" | "account.import.completed" | "account.import.failed" | "account.units.added" | "account.calendar_access_changed" | "account.notifications_missing" | "review.created" | "review.responded" | "ai.operation.completed" | "ai.operation.failed" | "payment.completed" | "payment.refunded" | "payout.completed" | "migration.completed" | "migration.failed" | "repull.ping" | "usage.quota.warning";
+        WebhookEventType: "reservation.created" | "reservation.updated" | "reservation.cancelled" | "reservation.message.received" | "conversation.message.status_changed" | "reservation.message.sent" | "reservation.message.updated" | "reservation.message.read" | "reservation.message.reaction" | "reservation.alteration.created" | "reservation.alteration.responded" | "reservation.request.created" | "reservation.request.updated" | "booking.unacknowledged" | "channel.sync.failed" | "channel.degraded" | "reservation.thread.assigned" | "inquiry.created" | "inquiry.updated" | "listing.created" | "listing.updated" | "listing.deleted" | "listing.suspended" | "listing.reactivated" | "listing.ical_feed_changed" | "account.created" | "connect.session.completed" | "connect.session.abandoned" | "account.disconnected" | "account.import.started" | "account.import.completed" | "account.import.failed" | "account.units.added" | "account.calendar_access_changed" | "account.notifications_missing" | "review.created" | "review.responded" | "ai.operation.completed" | "ai.operation.failed" | "payment.completed" | "payment.refunded" | "payout.completed" | "migration.completed" | "migration.failed" | "repull.ping" | "usage.quota.warning";
         /**
          * @description Lightweight reservation snapshot delivered as `data.object` on every reservation webhook event. Stable across `reservation.created`, `reservation.updated`, and `reservation.cancelled`. Fetch the full reservation via `GET /v1/reservations/{id}` if you need pricing, guest contact info, or audit history — those are deliberately omitted to keep deliveries small.
          *
@@ -8632,6 +8656,70 @@ export interface components {
             account?: components["schemas"]["WebhookEventAccount"];
             data: components["schemas"]["ListingDeletedPayload"];
         };
+        /** @description Payload for `listing.ical_feed_changed`: Repull changed a Vrbo unit's imported calendars, or could not. Repull imports the listing's Repull iCal backup feed into every calendar-synced Vrbo unit, and removes other tools' imported feeds while Repull is the unit's master calendar. */
+        ListingIcalFeedChangedPayload: {
+            object: components["schemas"]["ListingWebhookObject"];
+            /** @enum {string} */
+            provider: "vrbo";
+            /**
+             * @description `repull_feed_added`: the Repull feed is now imported (`reason: "repull_feed_missing"` when it had been removed on Vrbo and was put back). `repull_feed_add_failed`: Vrbo did not take it — ask the host to add `repullFeedUrl` in Vrbo → Calendar → Import calendar, named "Repull"; nothing else is changed on the unit until it is there. `other_feed_removed`: another tool's imported calendar (`feed`) was removed. `other_feed_remove_failed`: removing it failed — ask the host to remove it in Vrbo → Calendar → Import calendar. Repull also emails the workspace owner when an action failed.
+             * @enum {string}
+             */
+            action: "repull_feed_added" | "repull_feed_add_failed" | "other_feed_removed" | "other_feed_remove_failed";
+            /** @description The imported calendar acted on, as Vrbo shows it. */
+            feed: {
+                /** @example Other PMS 12B */
+                name?: string | null;
+                /** @example https://pms.example.com/ical/12b.ics */
+                url?: string | null;
+            };
+            /**
+             * Format: uri
+             * @description The listing's Repull iCal backup feed (`GET /v1/listings/{id}/ical`).
+             */
+            repullFeedUrl: string;
+            /**
+             * @description Why Repull acted.
+             * @enum {string|null}
+             */
+            reason?: "repull_feed_missing" | "repull_is_master_calendar" | null;
+            /**
+             * @description `calendar_sync_enabled`: calendar sync was just switched on for the unit. `drift_check`: the daily Vrbo calendar check.
+             * @enum {string}
+             */
+            trigger: "calendar_sync_enabled" | "drift_check";
+            /** @description Vrbo's answer, on a failed action. */
+            error?: string | null;
+            /** Format: date-time */
+            occurredAt: string;
+            /**
+             * Format: uri
+             * @example https://repull.dev/docs/channels/vrbo/ical-backup
+             */
+            docsUrl?: string;
+        };
+        /** @description Repull added its iCal backup feed to a Vrbo unit, removed another tool's imported feed, or could not. On a `*_failed` action, show the host what to change on Vrbo. */
+        ListingIcalFeedChangedEvent: {
+            /**
+             * @description The event name. This field is `event`, not `type`. (enum property replaced by openapi-typescript)
+             * @enum {string}
+             */
+            event: "listing.ical_feed_changed";
+            /**
+             * Format: uuid
+             * @description Stable across every delivery and replay of this logical event — dedupe on it.
+             */
+            eventId: string;
+            /** @example 2026-04 */
+            apiVersion: string;
+            /**
+             * Format: date-time
+             * @description When this delivery was built.
+             */
+            timestamp: string;
+            account?: components["schemas"]["WebhookEventAccount"];
+            data: components["schemas"]["ListingIcalFeedChangedPayload"];
+        };
         ListingSuspendedEvent: {
             /**
              * @description The event name. This field is `event`, not `type`. (enum property replaced by openapi-typescript)
@@ -9395,7 +9483,7 @@ export interface components {
             data: components["schemas"]["MigrationImportPayload"];
         };
         /** @description The full event envelope POSTed to your webhook URL. Discriminated on `type` — narrow `event.data` by switching on `event.type`. Use the matching `*Event` variant directly if your SDK lacks discriminator support. Events about an inactive listing (reservations, messages, alterations, reviews, payments, calendar and listing events) are not delivered. The data keeps syncing while the listing is inactive, but its events are never sent — including after you reactivate it; webhooks resume for events that happen from reactivation on. Account-level events are always delivered. */
-        WebhookEvent: components["schemas"]["ReservationCreatedEvent"] | components["schemas"]["ReservationUpdatedEvent"] | components["schemas"]["ReservationCancelledEvent"] | components["schemas"]["ReservationMessageReceivedEvent"] | components["schemas"]["ConversationMessageStatusChangedEvent"] | components["schemas"]["ReservationMessageSentEvent"] | components["schemas"]["ReservationMessageUpdatedEvent"] | components["schemas"]["ReservationMessageReadEvent"] | components["schemas"]["ReservationMessageReactionEvent"] | components["schemas"]["ReservationAlterationCreatedEvent"] | components["schemas"]["ReservationAlterationRespondedEvent"] | components["schemas"]["ReservationRequestCreatedEvent"] | components["schemas"]["ReservationRequestUpdatedEvent"] | components["schemas"]["BookingUnacknowledgedEvent"] | components["schemas"]["ChannelSyncFailedEvent"] | components["schemas"]["ChannelDegradedEvent"] | components["schemas"]["ReservationThreadAssignedEvent"] | components["schemas"]["InquiryCreatedEvent"] | components["schemas"]["InquiryUpdatedEvent"] | components["schemas"]["ListingCreatedEvent"] | components["schemas"]["ListingUpdatedEvent"] | components["schemas"]["ListingDeletedEvent"] | components["schemas"]["ListingSuspendedEvent"] | components["schemas"]["ListingReactivatedEvent"] | components["schemas"]["AccountCreatedEvent"] | components["schemas"]["ConnectSessionCompletedEvent"] | components["schemas"]["ConnectSessionAbandonedEvent"] | components["schemas"]["AccountDisconnectedEvent"] | components["schemas"]["AccountImportStartedEvent"] | components["schemas"]["AccountImportCompletedEvent"] | components["schemas"]["AccountImportFailedEvent"] | components["schemas"]["AccountUnitsAddedEvent"] | components["schemas"]["AccountCalendarAccessChangedEvent"] | components["schemas"]["AccountNotificationsMissingEvent"] | components["schemas"]["ReviewCreatedEvent"] | components["schemas"]["ReviewRespondedEvent"] | components["schemas"]["AiOperationCompletedEvent"] | components["schemas"]["AiOperationFailedEvent"] | components["schemas"]["PaymentCompletedEvent"] | components["schemas"]["PaymentRefundedEvent"] | components["schemas"]["PayoutCompletedEvent"] | components["schemas"]["RepullPingEvent"] | components["schemas"]["UsageQuotaWarningEvent"] | components["schemas"]["MigrationCompletedEvent"] | components["schemas"]["MigrationFailedEvent"];
+        WebhookEvent: components["schemas"]["ReservationCreatedEvent"] | components["schemas"]["ReservationUpdatedEvent"] | components["schemas"]["ReservationCancelledEvent"] | components["schemas"]["ReservationMessageReceivedEvent"] | components["schemas"]["ConversationMessageStatusChangedEvent"] | components["schemas"]["ReservationMessageSentEvent"] | components["schemas"]["ReservationMessageUpdatedEvent"] | components["schemas"]["ReservationMessageReadEvent"] | components["schemas"]["ReservationMessageReactionEvent"] | components["schemas"]["ReservationAlterationCreatedEvent"] | components["schemas"]["ReservationAlterationRespondedEvent"] | components["schemas"]["ReservationRequestCreatedEvent"] | components["schemas"]["ReservationRequestUpdatedEvent"] | components["schemas"]["BookingUnacknowledgedEvent"] | components["schemas"]["ChannelSyncFailedEvent"] | components["schemas"]["ChannelDegradedEvent"] | components["schemas"]["ReservationThreadAssignedEvent"] | components["schemas"]["InquiryCreatedEvent"] | components["schemas"]["InquiryUpdatedEvent"] | components["schemas"]["ListingCreatedEvent"] | components["schemas"]["ListingUpdatedEvent"] | components["schemas"]["ListingDeletedEvent"] | components["schemas"]["ListingSuspendedEvent"] | components["schemas"]["ListingReactivatedEvent"] | components["schemas"]["ListingIcalFeedChangedEvent"] | components["schemas"]["AccountCreatedEvent"] | components["schemas"]["ConnectSessionCompletedEvent"] | components["schemas"]["ConnectSessionAbandonedEvent"] | components["schemas"]["AccountDisconnectedEvent"] | components["schemas"]["AccountImportStartedEvent"] | components["schemas"]["AccountImportCompletedEvent"] | components["schemas"]["AccountImportFailedEvent"] | components["schemas"]["AccountUnitsAddedEvent"] | components["schemas"]["AccountCalendarAccessChangedEvent"] | components["schemas"]["AccountNotificationsMissingEvent"] | components["schemas"]["ReviewCreatedEvent"] | components["schemas"]["ReviewRespondedEvent"] | components["schemas"]["AiOperationCompletedEvent"] | components["schemas"]["AiOperationFailedEvent"] | components["schemas"]["PaymentCompletedEvent"] | components["schemas"]["PaymentRefundedEvent"] | components["schemas"]["PayoutCompletedEvent"] | components["schemas"]["RepullPingEvent"] | components["schemas"]["UsageQuotaWarningEvent"] | components["schemas"]["MigrationCompletedEvent"] | components["schemas"]["MigrationFailedEvent"];
         /** @description A listing paired with its Airbnb connections. The list endpoint groups every Airbnb connection of the same `listingId` under a single `connections[]` array. */
         AirbnbListing: {
             /**
@@ -21073,6 +21161,8 @@ export interface operations {
                             ipAddress?: string | null;
                             userAgent?: string | null;
                             errorCode?: string | null;
+                            /** @description The repull.dev dashboard page this call was run from (`keys`, `playground`, `quickstart`, `connect`, `settings/connect`), or null for a call your own code made. Dashboard calls don't count toward your plan's request quota. */
+                            dashboardSurface?: string | null;
                             /** Format: date-time */
                             createdAt?: string;
                         }[];
@@ -24911,6 +25001,12 @@ export interface operations {
                             created?: boolean;
                             ok?: boolean;
                             error?: string;
+                            /**
+                             * Format: uri
+                             * @description Vrbo, for a mapped unit: the listing's Repull iCal backup feed (`GET /v1/listings/{id}/ical`). With calendar sync on, Repull imports it into the Vrbo unit by itself (Vrbo → Calendar → Import calendar, named "Repull") and removes other tools' imported feeds; `listing.ical_feed_changed` reports it. Only if that fails does the host add it by hand.
+                             * @example https://api.repull.dev/ical/4f9c2d7e1a8b3c6d5e0f9a2b7c4d1e8f3a6b9c2d5e8f1a4b7c0d3e6f9a2b5c8d.ics
+                             */
+                            ical_feed_url?: string;
                         }[];
                     };
                 };
@@ -25002,7 +25098,7 @@ export interface operations {
                             grain?: string;
                             current_listing_id?: number | null;
                             suggested_listing_id?: number | null;
-                            /** @description Channel details that identify the unit. Booking.com Extranet: `hotel` (property name), `hotelId` (Booking.com property ID), `roomId` (Booking.com room ID), `city`. Vrbo: `headline`, `address`, `vrboStatus`, `calendarSync` (whether the unit's prices and availability are pushed to Vrbo) and, while Vrbo says another tool manages the account's calendar, `calendarSyncBlocked: "calendar_managed_elsewhere"`; the Vrbo listing ID is `unit_id`. */
+                            /** @description Channel details that identify the unit. Booking.com Extranet: `hotel` (property name), `hotelId` (Booking.com property ID), `roomId` (Booking.com room ID), `city`. Vrbo: `headline`, `address`, `vrboStatus`, `calendarSync` (whether the unit's prices and availability are pushed to Vrbo) and, while Vrbo says another tool manages the account's calendar, `calendarSyncBlocked: "calendar_managed_elsewhere"`, and for a mapped unit `icalBackup`: `{ feedUrl, status, otherFeeds }` — the listing's Repull iCal backup feed and whether Vrbo imports it (`status` as on `GET /v1/listings/{id}/ical`: `imported`, `pending`, `failed`, `not_imported`, `off`; Repull adds it itself, so only on `failed` does the host add `feedUrl` in Vrbo → Calendar → Import calendar, named "Repull"); the Vrbo listing ID is `unit_id`. */
                             meta?: Record<string, never>;
                         }[];
                         listing_options?: {
@@ -27165,6 +27261,91 @@ export interface operations {
             404: components["responses"]["NotFound"];
             422: components["responses"]["UnprocessableEntity"];
             500: components["responses"]["InternalError"];
+        };
+    };
+    get_listing_ical: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Repull listing id. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The feed address and its Vrbo state. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "listingId": "1001",
+                     *       "url": "https://api.repull.dev/ical/4f9c2d7e1a8b3c6d5e0f9a2b7c4d1e8f3a6b9c2d5e8f1a4b7c0d3e6f9a2b5c8d.ics",
+                     *       "calendarName": "Repull",
+                     *       "enabled": true,
+                     *       "vrbo": [
+                     *         {
+                     *           "unitId": "7001234",
+                     *           "calendarSync": true,
+                     *           "status": "imported",
+                     *           "otherFeeds": [],
+                     *           "checkedAt": "2026-11-19T05:12:40.000Z"
+                     *         }
+                     *       ]
+                     *     }
+                     */
+                    "application/json": {
+                        /** @example 1001 */
+                        listingId: string;
+                        /**
+                         * Format: uri
+                         * @description The feed address. Import it on any channel that reads iCal.
+                         * @example https://api.repull.dev/ical/4f9c2d7e1a8b3c6d5e0f9a2b7c4d1e8f3a6b9c2d5e8f1a4b7c0d3e6f9a2b5c8d.ics
+                         */
+                        url: string;
+                        /**
+                         * @description The calendar name the feed carries, and the name to give it when importing it by hand.
+                         * @enum {string}
+                         */
+                        calendarName: "Repull";
+                        /** @description False when the listing's feed was turned off; the address then answers 404. */
+                        enabled: boolean;
+                        /** @description One entry per Vrbo unit mapped to the listing. */
+                        vrbo: {
+                            /**
+                             * @description The Vrbo listing number (`unitId` on `GET /v1/connections/{id}/units`).
+                             * @example 7001234
+                             */
+                            unitId: string;
+                            /** @description Calendar sync is on for the unit. */
+                            calendarSync: boolean;
+                            /**
+                             * @description `imported`: Vrbo imports the feed. `pending`: calendar sync is on and Repull has not checked the unit yet — it adds the feed itself. `failed`: Vrbo did not take it; ask the host to add `url` in Vrbo → Calendar → Import calendar, named "Repull". `not_imported`: checked, not there, and not added (for example, the feed is turned off). `off`: calendar sync is off, so Repull leaves the unit's imported calendars alone.
+                             * @enum {string}
+                             */
+                            status: "imported" | "pending" | "failed" | "not_imported" | "off";
+                            /**
+                             * @description Names of other calendars the unit still imports, as Vrbo shows them.
+                             * @example []
+                             */
+                            otherFeeds: string[];
+                            /**
+                             * Format: date-time
+                             * @description When Repull last read the unit's imported calendars.
+                             */
+                            checkedAt: string | null;
+                        }[];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["UnprocessableEntity"];
         };
     };
 }
