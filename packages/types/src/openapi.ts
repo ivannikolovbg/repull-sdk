@@ -5990,8 +5990,6 @@ export interface components {
              * @example Jane Doe
              */
             displayNameLong?: string;
-            /** Format: uri */
-            avatarUrl?: string | null;
             /** @description Guest's preferred language (ISO 639-1). */
             language?: string | null;
             /** @description Guest country (from profile metadata or address). */
@@ -6065,8 +6063,6 @@ export interface components {
             id?: string;
             displayName?: string;
             displayNameLong?: string;
-            /** Format: uri */
-            avatarUrl?: string | null;
             language?: string | null;
             country?: string | null;
             /** @description Primary phone contact. May be an Airbnb relay number — check `phoneType`. */
@@ -6150,8 +6146,6 @@ export interface components {
             airbnbId?: string;
             firstName?: string;
             displayName?: string;
-            /** Format: uri */
-            avatarUrl?: string | null;
         };
         ConversationGuestContact: {
             /** @example phone */
@@ -6164,8 +6158,6 @@ export interface components {
         ConversationGuest: {
             id?: string;
             displayName?: string;
-            /** Format: uri */
-            avatarUrl?: string | null;
             contacts?: components["schemas"]["ConversationGuestContact"][];
         };
         /** @description Returned by `GET /v1/conversations/{id}`. Extends the list-row `Conversation` shape with expanded `host` + `guest` blocks so SDK consumers can render thread headers without an extra round-trip. */
