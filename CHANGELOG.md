@@ -3,6 +3,10 @@
 All notable changes to `@repull/sdk` and `@repull/types` are recorded here.
 This project follows [Semantic Versioning](https://semver.org/).
 
+## 0.2.55 — 2026-11-20
+
+- Regenerated from the live spec (automated spec refresh).
+
 ## 0.2.54 — 2026-11-19
 
 - New: `GET /v1/listings/{id}/ical`
