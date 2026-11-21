@@ -3,6 +3,10 @@
 All notable changes to `@repull/sdk` and `@repull/types` are recorded here.
 This project follows [Semantic Versioning](https://semver.org/).
 
+## 0.2.57 — 2026-11-21
+
+- SDK: each Vrbo content section (`repull.channels.vrbo.listings.<section>`) is now its own namespace class with the route written out, so tooling that reads the SDK source can match every method to its URL. Same calls and types as 0.2.56.
+
 ## 0.2.56 — 2026-11-21
 
 - SDK: `repull.channels.vrbo.listings` — `list()`, `content.get(id, { sections })` and one namespace per Vrbo content section (`description`, `property`, `story`, `additionalInfo`, `translations`, `photos`, `amenities`, `rooms`, `location`, `houseRules`, `bookingSettings`, `cancellation`, `fees`, `pricing`, `rates`, `paymentTerms`, `protection`, `taxes`, `registration`, `welcomeGuide`), each with `get` / `update`; `videos.list` / `add` / `delete`.
