@@ -6436,38 +6436,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/channels/vrbo/transactions": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List Vrbo transactions (payout ledger)
-         * @description The Vrbo payout ledger for this workspace — the counterpart of `GET /v1/channels/airbnb/transactions`: every bank deposit Vrbo made to the host, each followed by the bookings it paid. A deposit's lines' signed `amount`s sum to its `payout.paidOutAmount` exactly; a negative line (`type: Adjustment`) is money taken back from that deposit. `status: UPCOMING` lines are payouts Vrbo has scheduled and not made yet, with Vrbo's `upcomingStatus` (`Scheduled`, `Blocked`).
-         *
-         *     **Ids are stable**, so you can upsert on `transactionId`: a Payout row's id is Vrbo's deposit reference number; a line's is `<reference>:<confirmationCode>:<n>`.
-         *
-         *     **Order:** newest deposit first, each followed by its lines in Vrbo's order (`payout.lineIndex`). `start_date` / `end_date` match the deposit's date (a scheduled line's estimated payout date).
-         *
-         *     **From Repull's copy.** The ledger is read from the Vrbo account (the last 12 months of deposits, and the payouts scheduled for the next 6) and kept: a read answers from it at once. A copy over a day old — or never filled — answers and is refreshed in the background (`dataFreshness.reason`: `refreshing` / `never_synced`); `POST` refreshes it now.
-         *
-         *     Lines on listings that are inactive in Repull are included and flagged `onInactiveListing: true`, so every deposit reconciles. **Not in Vrbo's payout reports** (`unavailableFields`): the fee split per booking, taxes, and the stay's nights and dates — see the reservation for those.
-         */
-        get: operations["listVrboTransactions"];
-        put?: never;
-        /**
-         * Refresh the Vrbo payout ledger
-         * @description Read the ledger from Vrbo now — every connected Vrbo account, or the one in `?account_id=` — and keep it; then read it with GET. Body (optional): `start_date` / `end_date` (YYYY-MM-DD) for the deposits to read; without them, the last 12 months. The payouts Vrbo has scheduled are always read again. One account failing never stops the others: it carries `error` in `accounts[]`. About 15 seconds per account.
-         */
-        post: operations["syncVrboTransactions"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -36803,7 +36771,7 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    /** @example HA-8K2P3Q */
+                    /** @example HA-C3WBX1 */
                     confirmation_code: string;
                     /** Format: date */
                     check_in?: string;
@@ -37231,171 +37199,6 @@ export interface operations {
             };
             /** @description Vrbo asked us to slow down for this account (`retry_after` seconds). */
             503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
-    listVrboTransactions: {
-        parameters: {
-            query?: {
-                /** @description Only this Vrbo account (`accountId` from `GET /v1/channels/vrbo/connection`). */
-                account_id?: string;
-                /** @description Inclusive lower bound on the deposit's date. YYYY-MM-DD. */
-                start_date?: string;
-                /** @description Inclusive upper bound on the deposit's date. YYYY-MM-DD. */
-                end_date?: string;
-                status?: "COMPLETED" | "UPCOMING";
-                /** @description `Payout`, `Reservation` or `Adjustment`. */
-                type?: string;
-                /** @description One deposit (its reference number) and its lines. */
-                payout_id?: string;
-                confirmation_code?: string;
-                /** @description From the previous page's `pagination.nextCursor`. */
-                cursor?: string;
-                /** @description Rows per page (default 100, at most 500). */
-                limit?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description The ledger */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        data?: {
-                            /** @description Stable: the deposit's reference number on a Payout row; `<reference>:<confirmationCode>:<n>` on a line; `upcoming:<confirmationCode>:<n>` on a scheduled payout. */
-                            transactionId?: string;
-                            accountId?: string | null;
-                            accountName?: string | null;
-                            /** @enum {string} */
-                            status?: "COMPLETED" | "UPCOMING";
-                            /**
-                             * @description `Payout` (the bank deposit), `Reservation` (a booking it paid), `Adjustment` (money taken back from it).
-                             * @example Reservation
-                             */
-                            type?: string;
-                            isPayout?: boolean;
-                            /** Format: date */
-                            date?: string | null;
-                            currency?: string | null;
-                            /** @description Signed: what this line adds to its deposit. On a Payout row, the amount deposited. */
-                            amount?: number | null;
-                            payout?: {
-                                payoutId?: string | null;
-                                /** Format: date */
-                                payoutDate?: string | null;
-                                lineIndex?: number | null;
-                                paidOutAmount?: number | null;
-                                /** @description The bank account, as Vrbo shows it (masked). */
-                                bankDestination?: string | null;
-                            };
-                            confirmationCode?: string | null;
-                            /** @description The Repull reservation, when the booking is in the workspace. */
-                            reservationId?: number | null;
-                            listingId?: number | null;
-                            vrboListingNumber?: string | null;
-                            onInactiveListing?: boolean;
-                            guestName?: string | null;
-                            /** @description On an UPCOMING line: Vrbo's status for the payout (`Scheduled`, `Blocked`, …). */
-                            upcomingStatus?: string | null;
-                            unavailableFields?: string[];
-                            syncedAt?: string | null;
-                        }[];
-                        pagination?: components["schemas"]["CursorPagination"];
-                        dataFreshness?: {
-                            lastSyncedAt?: string | null;
-                            stale?: boolean;
-                            /** @enum {string} */
-                            reason?: "ok" | "refreshing" | "never_synced" | "reconnect_required";
-                            fixUrl?: string;
-                            accounts?: {
-                                accountId?: string;
-                                accountName?: string | null;
-                                lastSyncedAt?: string | null;
-                                stale?: boolean;
-                                reason?: string;
-                                fixUrl?: string;
-                            }[];
-                        };
-                    };
-                };
-            };
-            /** @description `invalid_params` — a date not YYYY-MM-DD, an unknown `status`, or an `account_id` that is not one of the workspace's Vrbo accounts (`valid_values` lists them). */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
-    syncVrboTransactions: {
-        parameters: {
-            query?: {
-                /** @description Only this Vrbo account (`accountId` from `GET /v1/channels/vrbo/connection`). */
-                account_id?: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: {
-            content: {
-                "application/json": {
-                    /** Format: date */
-                    start_date?: string;
-                    /** Format: date */
-                    end_date?: string;
-                };
-            };
-        };
-        responses: {
-            /** @description What was refreshed */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        synced?: boolean;
-                        count?: number;
-                        accounts?: {
-                            accountId?: string;
-                            count?: number;
-                            payouts?: number;
-                            upcoming?: number;
-                            error?: {
-                                code?: string;
-                                message?: string;
-                            };
-                        }[];
-                    };
-                };
-            };
-            /** @description `no_connection` — the workspace has no connected Vrbo account. */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description `invalid_params` — a date not YYYY-MM-DD, an unknown field, or an unknown `account_id`. */
-            422: {
                 headers: {
                     [name: string]: unknown;
                 };
