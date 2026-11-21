@@ -128,6 +128,15 @@ import type {
   HotelDetail,
   HotelListResponse,
   WorkspaceListResponse,
+  OperationQuery,
+  OperationRequestBody,
+  OperationResponse,
+  VrboListingContentResult,
+  VrboListingListResponse,
+  VrboPublishJob,
+  VrboPublishJobStarted,
+  VrboPublishRequest,
+  operations,
 } from '@repull/types';
 import { RepullError } from './errors.js';
 import { KvNamespace } from './kv.js';
@@ -1303,10 +1312,13 @@ class ChannelsNamespace {
   readonly airbnb: AirbnbChannelNamespace;
   /** Booking.com property-level operations. New in v0.2.17. */
   readonly booking: BookingChannelNamespace;
+  /** Vrbo listings and their content, section by section. New in v0.2.56. */
+  readonly vrbo: VrboChannelNamespace;
 
   constructor(private readonly client: Repull) {
     this.airbnb = new AirbnbChannelNamespace(client);
     this.booking = new BookingChannelNamespace(client);
+    this.vrbo = new VrboChannelNamespace(client);
   }
 }
 
@@ -1807,6 +1819,179 @@ class AirbnbSafetyDisclosuresNamespace {
   }
 }
 
+// ─── Vrbo ──────────────────────────────────────────────────────────────
+
+class VrboChannelNamespace {
+  readonly listings: VrboListingsNamespace;
+
+  constructor(client: Repull) {
+    this.listings = new VrboListingsNamespace(client);
+  }
+}
+
+/** Path prefix for the per-listing Vrbo content routes. */
+function vrboListingPath(id: string | number, suffix: string): string {
+  return `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}${suffix}`;
+}
+
+/** `vrboListingNumber` picks the Vrbo unit when a listing is linked to more than one. */
+type VrboUnitQuery = { vrboListingNumber?: string };
+
+/**
+ * One section of a Vrbo listing's content — read it, or write a partial
+ * update. Every route answers live from Vrbo. A field you do not send is left
+ * alone; a value Vrbo would refuse comes back as a `RepullError` (`422`) that
+ * names the field. New in v0.2.56.
+ */
+class VrboListingSection<G extends keyof operations, P extends keyof operations> {
+  constructor(
+    private readonly client: Repull,
+    private readonly segment: string,
+  ) {}
+
+  /** GET /v1/channels/vrbo/listings/{id}/{section}. */
+  get(id: string | number, query: OperationQuery<G> | VrboUnitQuery = {}): Promise<OperationResponse<G>> {
+    return this.client.request<OperationResponse<G>>('GET', vrboListingPath(id, `/${this.segment}`), {
+      query: query as Record<string, unknown>,
+    });
+  }
+
+  /** PUT /v1/channels/vrbo/listings/{id}/{section} — partial update. */
+  update(
+    id: string | number,
+    body: OperationRequestBody<P>,
+    query: VrboUnitQuery = {},
+  ): Promise<OperationResponse<P>> {
+    return this.client.request<OperationResponse<P>>('PUT', vrboListingPath(id, `/${this.segment}`), {
+      body,
+      query,
+    });
+  }
+}
+
+/** Vrbo listing videos — list, add by URL, delete. New in v0.2.56. */
+class VrboVideosNamespace {
+  constructor(private readonly client: Repull) {}
+
+  /** GET /v1/channels/vrbo/listings/{id}/videos. */
+  list(id: string | number, query: VrboUnitQuery = {}): Promise<OperationResponse<'getVrboListingVideos'>> {
+    return this.client.request<OperationResponse<'getVrboListingVideos'>>('GET', vrboListingPath(id, '/videos'), {
+      query,
+    });
+  }
+
+  /** POST /v1/channels/vrbo/listings/{id}/videos — add a video by URL. */
+  add(
+    id: string | number,
+    body: OperationRequestBody<'addVrboListingVideo'>,
+    query: VrboUnitQuery = {},
+  ): Promise<OperationResponse<'addVrboListingVideo'>> {
+    return this.client.request<OperationResponse<'addVrboListingVideo'>>('POST', vrboListingPath(id, '/videos'), {
+      body,
+      query,
+    });
+  }
+
+  /** DELETE /v1/channels/vrbo/listings/{id}/videos?videoId= */
+  delete(
+    id: string | number,
+    videoId: string,
+    query: VrboUnitQuery = {},
+  ): Promise<OperationResponse<'deleteVrboListingVideos'>> {
+    return this.client.request<OperationResponse<'deleteVrboListingVideos'>>(
+      'DELETE',
+      vrboListingPath(id, '/videos'),
+      { query: { ...query, videoId } },
+    );
+  }
+}
+
+/**
+ * Vrbo listings. `list()` is the index; every other member is one section of
+ * a listing's Vrbo content, keyed by the Repull listing id:
+ *
+ *   const { data } = await repull.channels.vrbo.listings.content.get('4118', {
+ *     sections: 'description,house-rules,fees',
+ *   });
+ *   await repull.channels.vrbo.listings.description.update('4118', { headline: 'Sea-view loft' });
+ *
+ * New in v0.2.56. Guide: https://repull.dev/docs/vrbo-listing-content
+ */
+class VrboListingsNamespace {
+  readonly description: VrboListingSection<'getVrboListingDescription', 'updateVrboListingDescription'>;
+  readonly property: VrboListingSection<'getVrboListingProperty', 'updateVrboListingProperty'>;
+  readonly story: VrboListingSection<'getVrboListingStory', 'updateVrboListingStory'>;
+  readonly additionalInfo: VrboListingSection<'getVrboListingAdditionalInfo', 'updateVrboListingAdditionalInfo'>;
+  readonly translations: VrboListingSection<'getVrboListingTranslations', 'updateVrboListingTranslations'>;
+  readonly photos: VrboListingSection<'getVrboListingPhotos', 'updateVrboListingPhotos'>;
+  readonly amenities: VrboListingSection<'getVrboListingAmenities', 'updateVrboListingAmenities'>;
+  readonly rooms: VrboListingSection<'getVrboListingRooms', 'updateVrboListingRooms'>;
+  readonly location: VrboListingSection<'getVrboListingLocation', 'updateVrboListingLocation'>;
+  readonly houseRules: VrboListingSection<'getVrboListingHouseRules', 'updateVrboListingHouseRules'>;
+  readonly bookingSettings: VrboListingSection<'getVrboListingBookingSettings', 'updateVrboListingBookingSettings'>;
+  readonly cancellation: VrboListingSection<'getVrboListingCancellation', 'updateVrboListingCancellation'>;
+  readonly fees: VrboListingSection<'getVrboListingFees', 'updateVrboListingFees'>;
+  readonly pricing: VrboListingSection<'getVrboListingPricing', 'updateVrboListingPricing'>;
+  /** Nightly rates by date. `get` takes `start` / `end` (YYYY-MM-DD). */
+  readonly rates: VrboListingSection<'getVrboListingRates', 'updateVrboListingRates'>;
+  readonly paymentTerms: VrboListingSection<'getVrboListingPaymentTerms', 'updateVrboListingPaymentTerms'>;
+  readonly protection: VrboListingSection<'getVrboListingProtection', 'updateVrboListingProtection'>;
+  readonly taxes: VrboListingSection<'getVrboListingTaxes', 'updateVrboListingTaxes'>;
+  readonly registration: VrboListingSection<'getVrboListingRegistration', 'updateVrboListingRegistration'>;
+  readonly welcomeGuide: VrboListingSection<'getVrboListingWelcomeGuide', 'updateVrboListingWelcomeGuide'>;
+  readonly videos: VrboVideosNamespace;
+  /** Several sections in one read — `sections` is comma-separated, or `all`. */
+  readonly content: {
+    get(
+      id: string | number,
+      query: OperationQuery<'getVrboListingContent'>,
+    ): Promise<VrboListingContentResult>;
+  };
+
+  constructor(private readonly client: Repull) {
+    const section = <G extends keyof operations, P extends keyof operations>(segment: string) =>
+      new VrboListingSection<G, P>(client, segment);
+    this.description = section('description');
+    this.property = section('property');
+    this.story = section('story');
+    this.additionalInfo = section('additional-info');
+    this.translations = section('translations');
+    this.photos = section('photos');
+    this.amenities = section('amenities');
+    this.rooms = section('rooms');
+    this.location = section('location');
+    this.houseRules = section('house-rules');
+    this.bookingSettings = section('booking-settings');
+    this.cancellation = section('cancellation');
+    this.fees = section('fees');
+    this.pricing = section('pricing');
+    this.rates = section('rates');
+    this.paymentTerms = section('payment-terms');
+    this.protection = section('protection');
+    this.taxes = section('taxes');
+    this.registration = section('registration');
+    this.welcomeGuide = section('welcome-guide');
+    this.videos = new VrboVideosNamespace(client);
+    this.content = {
+      get: (id, query) =>
+        client.request<VrboListingContentResult>('GET', vrboListingPath(id, '/content'), {
+          query: query as Record<string, unknown>,
+        }),
+    };
+  }
+
+  /**
+   * GET /v1/channels/vrbo/listings — the Vrbo listings in the workspace.
+   * `status` defaults to `active`; `inactive` / `all` include listings you can
+   * activate (identity fields only).
+   */
+  list(query: OperationQuery<'list_vrbo_listings'> = {}): Promise<VrboListingListResponse> {
+    return this.client.request<VrboListingListResponse>('GET', '/v1/channels/vrbo/listings', {
+      query: query as Record<string, unknown>,
+    });
+  }
+}
+
 /**
  * Atlas market intelligence — every market the workspace operates in plus
  * KPIs (own ADR vs market ADR, occupancy, ratings, share). Backed by Atlas,
@@ -2068,6 +2253,35 @@ class ListingsNamespace {
       'POST',
       `/v1/listings/${encodeURIComponent(String(id))}/online`,
       { body },
+    );
+  }
+  /**
+   * POST /v1/listings/{id}/publish/vrbo — create the listing on Vrbo, or, when
+   * it is already linked to a Vrbo listing, push its content onto that listing
+   * (`mode: 'update'`). New in v0.2.56.
+   *
+   * It is a job: Vrbo's onboarding takes 5–15 minutes, so this answers `202`
+   * with `job.jobId`. Poll `getVrboPublishJob(id, jobId)` until `linked` is
+   * true. With several Vrbo accounts, name one with `accountId` (`"vrbo:13"`).
+   */
+  publishToVrbo(id: string | number, body: VrboPublishRequest = {}): Promise<VrboPublishJobStarted> {
+    return this.client.request<VrboPublishJobStarted>(
+      'POST',
+      `/v1/listings/${encodeURIComponent(String(id))}/publish/vrbo`,
+      { body },
+    );
+  }
+
+  /**
+   * GET /v1/listings/{id}/publish/vrbo?jobId= — progress of a Vrbo publish
+   * job, step by step. Once Vrbo has published the listing this read links it
+   * and queues the calendar: keep polling until `linked` is true. New in v0.2.56.
+   */
+  getVrboPublishJob(id: string | number, jobId: string): Promise<VrboPublishJob> {
+    return this.client.request<VrboPublishJob>(
+      'GET',
+      `/v1/listings/${encodeURIComponent(String(id))}/publish/vrbo`,
+      { query: { jobId } },
     );
   }
 }

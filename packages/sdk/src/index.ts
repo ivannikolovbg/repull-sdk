@@ -182,4 +182,12 @@ export type {
   InquiryUpdatedEvent,
   ReservationRequestCreatedEvent,
   ReservationRequestUpdatedEvent,
+  OperationQuery,
+  OperationRequestBody,
+  OperationResponse,
+  VrboListingContentResult,
+  VrboListingListResponse,
+  VrboPublishJob,
+  VrboPublishJobStarted,
+  VrboPublishRequest,
 } from '@repull/types';

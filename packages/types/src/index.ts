@@ -702,5 +702,32 @@ export type MigrationImportPayload = components['schemas']['MigrationImportPaylo
 export type MigrationCompletedEvent = components['schemas']['MigrationCompletedEvent'];
 export type MigrationFailedEvent = components['schemas']['MigrationFailedEvent'];
 
+// ─── Vrbo listing content ──────────────────────────────────────────────
+// The Vrbo content routes (`/v1/channels/vrbo/listings/{id}/...`) declare their
+// shapes inline, so these are derived from the generated `operations` map —
+// exactly what the API declares, nothing hand-written. New in v0.2.56.
+
+/** JSON body of an operation's success response (200 by default). */
+export type OperationResponse<
+  K extends keyof operations,
+  S extends keyof operations[K]['responses'] = 200 extends keyof operations[K]['responses'] ? 200 : keyof operations[K]['responses'],
+> = operations[K]['responses'][S] extends { content: { 'application/json': infer T } } ? T : never;
+/** JSON request body of an operation. */
+export type OperationRequestBody<K extends keyof operations> =
+  NonNullable<operations[K]['requestBody']> extends { content: { 'application/json': infer T } } ? T : never;
+/** Query parameters of an operation. */
+export type OperationQuery<K extends keyof operations> = NonNullable<operations[K]['parameters']['query']>;
+
+/** `GET /v1/channels/vrbo/listings` — the Vrbo listing index. */
+export type VrboListingListResponse = components['schemas']['VrboListingListResponse'];
+/** `GET /v1/channels/vrbo/listings/{id}/content?sections=` — several sections in one read. */
+export type VrboListingContentResult = OperationResponse<'getVrboListingContent'>;
+/** `POST /v1/listings/{id}/publish/vrbo` request body — create, or push content onto a linked listing. */
+export type VrboPublishRequest = OperationRequestBody<'publishListingToVrbo'>;
+/** `POST /v1/listings/{id}/publish/vrbo` — `202` with `job.jobId`. */
+export type VrboPublishJobStarted = OperationResponse<'publishListingToVrbo', 202>;
+/** `GET /v1/listings/{id}/publish/vrbo?jobId=` — job progress; poll until `linked` is true. */
+export type VrboPublishJob = OperationResponse<'getVrboPublishJob'>;
+
 // Force types-only namespace
 export type Paths = paths;

@@ -587,3 +587,107 @@ describe('listings.promotions', () => {
     expect(calls[7].body).toEqual({ listingIds: [30198, 30199], action: 'add', promotion: { channel: 'airbnb', type: 'mobile' } });
   });
 });
+
+describe('channels.vrbo.listings', () => {
+  it('list forwards status', async () => {
+    const { repull, calls } = client({ data: [] });
+    await repull.channels.vrbo.listings.list({ status: 'all' });
+    expect(calls[0].method).toBe('GET');
+    expect(calls[0].url.pathname).toBe('/v1/channels/vrbo/listings');
+    expect(calls[0].url.searchParams.get('status')).toBe('all');
+  });
+
+  it('content.get reads several sections in one call', async () => {
+    const { repull, calls } = client({ listingId: '4118', vrboListingNumber: '123', propertyId: 'p', sections: {} });
+    const res = await repull.channels.vrbo.listings.content.get('4118', { sections: 'description,house-rules,fees' });
+    expect(calls[0].method).toBe('GET');
+    expect(calls[0].url.pathname).toBe('/v1/channels/vrbo/listings/4118/content');
+    expect(calls[0].url.searchParams.get('sections')).toBe('description,house-rules,fees');
+    expect(res.listingId).toBe('4118');
+  });
+
+  it('every section reads and writes at its own path', async () => {
+    const segments: Record<string, string> = {
+      description: 'description',
+      property: 'property',
+      story: 'story',
+      additionalInfo: 'additional-info',
+      translations: 'translations',
+      photos: 'photos',
+      amenities: 'amenities',
+      rooms: 'rooms',
+      location: 'location',
+      houseRules: 'house-rules',
+      bookingSettings: 'booking-settings',
+      cancellation: 'cancellation',
+      fees: 'fees',
+      pricing: 'pricing',
+      rates: 'rates',
+      paymentTerms: 'payment-terms',
+      protection: 'protection',
+      taxes: 'taxes',
+      registration: 'registration',
+      welcomeGuide: 'welcome-guide',
+    };
+    for (const [member, segment] of Object.entries(segments)) {
+      const { repull, calls } = client({});
+      const ns = (repull.channels.vrbo.listings as unknown as Record<
+        string,
+        { get: (id: string) => Promise<unknown>; update: (id: string, b: unknown) => Promise<unknown> }
+      >)[member];
+      await ns.get('4118');
+      await ns.update('4118', { x: 1 });
+      expect(calls[0].method).toBe('GET');
+      expect(calls[0].url.pathname).toBe(`/v1/channels/vrbo/listings/4118/${segment}`);
+      expect(calls[1].method).toBe('PUT');
+      expect(calls[1].url.pathname).toBe(`/v1/channels/vrbo/listings/4118/${segment}`);
+      expect(calls[1].body).toEqual({ x: 1 });
+    }
+  });
+
+  it('description.update sends the body and the vrboListingNumber query', async () => {
+    const { repull, calls } = client({});
+    await repull.channels.vrbo.listings.description.update(
+      4118,
+      { headline: 'Sea-view loft' },
+      { vrboListingNumber: '321.123.1' },
+    );
+    expect(calls[0].method).toBe('PUT');
+    expect(calls[0].url.pathname).toBe('/v1/channels/vrbo/listings/4118/description');
+    expect(calls[0].url.searchParams.get('vrboListingNumber')).toBe('321.123.1');
+    expect(calls[0].body).toEqual({ headline: 'Sea-view loft' });
+  });
+
+  it('rates.get forwards the date window', async () => {
+    const { repull, calls } = client({});
+    await repull.channels.vrbo.listings.rates.get('4118', { start: '2026-12-01', end: '2026-12-31' });
+    expect(calls[0].url.pathname).toBe('/v1/channels/vrbo/listings/4118/rates');
+    expect(calls[0].url.searchParams.get('start')).toBe('2026-12-01');
+    expect(calls[0].url.searchParams.get('end')).toBe('2026-12-31');
+  });
+
+  it('videos list / add / delete', async () => {
+    const { repull, calls } = client({});
+    await repull.channels.vrbo.listings.videos.list('4118');
+    await repull.channels.vrbo.listings.videos.add('4118', { url: 'https://youtu.be/abc' });
+    await repull.channels.vrbo.listings.videos.delete('4118', 'v1');
+    expect(calls.map((c) => c.method)).toEqual(['GET', 'POST', 'DELETE']);
+    for (const c of calls) expect(c.url.pathname).toBe('/v1/channels/vrbo/listings/4118/videos');
+    expect(calls[1].body).toEqual({ url: 'https://youtu.be/abc' });
+    expect(calls[2].url.searchParams.get('videoId')).toBe('v1');
+  });
+});
+
+describe('listings.publishToVrbo', () => {
+  it('starts the publish job and polls it by jobId', async () => {
+    const { repull, calls } = client({ job: { jobId: 'j1' } }, 202);
+    await repull.listings.publishToVrbo(4118, { accountId: 'vrbo:13' });
+    await repull.listings.getVrboPublishJob(4118, 'j1');
+    expect(calls[0].method).toBe('POST');
+    expect(calls[0].url.pathname).toBe('/v1/listings/4118/publish/vrbo');
+    expect(calls[0].body).toEqual({ accountId: 'vrbo:13' });
+    expect(calls[1].method).toBe('GET');
+    expect(calls[1].url.pathname).toBe('/v1/listings/4118/publish/vrbo');
+    expect(calls[1].url.searchParams.get('jobId')).toBe('j1');
+  });
+});
