@@ -3,6 +3,12 @@
 All notable changes to `@repull/sdk` and `@repull/types` are recorded here.
 This project follows [Semantic Versioning](https://semver.org/).
 
+## 0.2.58 — 2026-11-21
+
+- SDK: `repull.channels.vrbo.listings` now uses the same names and verbs as `repull.channels.airbnb.listings`: `descriptions` (`list`, `update` — with `locale` for a language — and `delete(id, locale)`), `details`, `permits`, `checkinGuide`, `checkoutGuide`, `safetyDisclosures`, `amenities.list`; `photos.add` / `update` / `delete` / `order` / `setCover`; `rooms.add` / `update(id, roomId, body)` / `delete(id, roomId)`. Renamed from 0.2.56: `description` → `descriptions`, `property` → `details`, `registration` → `permits`, `welcomeGuide` → `checkinGuide`; `translations` is `descriptions` with `locale`.
+- SDK: `listings.get(id, { include: 'content' })`, `listings.action` with `push()` / `unlist()` / `relist()`, `listings.map(body)`, `listings.availability.get` / `update` / `job` (the Vrbo-only calendar) and `channels.vrbo.connection()`.
+- Types: regenerated from the API spec — Vrbo reads answer `{ data, dataFreshness, vrboListingNumber }` from Repull's copy (`source: 'live'` reads Vrbo now).
+
 ## 0.2.57 — 2026-11-21
 
 - SDK: each Vrbo content section (`repull.channels.vrbo.listings.<section>`) is now its own namespace class with the route written out, so tooling that reads the SDK source can match every method to its URL. Same calls and types as 0.2.56.

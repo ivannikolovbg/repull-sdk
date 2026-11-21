@@ -1824,634 +1824,432 @@ class AirbnbSafetyDisclosuresNamespace {
 class VrboChannelNamespace {
   readonly listings: VrboListingsNamespace;
 
-  constructor(client: Repull) {
+  constructor(private readonly client: Repull) {
     this.listings = new VrboListingsNamespace(client);
+  }
+
+  /** GET /v1/channels/vrbo/connection — whether the workspace's Vrbo accounts are still signed in. */
+  connection(): Promise<OperationResponse<'getVrboConnection'>> {
+    return this.client.request<OperationResponse<'getVrboConnection'>>('GET', '/v1/channels/vrbo/connection');
   }
 }
 
 /** `vrboListingNumber` picks the Vrbo unit when a listing is linked to more than one. */
 type VrboUnitQuery = { vrboListingNumber?: string };
 
-/** Vrbo listing description — read live from Vrbo, or write a partial update. New in v0.2.56. */
-class VrboDescriptionNamespace {
+/** Vrbo Property details — type, internal name, size, seniors-only, long-term renters (Airbnb: `details`). Reads answer `{ data, dataFreshness }` from Repull's copy (`source: 'live'` reads Vrbo now). */
+class VrboDetailsNamespace {
   constructor(private readonly client: Repull) {}
 
-  /** GET /v1/channels/vrbo/listings/{id}/description. */
-  get(id: string | number, query: OperationQuery<'getVrboListingDescription'> = {}): Promise<OperationResponse<'getVrboListingDescription'>> {
-    return this.client.request<OperationResponse<'getVrboListingDescription'>>(
-      'GET',
-      `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/description`,
-      { query: query as Record<string, unknown> },
-    );
+  /** GET /v1/channels/vrbo/listings/{id}/details — read. */
+  get(id: string | number, query: OperationQuery<'getVrboListingDetails'> = {}): Promise<OperationResponse<'getVrboListingDetails'>> {
+    return this.client.request<OperationResponse<'getVrboListingDetails'>>('GET', `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/details`, { query: query as Record<string, unknown> });
   }
 
-  /** PUT /v1/channels/vrbo/listings/{id}/description — partial update; fields you do not send are left alone. */
-  update(
-    id: string | number,
-    body: OperationRequestBody<'updateVrboListingDescription'>,
-    query: VrboUnitQuery = {},
-  ): Promise<OperationResponse<'updateVrboListingDescription'>> {
-    return this.client.request<OperationResponse<'updateVrboListingDescription'>>(
-      'PUT',
-      `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/description`,
-      { body, query },
-    );
+  /** PUT /v1/channels/vrbo/listings/{id}/details — partial update; fields you do not send are left alone. */
+  update(id: string | number, body: OperationRequestBody<'updateVrboListingDetails'>, query: VrboUnitQuery = {}): Promise<OperationResponse<'updateVrboListingDetails'>> {
+    return this.client.request<OperationResponse<'updateVrboListingDetails'>>('PUT', `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/details`, { body, query: query });
   }
 }
 
-/** Vrbo listing property — read live from Vrbo, or write a partial update. New in v0.2.56. */
-class VrboPropertyNamespace {
-  constructor(private readonly client: Repull) {}
-
-  /** GET /v1/channels/vrbo/listings/{id}/property. */
-  get(id: string | number, query: OperationQuery<'getVrboListingProperty'> = {}): Promise<OperationResponse<'getVrboListingProperty'>> {
-    return this.client.request<OperationResponse<'getVrboListingProperty'>>(
-      'GET',
-      `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/property`,
-      { query: query as Record<string, unknown> },
-    );
-  }
-
-  /** PUT /v1/channels/vrbo/listings/{id}/property — partial update; fields you do not send are left alone. */
-  update(
-    id: string | number,
-    body: OperationRequestBody<'updateVrboListingProperty'>,
-    query: VrboUnitQuery = {},
-  ): Promise<OperationResponse<'updateVrboListingProperty'>> {
-    return this.client.request<OperationResponse<'updateVrboListingProperty'>>(
-      'PUT',
-      `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/property`,
-      { body, query },
-    );
-  }
-}
-
-/** Vrbo listing story — read live from Vrbo, or write a partial update. New in v0.2.56. */
+/** Vrbo Your story on the listing. Reads answer `{ data, dataFreshness }` from Repull's copy (`source: 'live'` reads Vrbo now). */
 class VrboStoryNamespace {
   constructor(private readonly client: Repull) {}
 
-  /** GET /v1/channels/vrbo/listings/{id}/story. */
+  /** GET /v1/channels/vrbo/listings/{id}/story — read. */
   get(id: string | number, query: OperationQuery<'getVrboListingStory'> = {}): Promise<OperationResponse<'getVrboListingStory'>> {
-    return this.client.request<OperationResponse<'getVrboListingStory'>>(
-      'GET',
-      `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/story`,
-      { query: query as Record<string, unknown> },
-    );
+    return this.client.request<OperationResponse<'getVrboListingStory'>>('GET', `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/story`, { query: query as Record<string, unknown> });
   }
 
   /** PUT /v1/channels/vrbo/listings/{id}/story — partial update; fields you do not send are left alone. */
-  update(
-    id: string | number,
-    body: OperationRequestBody<'updateVrboListingStory'>,
-    query: VrboUnitQuery = {},
-  ): Promise<OperationResponse<'updateVrboListingStory'>> {
-    return this.client.request<OperationResponse<'updateVrboListingStory'>>(
-      'PUT',
-      `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/story`,
-      { body, query },
-    );
+  update(id: string | number, body: OperationRequestBody<'updateVrboListingStory'>, query: VrboUnitQuery = {}): Promise<OperationResponse<'updateVrboListingStory'>> {
+    return this.client.request<OperationResponse<'updateVrboListingStory'>>('PUT', `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/story`, { body, query: query });
   }
 }
 
-/** Vrbo listing additional info — read live from Vrbo, or write a partial update. New in v0.2.56. */
+/** Vrbo Additional details about the property, bedrooms and bathrooms. Reads answer `{ data, dataFreshness }` from Repull's copy (`source: 'live'` reads Vrbo now). */
 class VrboAdditionalInfoNamespace {
   constructor(private readonly client: Repull) {}
 
-  /** GET /v1/channels/vrbo/listings/{id}/additional-info. */
+  /** GET /v1/channels/vrbo/listings/{id}/additional-info — read. */
   get(id: string | number, query: OperationQuery<'getVrboListingAdditionalInfo'> = {}): Promise<OperationResponse<'getVrboListingAdditionalInfo'>> {
-    return this.client.request<OperationResponse<'getVrboListingAdditionalInfo'>>(
-      'GET',
-      `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/additional-info`,
-      { query: query as Record<string, unknown> },
-    );
+    return this.client.request<OperationResponse<'getVrboListingAdditionalInfo'>>('GET', `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/additional-info`, { query: query as Record<string, unknown> });
   }
 
   /** PUT /v1/channels/vrbo/listings/{id}/additional-info — partial update; fields you do not send are left alone. */
-  update(
-    id: string | number,
-    body: OperationRequestBody<'updateVrboListingAdditionalInfo'>,
-    query: VrboUnitQuery = {},
-  ): Promise<OperationResponse<'updateVrboListingAdditionalInfo'>> {
-    return this.client.request<OperationResponse<'updateVrboListingAdditionalInfo'>>(
-      'PUT',
-      `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/additional-info`,
-      { body, query },
-    );
+  update(id: string | number, body: OperationRequestBody<'updateVrboListingAdditionalInfo'>, query: VrboUnitQuery = {}): Promise<OperationResponse<'updateVrboListingAdditionalInfo'>> {
+    return this.client.request<OperationResponse<'updateVrboListingAdditionalInfo'>>('PUT', `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/additional-info`, { body, query: query });
   }
 }
 
-/** Vrbo listing translations — read live from Vrbo, or write a partial update. New in v0.2.56. */
-class VrboTranslationsNamespace {
-  constructor(private readonly client: Repull) {}
-
-  /** GET /v1/channels/vrbo/listings/{id}/translations. */
-  get(id: string | number, query: OperationQuery<'getVrboListingTranslations'> = {}): Promise<OperationResponse<'getVrboListingTranslations'>> {
-    return this.client.request<OperationResponse<'getVrboListingTranslations'>>(
-      'GET',
-      `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/translations`,
-      { query: query as Record<string, unknown> },
-    );
-  }
-
-  /** PUT /v1/channels/vrbo/listings/{id}/translations — partial update; fields you do not send are left alone. */
-  update(
-    id: string | number,
-    body: OperationRequestBody<'updateVrboListingTranslations'>,
-    query: VrboUnitQuery = {},
-  ): Promise<OperationResponse<'updateVrboListingTranslations'>> {
-    return this.client.request<OperationResponse<'updateVrboListingTranslations'>>(
-      'PUT',
-      `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/translations`,
-      { body, query },
-    );
-  }
-}
-
-/** Vrbo listing photos — read live from Vrbo, or write a partial update. New in v0.2.56. */
-class VrboPhotosNamespace {
-  constructor(private readonly client: Repull) {}
-
-  /** GET /v1/channels/vrbo/listings/{id}/photos. */
-  get(id: string | number, query: OperationQuery<'getVrboListingPhotos'> = {}): Promise<OperationResponse<'getVrboListingPhotos'>> {
-    return this.client.request<OperationResponse<'getVrboListingPhotos'>>(
-      'GET',
-      `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/photos`,
-      { query: query as Record<string, unknown> },
-    );
-  }
-
-  /** PUT /v1/channels/vrbo/listings/{id}/photos — partial update; fields you do not send are left alone. */
-  update(
-    id: string | number,
-    body: OperationRequestBody<'updateVrboListingPhotos'>,
-    query: VrboUnitQuery = {},
-  ): Promise<OperationResponse<'updateVrboListingPhotos'>> {
-    return this.client.request<OperationResponse<'updateVrboListingPhotos'>>(
-      'PUT',
-      `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/photos`,
-      { body, query },
-    );
-  }
-}
-
-/** Vrbo listing amenities — read live from Vrbo, or write a partial update. `groups` narrows `get` to some amenity groups. New in v0.2.56. */
-class VrboAmenitiesNamespace {
-  constructor(private readonly client: Repull) {}
-
-  /** GET /v1/channels/vrbo/listings/{id}/amenities. */
-  get(id: string | number, query: OperationQuery<'getVrboListingAmenities'> = {}): Promise<OperationResponse<'getVrboListingAmenities'>> {
-    return this.client.request<OperationResponse<'getVrboListingAmenities'>>(
-      'GET',
-      `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/amenities`,
-      { query: query as Record<string, unknown> },
-    );
-  }
-
-  /** PUT /v1/channels/vrbo/listings/{id}/amenities — partial update; fields you do not send are left alone. */
-  update(
-    id: string | number,
-    body: OperationRequestBody<'updateVrboListingAmenities'>,
-    query: VrboUnitQuery = {},
-  ): Promise<OperationResponse<'updateVrboListingAmenities'>> {
-    return this.client.request<OperationResponse<'updateVrboListingAmenities'>>(
-      'PUT',
-      `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/amenities`,
-      { body, query },
-    );
-  }
-}
-
-/** Vrbo listing rooms — read live from Vrbo, or write a partial update. New in v0.2.56. */
-class VrboRoomsNamespace {
-  constructor(private readonly client: Repull) {}
-
-  /** GET /v1/channels/vrbo/listings/{id}/rooms. */
-  get(id: string | number, query: OperationQuery<'getVrboListingRooms'> = {}): Promise<OperationResponse<'getVrboListingRooms'>> {
-    return this.client.request<OperationResponse<'getVrboListingRooms'>>(
-      'GET',
-      `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/rooms`,
-      { query: query as Record<string, unknown> },
-    );
-  }
-
-  /** PUT /v1/channels/vrbo/listings/{id}/rooms — partial update; fields you do not send are left alone. */
-  update(
-    id: string | number,
-    body: OperationRequestBody<'updateVrboListingRooms'>,
-    query: VrboUnitQuery = {},
-  ): Promise<OperationResponse<'updateVrboListingRooms'>> {
-    return this.client.request<OperationResponse<'updateVrboListingRooms'>>(
-      'PUT',
-      `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/rooms`,
-      { body, query },
-    );
-  }
-}
-
-/** Vrbo listing location — read live from Vrbo, or write a partial update. New in v0.2.56. */
+/** Vrbo The address (read-only) and the map setting. Reads answer `{ data, dataFreshness }` from Repull's copy (`source: 'live'` reads Vrbo now). */
 class VrboLocationNamespace {
   constructor(private readonly client: Repull) {}
 
-  /** GET /v1/channels/vrbo/listings/{id}/location. */
+  /** GET /v1/channels/vrbo/listings/{id}/location — read. */
   get(id: string | number, query: OperationQuery<'getVrboListingLocation'> = {}): Promise<OperationResponse<'getVrboListingLocation'>> {
-    return this.client.request<OperationResponse<'getVrboListingLocation'>>(
-      'GET',
-      `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/location`,
-      { query: query as Record<string, unknown> },
-    );
+    return this.client.request<OperationResponse<'getVrboListingLocation'>>('GET', `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/location`, { query: query as Record<string, unknown> });
   }
 
   /** PUT /v1/channels/vrbo/listings/{id}/location — partial update; fields you do not send are left alone. */
-  update(
-    id: string | number,
-    body: OperationRequestBody<'updateVrboListingLocation'>,
-    query: VrboUnitQuery = {},
-  ): Promise<OperationResponse<'updateVrboListingLocation'>> {
-    return this.client.request<OperationResponse<'updateVrboListingLocation'>>(
-      'PUT',
-      `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/location`,
-      { body, query },
-    );
+  update(id: string | number, body: OperationRequestBody<'updateVrboListingLocation'>, query: VrboUnitQuery = {}): Promise<OperationResponse<'updateVrboListingLocation'>> {
+    return this.client.request<OperationResponse<'updateVrboListingLocation'>>('PUT', `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/location`, { body, query: query });
   }
 }
 
-/** Vrbo listing house rules — read live from Vrbo, or write a partial update. New in v0.2.56. */
+/** Vrbo House rules, check-in and check-out times. Reads answer `{ data, dataFreshness }` from Repull's copy (`source: 'live'` reads Vrbo now). */
 class VrboHouseRulesNamespace {
   constructor(private readonly client: Repull) {}
 
-  /** GET /v1/channels/vrbo/listings/{id}/house-rules. */
+  /** GET /v1/channels/vrbo/listings/{id}/house-rules — read. */
   get(id: string | number, query: OperationQuery<'getVrboListingHouseRules'> = {}): Promise<OperationResponse<'getVrboListingHouseRules'>> {
-    return this.client.request<OperationResponse<'getVrboListingHouseRules'>>(
-      'GET',
-      `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/house-rules`,
-      { query: query as Record<string, unknown> },
-    );
+    return this.client.request<OperationResponse<'getVrboListingHouseRules'>>('GET', `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/house-rules`, { query: query as Record<string, unknown> });
   }
 
   /** PUT /v1/channels/vrbo/listings/{id}/house-rules — partial update; fields you do not send are left alone. */
-  update(
-    id: string | number,
-    body: OperationRequestBody<'updateVrboListingHouseRules'>,
-    query: VrboUnitQuery = {},
-  ): Promise<OperationResponse<'updateVrboListingHouseRules'>> {
-    return this.client.request<OperationResponse<'updateVrboListingHouseRules'>>(
-      'PUT',
-      `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/house-rules`,
-      { body, query },
-    );
+  update(id: string | number, body: OperationRequestBody<'updateVrboListingHouseRules'>, query: VrboUnitQuery = {}): Promise<OperationResponse<'updateVrboListingHouseRules'>> {
+    return this.client.request<OperationResponse<'updateVrboListingHouseRules'>>('PUT', `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/house-rules`, { body, query: query });
   }
 }
 
-/** Vrbo listing booking settings — read live from Vrbo, or write a partial update. New in v0.2.56. */
+/** Vrbo Instant book or quote-and-hold, minimum stay, notice, booking window, access type. Reads answer `{ data, dataFreshness }` from Repull's copy (`source: 'live'` reads Vrbo now). */
 class VrboBookingSettingsNamespace {
   constructor(private readonly client: Repull) {}
 
-  /** GET /v1/channels/vrbo/listings/{id}/booking-settings. */
+  /** GET /v1/channels/vrbo/listings/{id}/booking-settings — read. */
   get(id: string | number, query: OperationQuery<'getVrboListingBookingSettings'> = {}): Promise<OperationResponse<'getVrboListingBookingSettings'>> {
-    return this.client.request<OperationResponse<'getVrboListingBookingSettings'>>(
-      'GET',
-      `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/booking-settings`,
-      { query: query as Record<string, unknown> },
-    );
+    return this.client.request<OperationResponse<'getVrboListingBookingSettings'>>('GET', `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/booking-settings`, { query: query as Record<string, unknown> });
   }
 
   /** PUT /v1/channels/vrbo/listings/{id}/booking-settings — partial update; fields you do not send are left alone. */
-  update(
-    id: string | number,
-    body: OperationRequestBody<'updateVrboListingBookingSettings'>,
-    query: VrboUnitQuery = {},
-  ): Promise<OperationResponse<'updateVrboListingBookingSettings'>> {
-    return this.client.request<OperationResponse<'updateVrboListingBookingSettings'>>(
-      'PUT',
-      `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/booking-settings`,
-      { body, query },
-    );
+  update(id: string | number, body: OperationRequestBody<'updateVrboListingBookingSettings'>, query: VrboUnitQuery = {}): Promise<OperationResponse<'updateVrboListingBookingSettings'>> {
+    return this.client.request<OperationResponse<'updateVrboListingBookingSettings'>>('PUT', `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/booking-settings`, { body, query: query });
   }
 }
 
-/** Vrbo listing cancellation — read live from Vrbo, or write a partial update. New in v0.2.56. */
+/** Vrbo The cancellation policy. Reads answer `{ data, dataFreshness }` from Repull's copy (`source: 'live'` reads Vrbo now). */
 class VrboCancellationNamespace {
   constructor(private readonly client: Repull) {}
 
-  /** GET /v1/channels/vrbo/listings/{id}/cancellation. */
+  /** GET /v1/channels/vrbo/listings/{id}/cancellation — read. */
   get(id: string | number, query: OperationQuery<'getVrboListingCancellation'> = {}): Promise<OperationResponse<'getVrboListingCancellation'>> {
-    return this.client.request<OperationResponse<'getVrboListingCancellation'>>(
-      'GET',
-      `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/cancellation`,
-      { query: query as Record<string, unknown> },
-    );
+    return this.client.request<OperationResponse<'getVrboListingCancellation'>>('GET', `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/cancellation`, { query: query as Record<string, unknown> });
   }
 
   /** PUT /v1/channels/vrbo/listings/{id}/cancellation — partial update; fields you do not send are left alone. */
-  update(
-    id: string | number,
-    body: OperationRequestBody<'updateVrboListingCancellation'>,
-    query: VrboUnitQuery = {},
-  ): Promise<OperationResponse<'updateVrboListingCancellation'>> {
-    return this.client.request<OperationResponse<'updateVrboListingCancellation'>>(
-      'PUT',
-      `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/cancellation`,
-      { body, query },
-    );
+  update(id: string | number, body: OperationRequestBody<'updateVrboListingCancellation'>, query: VrboUnitQuery = {}): Promise<OperationResponse<'updateVrboListingCancellation'>> {
+    return this.client.request<OperationResponse<'updateVrboListingCancellation'>>('PUT', `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/cancellation`, { body, query: query });
   }
 }
 
-/** Vrbo listing fees — read live from Vrbo, or write a partial update. New in v0.2.56. */
+/** Vrbo Cleaning, pet, extra-guest and custom fees. Reads answer `{ data, dataFreshness }` from Repull's copy (`source: 'live'` reads Vrbo now). */
 class VrboFeesNamespace {
   constructor(private readonly client: Repull) {}
 
-  /** GET /v1/channels/vrbo/listings/{id}/fees. */
+  /** GET /v1/channels/vrbo/listings/{id}/fees — read. */
   get(id: string | number, query: OperationQuery<'getVrboListingFees'> = {}): Promise<OperationResponse<'getVrboListingFees'>> {
-    return this.client.request<OperationResponse<'getVrboListingFees'>>(
-      'GET',
-      `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/fees`,
-      { query: query as Record<string, unknown> },
-    );
+    return this.client.request<OperationResponse<'getVrboListingFees'>>('GET', `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/fees`, { query: query as Record<string, unknown> });
   }
 
   /** PUT /v1/channels/vrbo/listings/{id}/fees — partial update; fields you do not send are left alone. */
-  update(
-    id: string | number,
-    body: OperationRequestBody<'updateVrboListingFees'>,
-    query: VrboUnitQuery = {},
-  ): Promise<OperationResponse<'updateVrboListingFees'>> {
-    return this.client.request<OperationResponse<'updateVrboListingFees'>>(
-      'PUT',
-      `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/fees`,
-      { body, query },
-    );
+  update(id: string | number, body: OperationRequestBody<'updateVrboListingFees'>, query: VrboUnitQuery = {}): Promise<OperationResponse<'updateVrboListingFees'>> {
+    return this.client.request<OperationResponse<'updateVrboListingFees'>>('PUT', `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/fees`, { body, query: query });
   }
 }
 
-/** Vrbo listing pricing — read live from Vrbo, or write a partial update. New in v0.2.56. */
+/** Vrbo The base nightly rate (Airbnb: `pricing`). Reads answer `{ data, dataFreshness }` from Repull's copy (`source: 'live'` reads Vrbo now). */
 class VrboPricingNamespace {
   constructor(private readonly client: Repull) {}
 
-  /** GET /v1/channels/vrbo/listings/{id}/pricing. */
+  /** GET /v1/channels/vrbo/listings/{id}/pricing — read. */
   get(id: string | number, query: OperationQuery<'getVrboListingPricing'> = {}): Promise<OperationResponse<'getVrboListingPricing'>> {
-    return this.client.request<OperationResponse<'getVrboListingPricing'>>(
-      'GET',
-      `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/pricing`,
-      { query: query as Record<string, unknown> },
-    );
+    return this.client.request<OperationResponse<'getVrboListingPricing'>>('GET', `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/pricing`, { query: query as Record<string, unknown> });
   }
 
   /** PUT /v1/channels/vrbo/listings/{id}/pricing — partial update; fields you do not send are left alone. */
-  update(
-    id: string | number,
-    body: OperationRequestBody<'updateVrboListingPricing'>,
-    query: VrboUnitQuery = {},
-  ): Promise<OperationResponse<'updateVrboListingPricing'>> {
-    return this.client.request<OperationResponse<'updateVrboListingPricing'>>(
-      'PUT',
-      `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/pricing`,
-      { body, query },
-    );
+  update(id: string | number, body: OperationRequestBody<'updateVrboListingPricing'>, query: VrboUnitQuery = {}): Promise<OperationResponse<'updateVrboListingPricing'>> {
+    return this.client.request<OperationResponse<'updateVrboListingPricing'>>('PUT', `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/pricing`, { body, query: query });
   }
 }
 
-/** Vrbo listing rates — read live from Vrbo, or write a partial update. Pass `start` / `end` (YYYY-MM-DD) to `get`. New in v0.2.56. */
+/** Vrbo Nightly rates and weekly / monthly discounts over a date range (always read from Vrbo). Reads answer `{ data, dataFreshness }` from Repull's copy (`source: 'live'` reads Vrbo now). */
 class VrboRatesNamespace {
   constructor(private readonly client: Repull) {}
 
-  /** GET /v1/channels/vrbo/listings/{id}/rates. */
+  /** GET /v1/channels/vrbo/listings/{id}/rates — read. */
   get(id: string | number, query: OperationQuery<'getVrboListingRates'> = {}): Promise<OperationResponse<'getVrboListingRates'>> {
-    return this.client.request<OperationResponse<'getVrboListingRates'>>(
-      'GET',
-      `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/rates`,
-      { query: query as Record<string, unknown> },
-    );
+    return this.client.request<OperationResponse<'getVrboListingRates'>>('GET', `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/rates`, { query: query as Record<string, unknown> });
   }
 
   /** PUT /v1/channels/vrbo/listings/{id}/rates — partial update; fields you do not send are left alone. */
-  update(
-    id: string | number,
-    body: OperationRequestBody<'updateVrboListingRates'>,
-    query: VrboUnitQuery = {},
-  ): Promise<OperationResponse<'updateVrboListingRates'>> {
-    return this.client.request<OperationResponse<'updateVrboListingRates'>>(
-      'PUT',
-      `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/rates`,
-      { body, query },
-    );
+  update(id: string | number, body: OperationRequestBody<'updateVrboListingRates'>, query: VrboUnitQuery = {}): Promise<OperationResponse<'updateVrboListingRates'>> {
+    return this.client.request<OperationResponse<'updateVrboListingRates'>>('PUT', `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/rates`, { body, query: query });
   }
 }
 
-/** Vrbo listing payment terms — read live from Vrbo, or write a partial update. New in v0.2.56. */
+/** Vrbo When the guest pays. Reads answer `{ data, dataFreshness }` from Repull's copy (`source: 'live'` reads Vrbo now). */
 class VrboPaymentTermsNamespace {
   constructor(private readonly client: Repull) {}
 
-  /** GET /v1/channels/vrbo/listings/{id}/payment-terms. */
+  /** GET /v1/channels/vrbo/listings/{id}/payment-terms — read. */
   get(id: string | number, query: OperationQuery<'getVrboListingPaymentTerms'> = {}): Promise<OperationResponse<'getVrboListingPaymentTerms'>> {
-    return this.client.request<OperationResponse<'getVrboListingPaymentTerms'>>(
-      'GET',
-      `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/payment-terms`,
-      { query: query as Record<string, unknown> },
-    );
+    return this.client.request<OperationResponse<'getVrboListingPaymentTerms'>>('GET', `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/payment-terms`, { query: query as Record<string, unknown> });
   }
 
   /** PUT /v1/channels/vrbo/listings/{id}/payment-terms — partial update; fields you do not send are left alone. */
-  update(
-    id: string | number,
-    body: OperationRequestBody<'updateVrboListingPaymentTerms'>,
-    query: VrboUnitQuery = {},
-  ): Promise<OperationResponse<'updateVrboListingPaymentTerms'>> {
-    return this.client.request<OperationResponse<'updateVrboListingPaymentTerms'>>(
-      'PUT',
-      `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/payment-terms`,
-      { body, query },
-    );
+  update(id: string | number, body: OperationRequestBody<'updateVrboListingPaymentTerms'>, query: VrboUnitQuery = {}): Promise<OperationResponse<'updateVrboListingPaymentTerms'>> {
+    return this.client.request<OperationResponse<'updateVrboListingPaymentTerms'>>('PUT', `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/payment-terms`, { body, query: query });
   }
 }
 
-/** Vrbo listing protection — read live from Vrbo, or write a partial update. New in v0.2.56. */
+/** Vrbo Damage deposit and damage protection. Reads answer `{ data, dataFreshness }` from Repull's copy (`source: 'live'` reads Vrbo now). */
 class VrboProtectionNamespace {
   constructor(private readonly client: Repull) {}
 
-  /** GET /v1/channels/vrbo/listings/{id}/protection. */
+  /** GET /v1/channels/vrbo/listings/{id}/protection — read. */
   get(id: string | number, query: OperationQuery<'getVrboListingProtection'> = {}): Promise<OperationResponse<'getVrboListingProtection'>> {
-    return this.client.request<OperationResponse<'getVrboListingProtection'>>(
-      'GET',
-      `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/protection`,
-      { query: query as Record<string, unknown> },
-    );
+    return this.client.request<OperationResponse<'getVrboListingProtection'>>('GET', `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/protection`, { query: query as Record<string, unknown> });
   }
 
   /** PUT /v1/channels/vrbo/listings/{id}/protection — partial update; fields you do not send are left alone. */
-  update(
-    id: string | number,
-    body: OperationRequestBody<'updateVrboListingProtection'>,
-    query: VrboUnitQuery = {},
-  ): Promise<OperationResponse<'updateVrboListingProtection'>> {
-    return this.client.request<OperationResponse<'updateVrboListingProtection'>>(
-      'PUT',
-      `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/protection`,
-      { body, query },
-    );
+  update(id: string | number, body: OperationRequestBody<'updateVrboListingProtection'>, query: VrboUnitQuery = {}): Promise<OperationResponse<'updateVrboListingProtection'>> {
+    return this.client.request<OperationResponse<'updateVrboListingProtection'>>('PUT', `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/protection`, { body, query: query });
   }
 }
 
-/** Vrbo listing taxes — read live from Vrbo, or write a partial update. New in v0.2.56. */
+/** Vrbo Taxes. Reads answer `{ data, dataFreshness }` from Repull's copy (`source: 'live'` reads Vrbo now). */
 class VrboTaxesNamespace {
   constructor(private readonly client: Repull) {}
 
-  /** GET /v1/channels/vrbo/listings/{id}/taxes. */
+  /** GET /v1/channels/vrbo/listings/{id}/taxes — read. */
   get(id: string | number, query: OperationQuery<'getVrboListingTaxes'> = {}): Promise<OperationResponse<'getVrboListingTaxes'>> {
-    return this.client.request<OperationResponse<'getVrboListingTaxes'>>(
-      'GET',
-      `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/taxes`,
-      { query: query as Record<string, unknown> },
-    );
+    return this.client.request<OperationResponse<'getVrboListingTaxes'>>('GET', `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/taxes`, { query: query as Record<string, unknown> });
   }
 
   /** PUT /v1/channels/vrbo/listings/{id}/taxes — partial update; fields you do not send are left alone. */
-  update(
-    id: string | number,
-    body: OperationRequestBody<'updateVrboListingTaxes'>,
-    query: VrboUnitQuery = {},
-  ): Promise<OperationResponse<'updateVrboListingTaxes'>> {
-    return this.client.request<OperationResponse<'updateVrboListingTaxes'>>(
-      'PUT',
-      `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/taxes`,
-      { body, query },
-    );
+  update(id: string | number, body: OperationRequestBody<'updateVrboListingTaxes'>, query: VrboUnitQuery = {}): Promise<OperationResponse<'updateVrboListingTaxes'>> {
+    return this.client.request<OperationResponse<'updateVrboListingTaxes'>>('PUT', `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/taxes`, { body, query: query });
   }
 }
 
-/** Vrbo listing registration — read live from Vrbo, or write a partial update. New in v0.2.56. */
-class VrboRegistrationNamespace {
+/** Vrbo Registration and licence fields for the listing's place (Airbnb: `permits`). Reads answer `{ data, dataFreshness }` from Repull's copy (`source: 'live'` reads Vrbo now). */
+class VrboPermitsNamespace {
   constructor(private readonly client: Repull) {}
 
-  /** GET /v1/channels/vrbo/listings/{id}/registration. */
-  get(id: string | number, query: OperationQuery<'getVrboListingRegistration'> = {}): Promise<OperationResponse<'getVrboListingRegistration'>> {
-    return this.client.request<OperationResponse<'getVrboListingRegistration'>>(
-      'GET',
-      `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/registration`,
-      { query: query as Record<string, unknown> },
-    );
+  /** GET /v1/channels/vrbo/listings/{id}/permits — read. */
+  list(id: string | number, query: OperationQuery<'getVrboListingPermits'> = {}): Promise<OperationResponse<'getVrboListingPermits'>> {
+    return this.client.request<OperationResponse<'getVrboListingPermits'>>('GET', `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/permits`, { query: query as Record<string, unknown> });
   }
 
-  /** PUT /v1/channels/vrbo/listings/{id}/registration — partial update; fields you do not send are left alone. */
-  update(
-    id: string | number,
-    body: OperationRequestBody<'updateVrboListingRegistration'>,
-    query: VrboUnitQuery = {},
-  ): Promise<OperationResponse<'updateVrboListingRegistration'>> {
-    return this.client.request<OperationResponse<'updateVrboListingRegistration'>>(
-      'PUT',
-      `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/registration`,
-      { body, query },
-    );
+  /** PUT /v1/channels/vrbo/listings/{id}/permits — partial update; fields you do not send are left alone. */
+  update(id: string | number, body: OperationRequestBody<'updateVrboListingPermits'>, query: VrboUnitQuery = {}): Promise<OperationResponse<'updateVrboListingPermits'>> {
+    return this.client.request<OperationResponse<'updateVrboListingPermits'>>('PUT', `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/permits`, { body, query: query });
   }
 }
 
-/** Vrbo listing welcome guide — read live from Vrbo, or write a partial update. New in v0.2.56. */
-class VrboWelcomeGuideNamespace {
+/** Vrbo Vrbo's welcome guide: check-in and check-out notes, access, wifi, directions (Airbnb: `checkinGuide`). Reads answer `{ data, dataFreshness }` from Repull's copy (`source: 'live'` reads Vrbo now). */
+class VrboCheckinGuideNamespace {
   constructor(private readonly client: Repull) {}
 
-  /** GET /v1/channels/vrbo/listings/{id}/welcome-guide. */
-  get(id: string | number, query: OperationQuery<'getVrboListingWelcomeGuide'> = {}): Promise<OperationResponse<'getVrboListingWelcomeGuide'>> {
-    return this.client.request<OperationResponse<'getVrboListingWelcomeGuide'>>(
-      'GET',
-      `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/welcome-guide`,
-      { query: query as Record<string, unknown> },
-    );
+  /** GET /v1/channels/vrbo/listings/{id}/checkin-guide — read. */
+  get(id: string | number, query: OperationQuery<'getVrboListingCheckinGuide'> = {}): Promise<OperationResponse<'getVrboListingCheckinGuide'>> {
+    return this.client.request<OperationResponse<'getVrboListingCheckinGuide'>>('GET', `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/checkin-guide`, { query: query as Record<string, unknown> });
   }
 
-  /** PUT /v1/channels/vrbo/listings/{id}/welcome-guide — partial update; fields you do not send are left alone. */
-  update(
-    id: string | number,
-    body: OperationRequestBody<'updateVrboListingWelcomeGuide'>,
-    query: VrboUnitQuery = {},
-  ): Promise<OperationResponse<'updateVrboListingWelcomeGuide'>> {
-    return this.client.request<OperationResponse<'updateVrboListingWelcomeGuide'>>(
-      'PUT',
-      `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/welcome-guide`,
-      { body, query },
-    );
+  /** PUT /v1/channels/vrbo/listings/{id}/checkin-guide — partial update; fields you do not send are left alone. */
+  update(id: string | number, body: OperationRequestBody<'updateVrboListingCheckinGuide'>, query: VrboUnitQuery = {}): Promise<OperationResponse<'updateVrboListingCheckinGuide'>> {
+    return this.client.request<OperationResponse<'updateVrboListingCheckinGuide'>>('PUT', `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/checkin-guide`, { body, query: query });
   }
 }
 
-/** Several Vrbo content sections in one read. New in v0.2.56. */
+/** Vrbo Amenities, group by group (`groups` narrows the read). Reads answer `{ data, dataFreshness }` from Repull's copy (`source: 'live'` reads Vrbo now). */
+class VrboAmenitiesNamespace {
+  constructor(private readonly client: Repull) {}
+
+  /** GET /v1/channels/vrbo/listings/{id}/amenities — read. */
+  list(id: string | number, query: OperationQuery<'getVrboListingAmenities'> = {}): Promise<OperationResponse<'getVrboListingAmenities'>> {
+    return this.client.request<OperationResponse<'getVrboListingAmenities'>>('GET', `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/amenities`, { query: query as Record<string, unknown> });
+  }
+
+  /** PUT /v1/channels/vrbo/listings/{id}/amenities — partial update; fields you do not send are left alone. */
+  update(id: string | number, body: OperationRequestBody<'updateVrboListingAmenities'>, query: VrboUnitQuery = {}): Promise<OperationResponse<'updateVrboListingAmenities'>> {
+    return this.client.request<OperationResponse<'updateVrboListingAmenities'>>('PUT', `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/amenities`, { body, query: query });
+  }
+}
+
+/** Vrbo Home-safety and safety-device amenities (Airbnb: `safetyDisclosures`). Reads answer `{ data, dataFreshness }` from Repull's copy (`source: 'live'` reads Vrbo now). */
+class VrboSafetyDisclosuresNamespace {
+  constructor(private readonly client: Repull) {}
+
+  /** GET /v1/channels/vrbo/listings/{id}/safety-disclosures — read. */
+  list(id: string | number, query: OperationQuery<'getVrboListingSafetyDisclosures'> = {}): Promise<OperationResponse<'getVrboListingSafetyDisclosures'>> {
+    return this.client.request<OperationResponse<'getVrboListingSafetyDisclosures'>>('GET', `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/safety-disclosures`, { query: query as Record<string, unknown> });
+  }
+
+  /** PUT /v1/channels/vrbo/listings/{id}/safety-disclosures — partial update; fields you do not send are left alone. */
+  update(id: string | number, body: OperationRequestBody<'updateVrboListingSafetyDisclosures'>, query: VrboUnitQuery = {}): Promise<OperationResponse<'updateVrboListingSafetyDisclosures'>> {
+    return this.client.request<OperationResponse<'updateVrboListingSafetyDisclosures'>>('PUT', `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/safety-disclosures`, { body, query: query });
+  }
+}
+
+/** Vrbo headline and description in every language — `locale` like Airbnb's descriptions. */
+class VrboDescriptionsNamespace {
+  constructor(private readonly client: Repull) {}
+
+  /** GET /v1/channels/vrbo/listings/{id}/descriptions — every language (`locale` for one). */
+  list(id: string | number, query: OperationQuery<'getVrboListingDescriptions'> = {}): Promise<OperationResponse<'getVrboListingDescriptions'>> {
+    return this.client.request<OperationResponse<'getVrboListingDescriptions'>>('GET', `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/descriptions`, { query: query as Record<string, unknown> });
+  }
+
+  /** PUT /v1/channels/vrbo/listings/{id}/descriptions — the listing's own text, or one language with `locale`. */
+  update(id: string | number, body: OperationRequestBody<'updateVrboListingDescriptions'>, query: VrboUnitQuery = {}): Promise<OperationResponse<'updateVrboListingDescriptions'>> {
+    return this.client.request<OperationResponse<'updateVrboListingDescriptions'>>('PUT', `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/descriptions`, { body, query: query });
+  }
+
+  /** DELETE /v1/channels/vrbo/listings/{id}/descriptions?locale= — remove a hand-written translation. */
+  delete(id: string | number, locale: string, query: VrboUnitQuery = {}): Promise<OperationResponse<'deleteVrboListingDescription'>> {
+    return this.client.request<OperationResponse<'deleteVrboListingDescription'>>('DELETE', `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/descriptions`, { query: { ...query, locale } });
+  }
+}
+
+/** Vrbo photos, with Airbnb's verbs: add, caption / move, remove, cover, order. */
+class VrboPhotosNamespace {
+  constructor(private readonly client: Repull) {}
+
+  /** GET /v1/channels/vrbo/listings/{id}/photos — the photos in order, and the ones Vrbo rejected. */
+  list(id: string | number, query: OperationQuery<'getVrboListingPhotos'> = {}): Promise<OperationResponse<'getVrboListingPhotos'>> {
+    return this.client.request<OperationResponse<'getVrboListingPhotos'>>('GET', `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/photos`, { query: query as Record<string, unknown> });
+  }
+
+  /** POST /v1/channels/vrbo/listings/{id}/photos — add 1–20 photos by `url` or base64 `image`. */
+  add(id: string | number, body: OperationRequestBody<'addVrboListingPhotos'>, query: VrboUnitQuery = {}): Promise<OperationResponse<'addVrboListingPhotos'>> {
+    return this.client.request<OperationResponse<'addVrboListingPhotos'>>('POST', `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/photos`, { body, query: query });
+  }
+
+  /** PATCH /v1/channels/vrbo/listings/{id}/photos — one photo's `caption` and/or `sort_order`. */
+  update(id: string | number, body: OperationRequestBody<'updateVrboListingPhoto'>, query: VrboUnitQuery = {}): Promise<OperationResponse<'updateVrboListingPhoto'>> {
+    return this.client.request<OperationResponse<'updateVrboListingPhoto'>>('PATCH', `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/photos`, { body, query: query });
+  }
+
+  /** DELETE /v1/channels/vrbo/listings/{id}/photos?photoId= — remove photos (comma-separated ids). */
+  delete(id: string | number, photoId: string, query: VrboUnitQuery = {}): Promise<OperationResponse<'deleteVrboListingPhotos'>> {
+    return this.client.request<OperationResponse<'deleteVrboListingPhotos'>>('DELETE', `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/photos`, { query: { ...query, photoId } });
+  }
+
+  /** PUT /v1/channels/vrbo/listings/{id}/photos/order — `photo_ids` in display order. */
+  order(id: string | number, body: OperationRequestBody<'reorderVrboListingPhotos'>, query: VrboUnitQuery = {}): Promise<OperationResponse<'reorderVrboListingPhotos'>> {
+    return this.client.request<OperationResponse<'reorderVrboListingPhotos'>>('PUT', `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/photos/order`, { body, query: query });
+  }
+
+  /** PUT /v1/channels/vrbo/listings/{id}/photos/cover — `photo_id` to show first. */
+  setCover(id: string | number, body: OperationRequestBody<'setVrboListingCoverPhoto'>, query: VrboUnitQuery = {}): Promise<OperationResponse<'setVrboListingCoverPhoto'>> {
+    return this.client.request<OperationResponse<'setVrboListingCoverPhoto'>>('PUT', `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/photos/cover`, { body, query: query });
+  }
+}
+
+/** Vrbo rooms and beds, with Airbnb's verbs and room / bed words. */
+class VrboRoomsNamespace {
+  constructor(private readonly client: Repull) {}
+
+  /** GET /v1/channels/vrbo/listings/{id}/rooms — rooms with their beds and amenities. */
+  list(id: string | number, query: OperationQuery<'getVrboListingRooms'> = {}): Promise<OperationResponse<'getVrboListingRooms'>> {
+    return this.client.request<OperationResponse<'getVrboListingRooms'>>('GET', `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/rooms`, { query: query as Record<string, unknown> });
+  }
+
+  /** POST /v1/channels/vrbo/listings/{id}/rooms — add a room (`room_type`, `beds`, …). */
+  add(id: string | number, body: OperationRequestBody<'addVrboListingRoom'>, query: VrboUnitQuery = {}): Promise<OperationResponse<'addVrboListingRoom'>> {
+    return this.client.request<OperationResponse<'addVrboListingRoom'>>('POST', `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/rooms`, { body, query: query });
+  }
+
+  /** PUT /v1/channels/vrbo/listings/{id}/rooms — change the room `roomId`. */
+  update(id: string | number, roomId: string, body: OperationRequestBody<'updateVrboListingRoom'>, query: VrboUnitQuery = {}): Promise<OperationResponse<'updateVrboListingRoom'>> {
+    return this.client.request<OperationResponse<'updateVrboListingRoom'>>('PUT', `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/rooms`, { body, query: { ...query, roomId } });
+  }
+
+  /** DELETE /v1/channels/vrbo/listings/{id}/rooms?roomId= — remove the room. */
+  delete(id: string | number, roomId: string, query: VrboUnitQuery = {}): Promise<OperationResponse<'deleteVrboListingRoom'>> {
+    return this.client.request<OperationResponse<'deleteVrboListingRoom'>>('DELETE', `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/rooms`, { query: { ...query, roomId } });
+  }
+}
+
+/** The checkout instructions of Vrbo's welcome guide (Airbnb: `checkoutGuide`); written with `checkinGuide.update({ checkOut })`. */
+class VrboCheckoutGuideNamespace {
+  constructor(private readonly client: Repull) {}
+
+  /** GET /v1/channels/vrbo/listings/{id}/checkout-guide — read. */
+  get(id: string | number, query: OperationQuery<'getVrboListingCheckoutGuide'> = {}): Promise<OperationResponse<'getVrboListingCheckoutGuide'>> {
+    return this.client.request<OperationResponse<'getVrboListingCheckoutGuide'>>('GET', `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/checkout-guide`, { query: query as Record<string, unknown> });
+  }
+}
+
+/** The listing's Vrbo calendar, Vrbo only — Airbnb's per-channel availability fields. */
+class VrboAvailabilityNamespace {
+  constructor(private readonly client: Repull) {}
+
+  /** GET /v1/channels/vrbo/listings/{id}/availability — Vrbo's nights for `start_date`..`end_date`. */
+  get(id: string | number, query: OperationQuery<'getVrboListingAvailability'> = {}): Promise<OperationResponse<'getVrboListingAvailability'>> {
+    return this.client.request<OperationResponse<'getVrboListingAvailability'>>('GET', `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/availability`, { query: query as Record<string, unknown> });
+  }
+
+  /** PUT /v1/channels/vrbo/listings/{id}/availability — queue Vrbo-only writes (202 with `jobId`). */
+  update(id: string | number, body: OperationRequestBody<'updateVrboListingAvailability'>, query: VrboUnitQuery = {}): Promise<OperationResponse<'updateVrboListingAvailability'>> {
+    return this.client.request<OperationResponse<'updateVrboListingAvailability'>>('PUT', `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/availability`, { body, query: query });
+  }
+
+  /** GET /v1/channels/vrbo/listings/{id}/availability?jobId= — a write's job. */
+  job(id: string | number, jobId: string, query: VrboUnitQuery = {}): Promise<OperationResponse<'getVrboListingAvailability'>> {
+    return this.client.request<OperationResponse<'getVrboListingAvailability'>>('GET', `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/availability`, { query: { ...query, jobId } });
+  }
+}
+
+/** Several Vrbo sections in one read — `sections` is comma-separated (`'descriptions,house-rules,fees'`) or `'all'`. */
 class VrboContentNamespace {
   constructor(private readonly client: Repull) {}
 
-  /**
-   * GET /v1/channels/vrbo/listings/{id}/content — `sections` is comma-separated
-   * (`'description,house-rules,fees'`) or `'all'`. A section that fails comes
-   * back as `{ error: { code, message } }` without failing the others.
-   */
+  /** GET /v1/channels/vrbo/listings/{id}/content. A section that fails comes back as `{ error: { code, message } }`. */
   get(id: string | number, query: OperationQuery<'getVrboListingContent'>): Promise<VrboListingContentResult> {
-    return this.client.request<VrboListingContentResult>(
-      'GET',
-      `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/content`,
-      { query: query as Record<string, unknown> },
-    );
+    return this.client.request<VrboListingContentResult>('GET', `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/content`, { query: query as Record<string, unknown> });
   }
 }
 
-/** Vrbo listing videos — list, add by URL, delete. New in v0.2.56. */
+/** Vrbo listing videos — list, add by URL, delete. */
 class VrboVideosNamespace {
   constructor(private readonly client: Repull) {}
 
-  /** GET /v1/channels/vrbo/listings/{id}/videos. */
+  /** GET /v1/channels/vrbo/listings/{id}/videos — the videos and Vrbo's review status. */
   list(id: string | number, query: VrboUnitQuery = {}): Promise<OperationResponse<'getVrboListingVideos'>> {
-    return this.client.request<OperationResponse<'getVrboListingVideos'>>(
-      'GET',
-      `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/videos`,
-      { query },
-    );
+    return this.client.request<OperationResponse<'getVrboListingVideos'>>('GET', `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/videos`, { query: query as Record<string, unknown> });
   }
 
   /** POST /v1/channels/vrbo/listings/{id}/videos — add a video by URL. */
-  add(
-    id: string | number,
-    body: OperationRequestBody<'addVrboListingVideo'>,
-    query: VrboUnitQuery = {},
-  ): Promise<OperationResponse<'addVrboListingVideo'>> {
-    return this.client.request<OperationResponse<'addVrboListingVideo'>>(
-      'POST',
-      `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/videos`,
-      { body, query },
-    );
+  add(id: string | number, body: OperationRequestBody<'addVrboListingVideo'>, query: VrboUnitQuery = {}): Promise<OperationResponse<'addVrboListingVideo'>> {
+    return this.client.request<OperationResponse<'addVrboListingVideo'>>('POST', `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/videos`, { body, query: query });
   }
 
-  /** DELETE /v1/channels/vrbo/listings/{id}/videos?videoId= */
-  delete(
-    id: string | number,
-    videoId: string,
-    query: VrboUnitQuery = {},
-  ): Promise<OperationResponse<'deleteVrboListingVideos'>> {
-    return this.client.request<OperationResponse<'deleteVrboListingVideos'>>(
-      'DELETE',
-      `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/videos`,
-      { query: { ...query, videoId } },
-    );
+  /** DELETE /v1/channels/vrbo/listings/{id}/videos?videoId= — remove videos. */
+  delete(id: string | number, videoId: string, query: VrboUnitQuery = {}): Promise<OperationResponse<'deleteVrboListingVideos'>> {
+    return this.client.request<OperationResponse<'deleteVrboListingVideos'>>('DELETE', `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}/videos`, { query: { ...query, videoId } });
   }
 }
 
 /**
- * Vrbo listings. `list()` is the index; every other member is one section of
- * a listing's Vrbo content, keyed by the Repull listing id:
+ * Vrbo listings, on the same names as `channels.airbnb.listings`: `descriptions`, `details`, `photos`
+ * (`add`, `update`, `delete`, `order`, `setCover`), `rooms` (`add`, `update`, `delete`), `amenities`,
+ * `safetyDisclosures`, `bookingSettings`, `pricing`, `permits`, `checkinGuide`, `checkoutGuide`,
+ * `availability` — plus Vrbo's own sections. Keyed by the Repull listing id:
  *
- *   const { data } = await repull.channels.vrbo.listings.content.get('4118', {
- *     sections: 'description,house-rules,fees',
- *   });
- *   await repull.channels.vrbo.listings.description.update('4118', { headline: 'Sea-view loft' });
+ *   const { data } = await repull.channels.vrbo.listings.descriptions.list('4118');
+ *   await repull.channels.vrbo.listings.descriptions.update('4118', { headline: 'Sea-view loft' });
  *
- * New in v0.2.56. Guide: https://repull.dev/docs/vrbo-listing-content
+ * v0.2.58: renamed to Airbnb's names (`description` → `descriptions`, `property` → `details`,
+ * `registration` → `permits`, `welcomeGuide` → `checkinGuide`; `translations` is `descriptions` with
+ * `locale`). Guide: https://repull.dev/docs/channels/vrbo/listing-content
  */
 class VrboListingsNamespace {
-  /** Several sections in one read — `sections` is comma-separated, or `all`. */
   readonly content: VrboContentNamespace;
-  readonly description: VrboDescriptionNamespace;
-  readonly property: VrboPropertyNamespace;
+  readonly details: VrboDetailsNamespace;
   readonly story: VrboStoryNamespace;
   readonly additionalInfo: VrboAdditionalInfoNamespace;
-  readonly translations: VrboTranslationsNamespace;
-  readonly photos: VrboPhotosNamespace;
-  readonly amenities: VrboAmenitiesNamespace;
-  readonly rooms: VrboRoomsNamespace;
   readonly location: VrboLocationNamespace;
   readonly houseRules: VrboHouseRulesNamespace;
   readonly bookingSettings: VrboBookingSettingsNamespace;
@@ -2462,20 +2260,22 @@ class VrboListingsNamespace {
   readonly paymentTerms: VrboPaymentTermsNamespace;
   readonly protection: VrboProtectionNamespace;
   readonly taxes: VrboTaxesNamespace;
-  readonly registration: VrboRegistrationNamespace;
-  readonly welcomeGuide: VrboWelcomeGuideNamespace;
+  readonly permits: VrboPermitsNamespace;
+  readonly checkinGuide: VrboCheckinGuideNamespace;
+  readonly amenities: VrboAmenitiesNamespace;
+  readonly safetyDisclosures: VrboSafetyDisclosuresNamespace;
+  readonly descriptions: VrboDescriptionsNamespace;
+  readonly photos: VrboPhotosNamespace;
+  readonly rooms: VrboRoomsNamespace;
+  readonly checkoutGuide: VrboCheckoutGuideNamespace;
+  readonly availability: VrboAvailabilityNamespace;
   readonly videos: VrboVideosNamespace;
 
   constructor(private readonly client: Repull) {
     this.content = new VrboContentNamespace(client);
-    this.description = new VrboDescriptionNamespace(client);
-    this.property = new VrboPropertyNamespace(client);
+    this.details = new VrboDetailsNamespace(client);
     this.story = new VrboStoryNamespace(client);
     this.additionalInfo = new VrboAdditionalInfoNamespace(client);
-    this.translations = new VrboTranslationsNamespace(client);
-    this.photos = new VrboPhotosNamespace(client);
-    this.amenities = new VrboAmenitiesNamespace(client);
-    this.rooms = new VrboRoomsNamespace(client);
     this.location = new VrboLocationNamespace(client);
     this.houseRules = new VrboHouseRulesNamespace(client);
     this.bookingSettings = new VrboBookingSettingsNamespace(client);
@@ -2486,8 +2286,15 @@ class VrboListingsNamespace {
     this.paymentTerms = new VrboPaymentTermsNamespace(client);
     this.protection = new VrboProtectionNamespace(client);
     this.taxes = new VrboTaxesNamespace(client);
-    this.registration = new VrboRegistrationNamespace(client);
-    this.welcomeGuide = new VrboWelcomeGuideNamespace(client);
+    this.permits = new VrboPermitsNamespace(client);
+    this.checkinGuide = new VrboCheckinGuideNamespace(client);
+    this.amenities = new VrboAmenitiesNamespace(client);
+    this.safetyDisclosures = new VrboSafetyDisclosuresNamespace(client);
+    this.descriptions = new VrboDescriptionsNamespace(client);
+    this.photos = new VrboPhotosNamespace(client);
+    this.rooms = new VrboRoomsNamespace(client);
+    this.checkoutGuide = new VrboCheckoutGuideNamespace(client);
+    this.availability = new VrboAvailabilityNamespace(client);
     this.videos = new VrboVideosNamespace(client);
   }
 
@@ -2500,6 +2307,36 @@ class VrboListingsNamespace {
     return this.client.request<VrboListingListResponse>('GET', '/v1/channels/vrbo/listings', {
       query: query as Record<string, unknown>,
     });
+  }
+
+  /** GET /v1/channels/vrbo/listings/{id} — the listing's Vrbo units; `include: 'content'` adds the stored sections. */
+  get(id: string | number, query: OperationQuery<'getVrboListing'> = {}): Promise<OperationResponse<'getVrboListing'>> {
+    return this.client.request<OperationResponse<'getVrboListing'>>('GET', `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}`, { query: query as Record<string, unknown> });
+  }
+
+  /** POST /v1/channels/vrbo/listings/{id} — `push` / `publish`, `unlist`, `relist` or `delete`. */
+  action(id: string | number, body: OperationRequestBody<'vrboListingAction'>): Promise<OperationResponse<'vrboListingAction'>> {
+    return this.client.request<OperationResponse<'vrboListingAction'>>('POST', `/v1/channels/vrbo/listings/${encodeURIComponent(String(id))}`, { body });
+  }
+
+  /** `action(id, { action: 'push' })` — push the listing's content onto its Vrbo listing (a job). */
+  push(id: string | number, opts: { sections?: string[]; vrboListingNumber?: string } = {}): Promise<OperationResponse<'vrboListingAction'>> {
+    return this.action(id, { action: 'push', ...opts });
+  }
+
+  /** `action(id, { action: 'unlist' })` — Vrbo's "Hide listing". */
+  unlist(id: string | number, opts: { vrboListingNumber?: string } = {}): Promise<OperationResponse<'vrboListingAction'>> {
+    return this.action(id, { action: 'unlist', ...opts });
+  }
+
+  /** `action(id, { action: 'relist' })` — Vrbo's "Reactivate". */
+  relist(id: string | number, opts: { vrboListingNumber?: string } = {}): Promise<OperationResponse<'vrboListingAction'>> {
+    return this.action(id, { action: 'relist', ...opts });
+  }
+
+  /** POST /v1/channels/vrbo/listings/map — link a Vrbo listing on the connected account to a Repull listing. */
+  map(body: OperationRequestBody<'mapVrboListing'>): Promise<OperationResponse<'mapVrboListing'>> {
+    return this.client.request<OperationResponse<'mapVrboListing'>>('POST', '/v1/channels/vrbo/listings/map', { body });
   }
 }
 
