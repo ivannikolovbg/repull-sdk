@@ -5,7 +5,7 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ## 0.2.59 — 2026-11-21
 
-`channels.vrbo.reservations.get(code, { options })` / `.action(code, body)` and `channels.vrbo.alterations.create(body)`: Vrbo bookings on Airbnb's reservation endpoints — accept, decline, cancel, extra charge, refund and changes, each with Vrbo's own preview (`preview: true`). `reviews.guestReview` also rates Vrbo guests (same body; Vrbo takes the ratings, not the text).
+`channels.vrbo.reservations.get(code, { options })` / `.action(code, body)` and `channels.vrbo.alterations.create(body)`: Vrbo bookings on Airbnb's reservation endpoints — accept, decline, cancel, extra charge, refund and changes, each with Vrbo's own preview (`preview: true`). `reviews.guestReview` also rates Vrbo guests (same body; Vrbo takes the ratings, not the text). `channels.vrbo.transactions.list()` / `.refresh()`: the Vrbo payout ledger (every deposit with the bookings it paid, scheduled payouts).
 
 ## 0.2.58 — 2026-11-21
 

@@ -715,6 +715,16 @@ describe('channels.vrbo.listings', () => {
     expect(calls[3].body).toEqual({ confirmation_code: 'HA-C3WBX1', check_out: '2026-12-26', preview: true });
   });
 
+  it('the payout ledger: list and refresh', async () => {
+    const { repull, calls } = client({});
+    await repull.channels.vrbo.transactions.list({ status: 'COMPLETED', limit: 100 });
+    await repull.channels.vrbo.transactions.refresh({}, { account_id: 'vrbo:7001234' });
+    expect(calls.map((c) => `${c.method} ${c.url.pathname}${c.url.search}`)).toEqual([
+      'GET /v1/channels/vrbo/transactions?status=COMPLETED&limit=100',
+      'POST /v1/channels/vrbo/transactions?account_id=vrbo%3A7001234',
+    ]);
+  });
+
   it('rates.get forwards the date window', async () => {
     const { repull, calls } = client({});
     await repull.channels.vrbo.listings.rates.get('4118', { start: '2026-12-01', end: '2026-12-31' });

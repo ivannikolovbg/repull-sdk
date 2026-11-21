@@ -1825,11 +1825,13 @@ class VrboChannelNamespace {
   readonly listings: VrboListingsNamespace;
   readonly reservations: VrboReservationsNamespace;
   readonly alterations: VrboAlterationsNamespace;
+  readonly transactions: VrboTransactionsNamespace;
 
   constructor(private readonly client: Repull) {
     this.listings = new VrboListingsNamespace(client);
     this.reservations = new VrboReservationsNamespace(client);
     this.alterations = new VrboAlterationsNamespace(client);
+    this.transactions = new VrboTransactionsNamespace(client);
   }
 
   /** GET /v1/channels/vrbo/connection — whether the workspace's Vrbo accounts are still signed in. */
@@ -1854,6 +1856,21 @@ class VrboReservationsNamespace {
   /** POST /v1/channels/vrbo/reservations/{code} — `accept`, `decline`, `cancel`, `charge` (extra charge) or `refund`. */
   action(code: string, body: OperationRequestBody<'vrboReservationAction'>): Promise<OperationResponse<'vrboReservationAction'>> {
     return this.client.request<OperationResponse<'vrboReservationAction'>>('POST', `/v1/channels/vrbo/reservations/${encodeURIComponent(code)}`, { body });
+  }
+}
+
+/** The Vrbo payout ledger: every bank deposit and the bookings it paid, and scheduled payouts. */
+class VrboTransactionsNamespace {
+  constructor(private readonly client: Repull) {}
+
+  /** GET /v1/channels/vrbo/transactions — newest deposit first, each followed by its lines; cursor-paginated. */
+  list(query: OperationQuery<'listVrboTransactions'> = {}): Promise<OperationResponse<'listVrboTransactions'>> {
+    return this.client.request<OperationResponse<'listVrboTransactions'>>('GET', '/v1/channels/vrbo/transactions', { query: query as Record<string, unknown> });
+  }
+
+  /** POST /v1/channels/vrbo/transactions — read the ledger from Vrbo now (`account_id` for one account). */
+  refresh(body: OperationRequestBody<'syncVrboTransactions'> = {}, query: { account_id?: string } = {}): Promise<OperationResponse<'syncVrboTransactions'>> {
+    return this.client.request<OperationResponse<'syncVrboTransactions'>>('POST', '/v1/channels/vrbo/transactions', { body, query });
   }
 }
 
