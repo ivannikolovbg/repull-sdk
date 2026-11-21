@@ -1823,14 +1823,64 @@ class AirbnbSafetyDisclosuresNamespace {
 
 class VrboChannelNamespace {
   readonly listings: VrboListingsNamespace;
+  readonly reservations: VrboReservationsNamespace;
+  readonly alterations: VrboAlterationsNamespace;
+  readonly transactions: VrboTransactionsNamespace;
 
   constructor(private readonly client: Repull) {
     this.listings = new VrboListingsNamespace(client);
+    this.reservations = new VrboReservationsNamespace(client);
+    this.alterations = new VrboAlterationsNamespace(client);
+    this.transactions = new VrboTransactionsNamespace(client);
   }
 
   /** GET /v1/channels/vrbo/connection — whether the workspace's Vrbo accounts are still signed in. */
   connection(): Promise<OperationResponse<'getVrboConnection'>> {
     return this.client.request<OperationResponse<'getVrboConnection'>>('GET', '/v1/channels/vrbo/connection');
+  }
+}
+
+/**
+ * A Vrbo booking by its confirmation code (`HA-…`) — the counterpart of Airbnb's reservation actions.
+ * A cancel, charge or refund sent with `preview: true` returns Vrbo's own preview (terms, penalties,
+ * the guest's total) and changes nothing.
+ */
+class VrboReservationsNamespace {
+  constructor(private readonly client: Repull) {}
+
+  /** GET /v1/channels/vrbo/reservations/{code} — the booking as Vrbo shows it; `options` returns Vrbo's choices for `cancel` / `change` / `decline`. */
+  get(code: string, query: OperationQuery<'getVrboReservation'> = {}): Promise<OperationResponse<'getVrboReservation'>> {
+    return this.client.request<OperationResponse<'getVrboReservation'>>('GET', `/v1/channels/vrbo/reservations/${encodeURIComponent(code)}`, { query: query as Record<string, unknown> });
+  }
+
+  /** POST /v1/channels/vrbo/reservations/{code} — `accept`, `decline`, `cancel`, `charge` (extra charge) or `refund`. */
+  action(code: string, body: OperationRequestBody<'vrboReservationAction'>): Promise<OperationResponse<'vrboReservationAction'>> {
+    return this.client.request<OperationResponse<'vrboReservationAction'>>('POST', `/v1/channels/vrbo/reservations/${encodeURIComponent(code)}`, { body });
+  }
+}
+
+/** The Vrbo payout ledger: every bank deposit and the bookings it paid, and scheduled payouts. */
+class VrboTransactionsNamespace {
+  constructor(private readonly client: Repull) {}
+
+  /** GET /v1/channels/vrbo/transactions — newest deposit first, each followed by its lines; cursor-paginated. */
+  list(query: OperationQuery<'listVrboTransactions'> = {}): Promise<OperationResponse<'listVrboTransactions'>> {
+    return this.client.request<OperationResponse<'listVrboTransactions'>>('GET', '/v1/channels/vrbo/transactions', { query: query as Record<string, unknown> });
+  }
+
+  /** POST /v1/channels/vrbo/transactions — read the ledger from Vrbo now (`account_id` for one account). */
+  refresh(body: OperationRequestBody<'syncVrboTransactions'> = {}, query: { account_id?: string } = {}): Promise<OperationResponse<'syncVrboTransactions'>> {
+    return this.client.request<OperationResponse<'syncVrboTransactions'>>('POST', '/v1/channels/vrbo/transactions', { body, query });
+  }
+}
+
+/** Changing a Vrbo booking — the counterpart of `channels.airbnb.alterations`. On Vrbo the change is made at once. */
+class VrboAlterationsNamespace {
+  constructor(private readonly client: Repull) {}
+
+  /** POST /v1/channels/vrbo/alterations — dates, check-in/out times, guests, pets or price; `preview: true` returns Vrbo's price difference only. */
+  create(body: OperationRequestBody<'createVrboAlteration'>): Promise<OperationResponse<'createVrboAlteration'>> {
+    return this.client.request<OperationResponse<'createVrboAlteration'>>('POST', '/v1/channels/vrbo/alterations', { body });
   }
 }
 
@@ -2241,7 +2291,7 @@ class VrboVideosNamespace {
  *   const { data } = await repull.channels.vrbo.listings.descriptions.list('4118');
  *   await repull.channels.vrbo.listings.descriptions.update('4118', { headline: 'Sea-view loft' });
  *
- * v0.2.58: renamed to Airbnb's names (`description` → `descriptions`, `property` → `details`,
+ * v0.2.59: renamed to Airbnb's names (`description` → `descriptions`, `property` → `details`,
  * `registration` → `permits`, `welcomeGuide` → `checkinGuide`; `translations` is `descriptions` with
  * `locale`). Guide: https://repull.dev/docs/channels/vrbo/listing-content
  */

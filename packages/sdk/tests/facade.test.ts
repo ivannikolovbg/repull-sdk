@@ -698,6 +698,33 @@ describe('channels.vrbo.listings', () => {
     expect(calls[6].url.searchParams.get('jobId')).toBe('77');
   });
 
+  it('a booking: read, options, actions, alterations', async () => {
+    const { repull, calls } = client({});
+    const v = repull.channels.vrbo;
+    await v.reservations.get('HA-C3WBX1');
+    await v.reservations.get('HA-C3WBX1', { options: 'cancel' });
+    await v.reservations.action('HA-C3WBX1', { action: 'cancel', reason: 'dates-booked-on-another-platform', message: 'Sorry, these dates were booked elsewhere.', preview: true });
+    await v.alterations.create({ confirmation_code: 'HA-C3WBX1', check_out: '2026-12-26', preview: true });
+    expect(calls.map((c) => `${c.method} ${c.url.pathname}${c.url.search}`)).toEqual([
+      'GET /v1/channels/vrbo/reservations/HA-C3WBX1',
+      'GET /v1/channels/vrbo/reservations/HA-C3WBX1?options=cancel',
+      'POST /v1/channels/vrbo/reservations/HA-C3WBX1',
+      'POST /v1/channels/vrbo/alterations',
+    ]);
+    expect(calls[2].body).toMatchObject({ action: 'cancel', preview: true });
+    expect(calls[3].body).toEqual({ confirmation_code: 'HA-C3WBX1', check_out: '2026-12-26', preview: true });
+  });
+
+  it('the payout ledger: list and refresh', async () => {
+    const { repull, calls } = client({});
+    await repull.channels.vrbo.transactions.list({ status: 'COMPLETED', limit: 100 });
+    await repull.channels.vrbo.transactions.refresh({}, { account_id: 'vrbo:7001234' });
+    expect(calls.map((c) => `${c.method} ${c.url.pathname}${c.url.search}`)).toEqual([
+      'GET /v1/channels/vrbo/transactions?status=COMPLETED&limit=100',
+      'POST /v1/channels/vrbo/transactions?account_id=vrbo%3A7001234',
+    ]);
+  });
+
   it('rates.get forwards the date window', async () => {
     const { repull, calls } = client({});
     await repull.channels.vrbo.listings.rates.get('4118', { start: '2026-12-01', end: '2026-12-31' });
