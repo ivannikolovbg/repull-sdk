@@ -599,43 +599,40 @@ describe('channels.vrbo.listings', () => {
 
   it('content.get reads several sections in one call', async () => {
     const { repull, calls } = client({ listingId: '4118', vrboListingNumber: '123', propertyId: 'p', sections: {} });
-    const res = await repull.channels.vrbo.listings.content.get('4118', { sections: 'description,house-rules,fees' });
+    const res = await repull.channels.vrbo.listings.content.get('4118', { sections: 'descriptions,house-rules,fees' });
     expect(calls[0].method).toBe('GET');
     expect(calls[0].url.pathname).toBe('/v1/channels/vrbo/listings/4118/content');
-    expect(calls[0].url.searchParams.get('sections')).toBe('description,house-rules,fees');
+    expect(calls[0].url.searchParams.get('sections')).toBe('descriptions,house-rules,fees');
     expect(res.listingId).toBe('4118');
   });
 
-  it('every section reads and writes at its own path', async () => {
-    const segments: Record<string, string> = {
-      description: 'description',
-      property: 'property',
-      story: 'story',
-      additionalInfo: 'additional-info',
-      translations: 'translations',
-      photos: 'photos',
-      amenities: 'amenities',
-      rooms: 'rooms',
-      location: 'location',
-      houseRules: 'house-rules',
-      bookingSettings: 'booking-settings',
-      cancellation: 'cancellation',
-      fees: 'fees',
-      pricing: 'pricing',
-      rates: 'rates',
-      paymentTerms: 'payment-terms',
-      protection: 'protection',
-      taxes: 'taxes',
-      registration: 'registration',
-      welcomeGuide: 'welcome-guide',
+  it('every section reads and writes at its own path, on Airbnb\'s names', async () => {
+    // member → [path segment, read method]
+    const segments: Record<string, [string, string]> = {
+      details: ['details', 'get'],
+      story: ['story', 'get'],
+      additionalInfo: ['additional-info', 'get'],
+      location: ['location', 'get'],
+      houseRules: ['house-rules', 'get'],
+      bookingSettings: ['booking-settings', 'get'],
+      cancellation: ['cancellation', 'get'],
+      fees: ['fees', 'get'],
+      pricing: ['pricing', 'get'],
+      rates: ['rates', 'get'],
+      paymentTerms: ['payment-terms', 'get'],
+      protection: ['protection', 'get'],
+      taxes: ['taxes', 'get'],
+      permits: ['permits', 'list'],
+      checkinGuide: ['checkin-guide', 'get'],
+      amenities: ['amenities', 'list'],
+      safetyDisclosures: ['safety-disclosures', 'list'],
+      descriptions: ['descriptions', 'list'],
+      availability: ['availability', 'get'],
     };
-    for (const [member, segment] of Object.entries(segments)) {
+    for (const [member, [segment, read]] of Object.entries(segments)) {
       const { repull, calls } = client({});
-      const ns = (repull.channels.vrbo.listings as unknown as Record<
-        string,
-        { get: (id: string) => Promise<unknown>; update: (id: string, b: unknown) => Promise<unknown> }
-      >)[member];
-      await ns.get('4118');
+      const ns = (repull.channels.vrbo.listings as unknown as Record<string, Record<string, (id: string, b?: unknown) => Promise<unknown>>>)[member];
+      await ns[read]('4118');
       await ns.update('4118', { x: 1 });
       expect(calls[0].method).toBe('GET');
       expect(calls[0].url.pathname).toBe(`/v1/channels/vrbo/listings/4118/${segment}`);
@@ -645,17 +642,60 @@ describe('channels.vrbo.listings', () => {
     }
   });
 
-  it('description.update sends the body and the vrboListingNumber query', async () => {
+  it('descriptions: update with the unit, delete a language', async () => {
     const { repull, calls } = client({});
-    await repull.channels.vrbo.listings.description.update(
-      4118,
-      { headline: 'Sea-view loft' },
-      { vrboListingNumber: '321.123.1' },
-    );
-    expect(calls[0].method).toBe('PUT');
-    expect(calls[0].url.pathname).toBe('/v1/channels/vrbo/listings/4118/description');
+    await repull.channels.vrbo.listings.descriptions.update(4118, { headline: 'Sea-view loft' }, { vrboListingNumber: '321.123.1' });
+    await repull.channels.vrbo.listings.descriptions.delete(4118, 'fr-FR');
+    expect(calls[0].url.pathname).toBe('/v1/channels/vrbo/listings/4118/descriptions');
     expect(calls[0].url.searchParams.get('vrboListingNumber')).toBe('321.123.1');
     expect(calls[0].body).toEqual({ headline: 'Sea-view loft' });
+    expect([calls[1].method, calls[1].url.searchParams.get('locale')]).toEqual(['DELETE', 'fr-FR']);
+  });
+
+  it('photos and rooms use Airbnb\'s verbs', async () => {
+    const { repull, calls } = client({});
+    const l = repull.channels.vrbo.listings;
+    await l.photos.add('4118', { photos: [{ url: 'https://cdn.example.com/a.jpg' }] });
+    await l.photos.update('4118', { photo_id: 'p1', sort_order: 1 });
+    await l.photos.delete('4118', 'p1,p2');
+    await l.photos.order('4118', { photo_ids: ['p2', 'p1'] });
+    await l.photos.setCover('4118', { photo_id: 'p2' });
+    await l.rooms.add('4118', { room_type: 'bedroom', beds: [{ type: 'king_bed', quantity: 1 }] });
+    await l.rooms.update('4118', 'r1', { name: 'Loft' });
+    await l.rooms.delete('4118', 'r1');
+    expect(calls.map((c) => `${c.method} ${c.url.pathname}${c.url.search}`)).toEqual([
+      'POST /v1/channels/vrbo/listings/4118/photos',
+      'PATCH /v1/channels/vrbo/listings/4118/photos',
+      'DELETE /v1/channels/vrbo/listings/4118/photos?photoId=p1%2Cp2',
+      'PUT /v1/channels/vrbo/listings/4118/photos/order',
+      'PUT /v1/channels/vrbo/listings/4118/photos/cover',
+      'POST /v1/channels/vrbo/listings/4118/rooms',
+      'PUT /v1/channels/vrbo/listings/4118/rooms?roomId=r1',
+      'DELETE /v1/channels/vrbo/listings/4118/rooms?roomId=r1',
+    ]);
+  });
+
+  it('the listing, its actions, map and connection', async () => {
+    const { repull, calls } = client({});
+    const l = repull.channels.vrbo.listings;
+    await l.get('4118', { include: 'content' });
+    await l.unlist('4118');
+    await l.push('4118', { sections: ['descriptions'] });
+    await l.map({ vrboListingNumber: '5506023', listingId: 4118 });
+    await repull.channels.vrbo.connection();
+    await l.checkoutGuide.get('4118');
+    await l.availability.job('4118', '77');
+    expect(calls.map((c) => `${c.method} ${c.url.pathname}`)).toEqual([
+      'GET /v1/channels/vrbo/listings/4118',
+      'POST /v1/channels/vrbo/listings/4118',
+      'POST /v1/channels/vrbo/listings/4118',
+      'POST /v1/channels/vrbo/listings/map',
+      'GET /v1/channels/vrbo/connection',
+      'GET /v1/channels/vrbo/listings/4118/checkout-guide',
+      'GET /v1/channels/vrbo/listings/4118/availability',
+    ]);
+    expect([calls[1].body, calls[2].body]).toEqual([{ action: 'unlist' }, { action: 'push', sections: ['descriptions'] }]);
+    expect(calls[6].url.searchParams.get('jobId')).toBe('77');
   });
 
   it('rates.get forwards the date window', async () => {

@@ -2346,7 +2346,7 @@ export interface paths {
          *
          *     **Multilingual:** send `locale` to say which language this copy is in (`it`, `pt-BR`, …). Canonical content is stored per locale, so each language keeps its own row instead of overwriting the English one. Omit it for English.
          *
-         *     **Local write only — NOT a channel publish.** This mutates Repull's own copy of the content. It does NOT push to Airbnb / Booking.com; it marks the channels dirty so a later publish knows what changed. Distribution stays a separate explicit step.
+         *     **Local write only — NOT a channel publish.** This mutates Repull's own copy of the content. It does NOT push to Airbnb, Booking.com or Vrbo; it marks the channels dirty so a later publish knows what changed. Distribution stays a separate explicit step: `POST /v1/listings/{id}/publish/airbnb`, `/publish/booking` or `/publish/vrbo` (each creates the listing on the channel, or updates the one already there). To change one channel only, use its own endpoints (`/v1/channels/airbnb/listings/{id}/…`, `/v1/channels/vrbo/listings/{id}/…`).
          *
          *     **Photos:** `photos` is a list of hosted image URLs (or structured refs) saved to the listing in order: a full replacement by default, or added after the existing ones with `photosMode: "append"`. A publish sends them to the channels. An array with no valid http(s) URL is reported in `deferred` and the existing photos are left alone.
          *
@@ -5316,7 +5316,7 @@ export interface paths {
          *
          *     **Missing content** (street address, city, photos, nightly price, description) is refused with `422 listing_incomplete` naming what is missing. A run that failed part-way leaves an unpublished Vrbo property: publishing again completes it instead of creating a second one.
          *
-         *     **Update (listing already on Vrbo).** Write the content with `PUT /v1/listings/{id}/content`, then publish: the listing's content is pushed onto its existing Vrbo listing, section by section — headline and description, property type, amenities, house rules (check-in/out, guests, children, pets, smoking, events), booking settings (instant book, minimum stay, notice, booking window), cancellation policy, cleaning/pet/extra-guest fees, the base rate (with the unit's markup) and the weekly and monthly stay discounts over the booking window (`rates`; the nights keep the prices Vrbo has). Rates and the base rate share Vrbo's calendar quota with the listing's calendar push: when it is writing, those steps wait for it (up to 3 minutes) and try once more, else they end `failed` with `vrbo_calendar_busy` — publish again later. Each write is partial (a field the content has no value for is left alone) and is read back from Vrbo. Rooms, photos and registration are not replaced on an existing listing (`skipped` says so): edit them with `PUT /v1/channels/vrbo/listings/{id}/{section}`. It is a job too (a few minutes: Vrbo calls are spaced ~3 s apart per account): poll `GET ?jobId=` — each entry of `job.sections` has its `status`, Vrbo's refusals and what Vrbo stored. Limit it with `sections` (e.g. `["description", "fees"]`); name the Vrbo listing with `vrboListingNumber` when the listing is linked to several. One push per listing at a time (`409 vrbo_push_running`). Needs full access (`403 vrbo_messaging_access` otherwise).
+         *     **Update (listing already on Vrbo).** Write the content with `PUT /v1/listings/{id}/content`, then publish: the listing's content is pushed onto its existing Vrbo listing, section by section — headline and description, property type, amenities, house rules (check-in/out, guests, children, pets, smoking, events), booking settings (instant book, minimum stay, notice, booking window), cancellation policy, cleaning/pet/extra-guest fees, the base rate (with the unit's markup) and the weekly and monthly stay discounts over the booking window (`rates`; the nights keep the prices Vrbo has). Rates and the base rate share Vrbo's calendar quota with the listing's calendar push: when it is writing, those steps wait for it (up to 3 minutes) and try once more, else they end `failed` with `vrbo_calendar_busy` — publish again later. Each write is partial (a field the content has no value for is left alone) and is read back from Vrbo. Rooms, photos and permits are not replaced on an existing listing (`skipped` says so): edit them with `/v1/channels/vrbo/listings/{id}/rooms`, `…/photos` and `…/permits`. It is a job too (a few minutes: Vrbo calls are spaced ~3 s apart per account): poll `GET ?jobId=` — each entry of `job.sections` has its `status`, Vrbo's refusals and what Vrbo stored. Limit it with `sections` (e.g. `["descriptions", "fees"]`); name the Vrbo listing with `vrboListingNumber` when the listing is linked to several. One push per listing at a time (`409 vrbo_push_running`). Needs full access (`403 vrbo_messaging_access` otherwise).
          *
          *     Prices, availability and minimum stay per night always go through the calendar: `PUT /v1/availability/{propertyId}`.
          */
@@ -5428,7 +5428,7 @@ export interface paths {
          * Get the Vrbo additional details
          * @description The free-text additional details for the property, its bedrooms and its bathrooms.
          *
-         *     Read live from the listing's Vrbo listing in the host's connected Vrbo account. **Cost:** 2 Vrbo calls on Vrbo, spaced ~3 s apart per account — a few seconds. Vrbo is read live on every request (nothing is cached), so read the section you need rather than polling.
+         *     Answers from Repull's stored copy of the listing's Vrbo content, like the Airbnb endpoints (`dataFreshness.lastSyncedAt` says when it was read from Vrbo). The first read of a section reads Vrbo and stores it; a copy over 24 h old answers and is refreshed in the background (`reason: refreshing`); every write through Repull stores what Vrbo has after it. `?source=live` reads Vrbo now. **Cost:** from the copy, milliseconds. A live read is 2 Vrbo calls on Vrbo, spaced ~3 s apart per account — a few seconds.
          *
          *     Works with messaging or full access. Returns `404` when the listing is not linked to Vrbo, and `403 listing_inactive` when the listing is inactive.
          */
@@ -5439,7 +5439,7 @@ export interface paths {
          *
          *     **Cost:** 1 call + 2 to read back on Vrbo, spaced ~3 s apart per account. The answer comes once Vrbo has saved and the section has been read back.
          *
-         *     **When Vrbo refuses** a value the answer is `422 vrbo_rejected` with Vrbo's own message, the refused fields in `errors` and what Vrbo has now in `data` (fields Vrbo accepted in the same request are saved). A malformed body is `422 invalid_params` naming the field, and nothing is sent to Vrbo.
+         *     **When Vrbo refuses** a value the answer is `422 vrbo_rejected` with Vrbo's own message, the refused fields in `errors` and what Vrbo has now in `data`. A malformed body is `422 invalid_params` naming the field, and nothing is sent to Vrbo.
          *
          *     Needs a Vrbo account connected with full access: one connected with messaging access answers `403 vrbo_messaging_access`. Returns `403 listing_inactive` when the listing is inactive.
          */
@@ -5462,7 +5462,7 @@ export interface paths {
          * Get the Vrbo amenities
          * @description Vrbo's 19 amenity groups (~440 fields) — each field with its id, type (checkbox, choice, text, number, measurement, checkboxGroup), current value, options and the parent it is shown under (`shownWhen`). Includes location & view, nearby attractions and check-out instructions.
          *
-         *     Read live from the listing's Vrbo listing in the host's connected Vrbo account. **Cost:** 1 Vrbo call per group (19 in all; narrow with `?groups=`) on Vrbo, spaced ~3 s apart per account — a few seconds. Vrbo is read live on every request (nothing is cached), so read the section you need rather than polling.
+         *     Answers from Repull's stored copy of the listing's Vrbo content, like the Airbnb endpoints (`dataFreshness.lastSyncedAt` says when it was read from Vrbo). The first read of a section reads Vrbo and stores it; a copy over 24 h old answers and is refreshed in the background (`reason: refreshing`); every write through Repull stores what Vrbo has after it. `?source=live` reads Vrbo now. **Cost:** from the copy, milliseconds. A live read is 1 Vrbo call per group (19 in all; narrow with `?groups=`) on Vrbo, spaced ~3 s apart per account — a few seconds.
          *
          *     Works with messaging or full access. Returns `404` when the listing is not linked to Vrbo, and `403 listing_inactive` when the listing is inactive.
          */
@@ -5473,7 +5473,7 @@ export interface paths {
          *
          *     **Cost:** 1 call per group written + the read back of those groups on Vrbo, spaced ~3 s apart per account. The answer comes once Vrbo has saved and the section has been read back.
          *
-         *     **When Vrbo refuses** a value the answer is `422 vrbo_rejected` with Vrbo's own message, the refused fields in `errors` and what Vrbo has now in `data` (fields Vrbo accepted in the same request are saved). A malformed body is `422 invalid_params` naming the field, and nothing is sent to Vrbo.
+         *     **When Vrbo refuses** a value the answer is `422 vrbo_rejected` with Vrbo's own message, the refused fields in `errors` and what Vrbo has now in `data`. A malformed body is `422 invalid_params` naming the field, and nothing is sent to Vrbo.
          *
          *     Needs a Vrbo account connected with full access: one connected with messaging access answers `403 vrbo_messaging_access`. Returns `403 listing_inactive` when the listing is inactive.
          */
@@ -5496,7 +5496,7 @@ export interface paths {
          * Get the Vrbo booking settings
          * @description Instant book or quote-and-hold, minimum nights, notice before arrival, how far ahead guests can book, maximum stay, access type.
          *
-         *     Read live from the listing's Vrbo listing in the host's connected Vrbo account. **Cost:** 2 Vrbo calls on Vrbo, spaced ~3 s apart per account — a few seconds. Vrbo is read live on every request (nothing is cached), so read the section you need rather than polling.
+         *     Answers from Repull's stored copy of the listing's Vrbo content, like the Airbnb endpoints (`dataFreshness.lastSyncedAt` says when it was read from Vrbo). The first read of a section reads Vrbo and stores it; a copy over 24 h old answers and is refreshed in the background (`reason: refreshing`); every write through Repull stores what Vrbo has after it. `?source=live` reads Vrbo now. **Cost:** from the copy, milliseconds. A live read is 2 Vrbo calls on Vrbo, spaced ~3 s apart per account — a few seconds.
          *
          *     Works with messaging or full access. Returns `404` when the listing is not linked to Vrbo, and `403 listing_inactive` when the listing is inactive.
          */
@@ -5507,7 +5507,7 @@ export interface paths {
          *
          *     **Cost:** 1–3 calls + 2 to read back on Vrbo, spaced ~3 s apart per account. The answer comes once Vrbo has saved and the section has been read back.
          *
-         *     **When Vrbo refuses** a value the answer is `422 vrbo_rejected` with Vrbo's own message, the refused fields in `errors` and what Vrbo has now in `data` (fields Vrbo accepted in the same request are saved). A malformed body is `422 invalid_params` naming the field, and nothing is sent to Vrbo.
+         *     **When Vrbo refuses** a value the answer is `422 vrbo_rejected` with Vrbo's own message, the refused fields in `errors` and what Vrbo has now in `data`. A malformed body is `422 invalid_params` naming the field, and nothing is sent to Vrbo.
          *
          *     Needs a Vrbo account connected with full access: one connected with messaging access answers `403 vrbo_messaging_access`. Returns `403 listing_inactive` when the listing is inactive.
          */
@@ -5530,7 +5530,7 @@ export interface paths {
          * Get the Vrbo cancellation policy
          * @description The policy (Vrbo's named ones or custom refund windows), seasonal overrides, and the named policies Vrbo offers.
          *
-         *     Read live from the listing's Vrbo listing in the host's connected Vrbo account. **Cost:** 1 Vrbo call on Vrbo, spaced ~3 s apart per account — a few seconds. Vrbo is read live on every request (nothing is cached), so read the section you need rather than polling.
+         *     Answers from Repull's stored copy of the listing's Vrbo content, like the Airbnb endpoints (`dataFreshness.lastSyncedAt` says when it was read from Vrbo). The first read of a section reads Vrbo and stores it; a copy over 24 h old answers and is refreshed in the background (`reason: refreshing`); every write through Repull stores what Vrbo has after it. `?source=live` reads Vrbo now. **Cost:** from the copy, milliseconds. A live read is 1 Vrbo call on Vrbo, spaced ~3 s apart per account — a few seconds.
          *
          *     Works with messaging or full access. Returns `404` when the listing is not linked to Vrbo, and `403 listing_inactive` when the listing is inactive.
          */
@@ -5541,7 +5541,7 @@ export interface paths {
          *
          *     **Cost:** 2 calls + 1 to read back on Vrbo, spaced ~3 s apart per account. The answer comes once Vrbo has saved and the section has been read back.
          *
-         *     **When Vrbo refuses** a value the answer is `422 vrbo_rejected` with Vrbo's own message, the refused fields in `errors` and what Vrbo has now in `data` (fields Vrbo accepted in the same request are saved). A malformed body is `422 invalid_params` naming the field, and nothing is sent to Vrbo.
+         *     **When Vrbo refuses** a value the answer is `422 vrbo_rejected` with Vrbo's own message, the refused fields in `errors` and what Vrbo has now in `data`. A malformed body is `422 invalid_params` naming the field, and nothing is sent to Vrbo.
          *
          *     Needs a Vrbo account connected with full access: one connected with messaging access answers `403 vrbo_messaging_access`. Returns `403 listing_inactive` when the listing is inactive.
          */
@@ -5562,48 +5562,14 @@ export interface paths {
         };
         /**
          * Get several Vrbo listing sections
-         * @description Read several sections of the listing's Vrbo listing in one call. `sections` is required: name them (`?sections=description,house-rules,fees`) or ask for `all`.
+         * @description Read several sections of the listing's Vrbo listing in one call. `sections` is required: name them (`?sections=descriptions,house-rules,fees`) or ask for `all`. Each section is the `data` of its own endpoint.
          *
-         *     **Cost:** each section is read live on Vrbo, with calls spaced ~3 s apart per account — `all` is about 45 Vrbo calls, **around 2.5 minutes**. Prefer the one-section endpoints (`GET /v1/channels/vrbo/listings/{id}/{section}`) and never poll this one. A section that fails carries `{ error: { code, message } }`; the others still answer.
+         *     Sections Repull holds answer from its copy; only the others are read on Vrbo, in one pass (`?source=live` reads them all on Vrbo: about 45 calls, **around 2.5 minutes** for `all`). A section Vrbo fails to return carries `{ error: { code, message } }`; the others still answer. `dataFreshness.lastSyncedAt` is the oldest section's.
          *
          *     Returns `404` when the listing is not linked to Vrbo, and `403 listing_inactive` when the listing is inactive.
          */
         get: operations["getVrboListingContent"];
         put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/channels/vrbo/listings/{id}/description": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get the Vrbo headline and description
-         * @description The headline (10–80 characters) and the description guests read.
-         *
-         *     Read live from the listing's Vrbo listing in the host's connected Vrbo account. **Cost:** 1 Vrbo call on Vrbo, spaced ~3 s apart per account — a few seconds. Vrbo is read live on every request (nothing is cached), so read the section you need rather than polling.
-         *
-         *     Works with messaging or full access. Returns `404` when the listing is not linked to Vrbo, and `403 listing_inactive` when the listing is inactive.
-         */
-        get: operations["getVrboListingDescription"];
-        /**
-         * Update the Vrbo headline and description
-         * @description Change the headline and description of the listing's existing Vrbo listing. **Partial:** send only the fields to change; a field you leave out is never changed on Vrbo, and a field sent as `null` means "none" (where the field can be cleared). Fields Vrbo can change but never empty once set are refused with `422 invalid_params` when sent empty or `null`, rather than answering OK while Vrbo keeps the old value. `headline` and/or `description`. Vrbo refuses some characters and words (`( ) * $ €`, other platforms' names, "covid") and says which.
-         *
-         *     **Cost:** 1 call + 1 to read back on Vrbo, spaced ~3 s apart per account. The answer comes once Vrbo has saved and the section has been read back.
-         *
-         *     **When Vrbo refuses** a value the answer is `422 vrbo_rejected` with Vrbo's own message, the refused fields in `errors` and what Vrbo has now in `data` (fields Vrbo accepted in the same request are saved). A malformed body is `422 invalid_params` naming the field, and nothing is sent to Vrbo.
-         *
-         *     Needs a Vrbo account connected with full access: one connected with messaging access answers `403 vrbo_messaging_access`. Returns `403 listing_inactive` when the listing is inactive.
-         */
-        put: operations["updateVrboListingDescription"];
         post?: never;
         delete?: never;
         options?: never;
@@ -5622,7 +5588,7 @@ export interface paths {
          * Get the Vrbo fees
          * @description Cleaning, pet and extra-guest fees and custom fees, with their type (per stay / per night) and whether they are taxable.
          *
-         *     Read live from the listing's Vrbo listing in the host's connected Vrbo account. **Cost:** 1 Vrbo call on Vrbo, spaced ~3 s apart per account — a few seconds. Vrbo is read live on every request (nothing is cached), so read the section you need rather than polling.
+         *     Answers from Repull's stored copy of the listing's Vrbo content, like the Airbnb endpoints (`dataFreshness.lastSyncedAt` says when it was read from Vrbo). The first read of a section reads Vrbo and stores it; a copy over 24 h old answers and is refreshed in the background (`reason: refreshing`); every write through Repull stores what Vrbo has after it. `?source=live` reads Vrbo now. **Cost:** from the copy, milliseconds. A live read is 1 Vrbo call on Vrbo, spaced ~3 s apart per account — a few seconds.
          *
          *     Works with messaging or full access. Returns `404` when the listing is not linked to Vrbo, and `403 listing_inactive` when the listing is inactive.
          */
@@ -5633,7 +5599,7 @@ export interface paths {
          *
          *     **Cost:** 2 calls + 1 to read back on Vrbo, spaced ~3 s apart per account. The answer comes once Vrbo has saved and the section has been read back.
          *
-         *     **When Vrbo refuses** a value the answer is `422 vrbo_rejected` with Vrbo's own message, the refused fields in `errors` and what Vrbo has now in `data` (fields Vrbo accepted in the same request are saved). A malformed body is `422 invalid_params` naming the field, and nothing is sent to Vrbo.
+         *     **When Vrbo refuses** a value the answer is `422 vrbo_rejected` with Vrbo's own message, the refused fields in `errors` and what Vrbo has now in `data`. A malformed body is `422 invalid_params` naming the field, and nothing is sent to Vrbo.
          *
          *     Needs a Vrbo account connected with full access: one connected with messaging access answers `403 vrbo_messaging_access`. Returns `403 listing_inactive` when the listing is inactive.
          */
@@ -5656,7 +5622,7 @@ export interface paths {
          * Get the Vrbo house rules
          * @description Check-in/out times, maximum guests and adults, minimum age, children (with age bands), pets (count, weight), smoking (inside/outside), events (attendee cap), up to 3 custom rules, the rental agreement.
          *
-         *     Read live from the listing's Vrbo listing in the host's connected Vrbo account. **Cost:** 1 Vrbo call on Vrbo, spaced ~3 s apart per account — a few seconds. Vrbo is read live on every request (nothing is cached), so read the section you need rather than polling.
+         *     Answers from Repull's stored copy of the listing's Vrbo content, like the Airbnb endpoints (`dataFreshness.lastSyncedAt` says when it was read from Vrbo). The first read of a section reads Vrbo and stores it; a copy over 24 h old answers and is refreshed in the background (`reason: refreshing`); every write through Repull stores what Vrbo has after it. `?source=live` reads Vrbo now. **Cost:** from the copy, milliseconds. A live read is 1 Vrbo call on Vrbo, spaced ~3 s apart per account — a few seconds.
          *
          *     Works with messaging or full access. Returns `404` when the listing is not linked to Vrbo, and `403 listing_inactive` when the listing is inactive.
          */
@@ -5667,7 +5633,7 @@ export interface paths {
          *
          *     **Cost:** 2 calls + 1 to read back on Vrbo, spaced ~3 s apart per account. The answer comes once Vrbo has saved and the section has been read back.
          *
-         *     **When Vrbo refuses** a value the answer is `422 vrbo_rejected` with Vrbo's own message, the refused fields in `errors` and what Vrbo has now in `data` (fields Vrbo accepted in the same request are saved). A malformed body is `422 invalid_params` naming the field, and nothing is sent to Vrbo.
+         *     **When Vrbo refuses** a value the answer is `422 vrbo_rejected` with Vrbo's own message, the refused fields in `errors` and what Vrbo has now in `data`. A malformed body is `422 invalid_params` naming the field, and nothing is sent to Vrbo.
          *
          *     Needs a Vrbo account connected with full access: one connected with messaging access answers `403 vrbo_messaging_access`. Returns `403 listing_inactive` when the listing is inactive.
          */
@@ -5690,7 +5656,7 @@ export interface paths {
          * Get the Vrbo map setting
          * @description The address (read-only: Vrbo changes it only through its support) and whether guests see the exact location or an area.
          *
-         *     Read live from the listing's Vrbo listing in the host's connected Vrbo account. **Cost:** 1 Vrbo call on Vrbo, spaced ~3 s apart per account — a few seconds. Vrbo is read live on every request (nothing is cached), so read the section you need rather than polling.
+         *     Answers from Repull's stored copy of the listing's Vrbo content, like the Airbnb endpoints (`dataFreshness.lastSyncedAt` says when it was read from Vrbo). The first read of a section reads Vrbo and stores it; a copy over 24 h old answers and is refreshed in the background (`reason: refreshing`); every write through Repull stores what Vrbo has after it. `?source=live` reads Vrbo now. **Cost:** from the copy, milliseconds. A live read is 1 Vrbo call on Vrbo, spaced ~3 s apart per account — a few seconds.
          *
          *     Works with messaging or full access. Returns `404` when the listing is not linked to Vrbo, and `403 listing_inactive` when the listing is inactive.
          */
@@ -5701,7 +5667,7 @@ export interface paths {
          *
          *     **Cost:** 1 call + 1 to read back on Vrbo, spaced ~3 s apart per account. The answer comes once Vrbo has saved and the section has been read back.
          *
-         *     **When Vrbo refuses** a value the answer is `422 vrbo_rejected` with Vrbo's own message, the refused fields in `errors` and what Vrbo has now in `data` (fields Vrbo accepted in the same request are saved). A malformed body is `422 invalid_params` naming the field, and nothing is sent to Vrbo.
+         *     **When Vrbo refuses** a value the answer is `422 vrbo_rejected` with Vrbo's own message, the refused fields in `errors` and what Vrbo has now in `data`. A malformed body is `422 invalid_params` naming the field, and nothing is sent to Vrbo.
          *
          *     Needs a Vrbo account connected with full access: one connected with messaging access answers `403 vrbo_messaging_access`. Returns `403 listing_inactive` when the listing is inactive.
          */
@@ -5724,7 +5690,7 @@ export interface paths {
          * Get the Vrbo payment terms
          * @description How much the guest pays at booking and when the rest is due.
          *
-         *     Read live from the listing's Vrbo listing in the host's connected Vrbo account. **Cost:** 1 Vrbo call on Vrbo, spaced ~3 s apart per account — a few seconds. Vrbo is read live on every request (nothing is cached), so read the section you need rather than polling.
+         *     Answers from Repull's stored copy of the listing's Vrbo content, like the Airbnb endpoints (`dataFreshness.lastSyncedAt` says when it was read from Vrbo). The first read of a section reads Vrbo and stores it; a copy over 24 h old answers and is refreshed in the background (`reason: refreshing`); every write through Repull stores what Vrbo has after it. `?source=live` reads Vrbo now. **Cost:** from the copy, milliseconds. A live read is 1 Vrbo call on Vrbo, spaced ~3 s apart per account — a few seconds.
          *
          *     Works with messaging or full access. Returns `404` when the listing is not linked to Vrbo, and `403 listing_inactive` when the listing is inactive.
          */
@@ -5735,7 +5701,7 @@ export interface paths {
          *
          *     **Cost:** 1 call + 1 to read back on Vrbo, spaced ~3 s apart per account. The answer comes once Vrbo has saved and the section has been read back.
          *
-         *     **When Vrbo refuses** a value the answer is `422 vrbo_rejected` with Vrbo's own message, the refused fields in `errors` and what Vrbo has now in `data` (fields Vrbo accepted in the same request are saved). A malformed body is `422 invalid_params` naming the field, and nothing is sent to Vrbo.
+         *     **When Vrbo refuses** a value the answer is `422 vrbo_rejected` with Vrbo's own message, the refused fields in `errors` and what Vrbo has now in `data`. A malformed body is `422 invalid_params` naming the field, and nothing is sent to Vrbo.
          *
          *     Needs a Vrbo account connected with full access: one connected with messaging access answers `403 vrbo_messaging_access`. Returns `403 listing_inactive` when the listing is inactive.
          */
@@ -5758,27 +5724,41 @@ export interface paths {
          * Get the Vrbo photos
          * @description Photos in order (id, url, caption, Vrbo's own tags, rank, rooms), plus any Vrbo moderation rejected and why.
          *
-         *     Read live from the listing's Vrbo listing in the host's connected Vrbo account. **Cost:** 2 Vrbo calls on Vrbo, spaced ~3 s apart per account — a few seconds. Vrbo is read live on every request (nothing is cached), so read the section you need rather than polling.
-         *
-         *     Works with messaging or full access. Returns `404` when the listing is not linked to Vrbo, and `403 listing_inactive` when the listing is inactive.
+         *     Answers from Repull's stored copy of the listing's Vrbo content, like the Airbnb endpoints (`dataFreshness.lastSyncedAt` says when it was read from Vrbo). The first read of a section reads Vrbo and stores it; a copy over 24 h old answers and is refreshed in the background (`reason: refreshing`); every write through Repull stores what Vrbo has after it. `?source=live` reads Vrbo now. **Cost:** from the copy, milliseconds. A live read is 2 Vrbo calls on Vrbo, spaced ~3 s apart per account — a few seconds.
          */
         get: operations["getVrboListingPhotos"];
+        put?: never;
         /**
-         * Update the Vrbo photos
-         * @description Change the photos of the listing's existing Vrbo listing. **Partial:** send only the fields to change; a field you leave out is never changed on Vrbo, and a field sent as `null` means "none" (where the field can be cleared). Fields Vrbo can change but never empty once set are refused with `422 invalid_params` when sent empty or `null`, rather than answering OK while Vrbo keeps the old value. `add: [{url, caption?}]` (https URLs Vrbo downloads), `delete: [id]`, `captions: {id: caption}`, `order: [id…]`, `cover: id`. Applied in that order. `order` may list only the first photos; the rest keep their order, and every photo is sent with its new position (as Vrbo's own page does). **Captions are one-way:** Vrbo has not been shown to clear a caption once set, so an empty caption is refused. Each `add` uploads a photo again — it is the one write that is not idempotent.
+         * Add photos to the Vrbo listing
+         * @description Add 1–20 photos, each from an https `url` Vrbo downloads or as base64 `image` data (like Airbnb's upload), with an optional `caption`. New photos go to the end; move them with PATCH or PUT …/photos/order.
          *
-         *     **Cost:** about 2 calls per photo added, 1 per delete/caption/reorder, plus reads on Vrbo, spaced ~3 s apart per account. The answer comes once Vrbo has saved and the section has been read back.
+         *     **Cost:** about 2 Vrbo calls per photo, then the photos are read back.
          *
-         *     **When Vrbo refuses** a value the answer is `422 vrbo_rejected` with Vrbo's own message, the refused fields in `errors` and what Vrbo has now in `data` (fields Vrbo accepted in the same request are saved). A malformed body is `422 invalid_params` naming the field, and nothing is sent to Vrbo.
+         *     **When Vrbo refuses** a value the answer is `422 vrbo_rejected` with Vrbo's own message, the refused fields in `errors` and what Vrbo has now in `data`. A malformed body is `422 invalid_params` naming the field, and nothing is sent to Vrbo.
          *
          *     Needs a Vrbo account connected with full access: one connected with messaging access answers `403 vrbo_messaging_access`. Returns `403 listing_inactive` when the listing is inactive.
          */
-        put: operations["updateVrboListingPhotos"];
-        post?: never;
-        delete?: never;
+        post: operations["addVrboListingPhotos"];
+        /**
+         * Remove Vrbo photos
+         * @description Remove photos by `photoId` (comma-separated for several). Photo ids are the `id`s of GET …/photos.
+         *
+         *     **When Vrbo refuses** a value the answer is `422 vrbo_rejected` with Vrbo's own message, the refused fields in `errors` and what Vrbo has now in `data`. A malformed body is `422 invalid_params` naming the field, and nothing is sent to Vrbo.
+         *
+         *     Needs a Vrbo account connected with full access: one connected with messaging access answers `403 vrbo_messaging_access`. Returns `403 listing_inactive` when the listing is inactive.
+         */
+        delete: operations["deleteVrboListingPhotos"];
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * Update a Vrbo photo
+         * @description Change one photo's `caption` and/or its position (`sort_order`, 1 = first). Photo ids are the `id`s of GET …/photos. Vrbo cannot clear a caption once set.
+         *
+         *     **When Vrbo refuses** a value the answer is `422 vrbo_rejected` with Vrbo's own message, the refused fields in `errors` and what Vrbo has now in `data`. A malformed body is `422 invalid_params` naming the field, and nothing is sent to Vrbo.
+         *
+         *     Needs a Vrbo account connected with full access: one connected with messaging access answers `403 vrbo_messaging_access`. Returns `403 listing_inactive` when the listing is inactive.
+         */
+        patch: operations["updateVrboListingPhoto"];
         trace?: never;
     };
     "/v1/channels/vrbo/listings/{id}/pricing": {
@@ -5792,7 +5772,7 @@ export interface paths {
          * Get the Vrbo base pricing
          * @description Base nightly rate per weekday, weekly and monthly discounts, default minimum stay, rate limits.
          *
-         *     Read live from the listing's Vrbo listing in the host's connected Vrbo account. **Cost:** 1 Vrbo call on Vrbo, spaced ~3 s apart per account — a few seconds. Vrbo is read live on every request (nothing is cached), so read the section you need rather than polling.
+         *     Answers from Repull's stored copy of the listing's Vrbo content, like the Airbnb endpoints (`dataFreshness.lastSyncedAt` says when it was read from Vrbo). The first read of a section reads Vrbo and stores it; a copy over 24 h old answers and is refreshed in the background (`reason: refreshing`); every write through Repull stores what Vrbo has after it. `?source=live` reads Vrbo now. **Cost:** from the copy, milliseconds. A live read is 1 Vrbo call on Vrbo, spaced ~3 s apart per account — a few seconds.
          *
          *     Works with messaging or full access. Returns `404` when the listing is not linked to Vrbo, and `403 listing_inactive` when the listing is inactive.
          */
@@ -5803,45 +5783,11 @@ export interface paths {
          *
          *     **Cost:** 2 calls + 1 to read back on Vrbo, spaced ~3 s apart per account. The answer comes once Vrbo has saved and the section has been read back.
          *
-         *     **When Vrbo refuses** a value the answer is `422 vrbo_rejected` with Vrbo's own message, the refused fields in `errors` and what Vrbo has now in `data` (fields Vrbo accepted in the same request are saved). A malformed body is `422 invalid_params` naming the field, and nothing is sent to Vrbo.
+         *     **When Vrbo refuses** a value the answer is `422 vrbo_rejected` with Vrbo's own message, the refused fields in `errors` and what Vrbo has now in `data`. A malformed body is `422 invalid_params` naming the field, and nothing is sent to Vrbo.
          *
          *     Needs a Vrbo account connected with full access: one connected with messaging access answers `403 vrbo_messaging_access`. Returns `403 listing_inactive` when the listing is inactive.
          */
         put: operations["updateVrboListingPricing"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/channels/vrbo/listings/{id}/property": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get the Vrbo property details
-         * @description Property type (and the types Vrbo offers), internal name, interior size, seniors-only and long-term-renter flags.
-         *
-         *     Read live from the listing's Vrbo listing in the host's connected Vrbo account. **Cost:** 1 Vrbo call on Vrbo, spaced ~3 s apart per account — a few seconds. Vrbo is read live on every request (nothing is cached), so read the section you need rather than polling.
-         *
-         *     Works with messaging or full access. Returns `404` when the listing is not linked to Vrbo, and `403 listing_inactive` when the listing is inactive.
-         */
-        get: operations["getVrboListingProperty"];
-        /**
-         * Update the Vrbo property details
-         * @description Change the property details of the listing's existing Vrbo listing. **Partial:** send only the fields to change; a field you leave out is never changed on Vrbo, and a field sent as `null` means "none" (where the field can be cleared). Fields Vrbo can change but never empty once set are refused with `422 invalid_params` when sent empty or `null`, rather than answering OK while Vrbo keeps the old value. Any of `propertyType` (one of `propertyTypeOptions`), `propertyName`, `interiorSize` `{value, unit: sqft|sqm}`, `seniorsOnly`, `longTermRentersWelcome`. `propertyType` and `propertyName` can be changed but not cleared.
-         *
-         *     **Cost:** 1 call + 1 to read back on Vrbo, spaced ~3 s apart per account. The answer comes once Vrbo has saved and the section has been read back.
-         *
-         *     **When Vrbo refuses** a value the answer is `422 vrbo_rejected` with Vrbo's own message, the refused fields in `errors` and what Vrbo has now in `data` (fields Vrbo accepted in the same request are saved). A malformed body is `422 invalid_params` naming the field, and nothing is sent to Vrbo.
-         *
-         *     Needs a Vrbo account connected with full access: one connected with messaging access answers `403 vrbo_messaging_access`. Returns `403 listing_inactive` when the listing is inactive.
-         */
-        put: operations["updateVrboListingProperty"];
         post?: never;
         delete?: never;
         options?: never;
@@ -5860,7 +5806,7 @@ export interface paths {
          * Get the Vrbo damage protection
          * @description Refundable damage deposit and damage protection.
          *
-         *     Read live from the listing's Vrbo listing in the host's connected Vrbo account. **Cost:** 1 Vrbo call on Vrbo, spaced ~3 s apart per account — a few seconds. Vrbo is read live on every request (nothing is cached), so read the section you need rather than polling.
+         *     Answers from Repull's stored copy of the listing's Vrbo content, like the Airbnb endpoints (`dataFreshness.lastSyncedAt` says when it was read from Vrbo). The first read of a section reads Vrbo and stores it; a copy over 24 h old answers and is refreshed in the background (`reason: refreshing`); every write through Repull stores what Vrbo has after it. `?source=live` reads Vrbo now. **Cost:** from the copy, milliseconds. A live read is 1 Vrbo call on Vrbo, spaced ~3 s apart per account — a few seconds.
          *
          *     Works with messaging or full access. Returns `404` when the listing is not linked to Vrbo, and `403 listing_inactive` when the listing is inactive.
          */
@@ -5871,45 +5817,11 @@ export interface paths {
          *
          *     **Cost:** 1 call + 1 to read back on Vrbo, spaced ~3 s apart per account. The answer comes once Vrbo has saved and the section has been read back.
          *
-         *     **When Vrbo refuses** a value the answer is `422 vrbo_rejected` with Vrbo's own message, the refused fields in `errors` and what Vrbo has now in `data` (fields Vrbo accepted in the same request are saved). A malformed body is `422 invalid_params` naming the field, and nothing is sent to Vrbo.
+         *     **When Vrbo refuses** a value the answer is `422 vrbo_rejected` with Vrbo's own message, the refused fields in `errors` and what Vrbo has now in `data`. A malformed body is `422 invalid_params` naming the field, and nothing is sent to Vrbo.
          *
          *     Needs a Vrbo account connected with full access: one connected with messaging access answers `403 vrbo_messaging_access`. Returns `403 listing_inactive` when the listing is inactive.
          */
         put: operations["updateVrboListingProtection"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/channels/vrbo/listings/{id}/registration": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get the Vrbo registration / licence
-         * @description The local registration or licence fields Vrbo asks for in the listing's jurisdiction, and their status.
-         *
-         *     Read live from the listing's Vrbo listing in the host's connected Vrbo account. **Cost:** 1 Vrbo call on Vrbo, spaced ~3 s apart per account — a few seconds. Vrbo is read live on every request (nothing is cached), so read the section you need rather than polling.
-         *
-         *     Works with messaging or full access. Returns `404` when the listing is not linked to Vrbo, and `403 listing_inactive` when the listing is inactive.
-         */
-        get: operations["getVrboListingRegistration"];
-        /**
-         * Update the Vrbo registration / licence
-         * @description Change the registration / licence of the listing's existing Vrbo listing. **Partial:** send only the fields to change; a field you leave out is never changed on Vrbo, and a field sent as `null` means "none" (where the field can be cleared). Fields Vrbo can change but never empty once set are refused with `422 invalid_params` when sent empty or `null`, rather than answering OK while Vrbo keeps the old value. `settings: [{name, value}]` with the `name`s the read lists (they differ per city). Vrbo checks them against the registry.
-         *
-         *     **Cost:** 1 call + 1 to read back on Vrbo, spaced ~3 s apart per account. The answer comes once Vrbo has saved and the section has been read back.
-         *
-         *     **When Vrbo refuses** a value the answer is `422 vrbo_rejected` with Vrbo's own message, the refused fields in `errors` and what Vrbo has now in `data` (fields Vrbo accepted in the same request are saved). A malformed body is `422 invalid_params` naming the field, and nothing is sent to Vrbo.
-         *
-         *     Needs a Vrbo account connected with full access: one connected with messaging access answers `403 vrbo_messaging_access`. Returns `403 listing_inactive` when the listing is inactive.
-         */
-        put: operations["updateVrboListingRegistration"];
         post?: never;
         delete?: never;
         options?: never;
@@ -5925,27 +5837,39 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get the Vrbo rooms and spaces
+         * Get the Vrbo rooms
          * @description Bedrooms, bathrooms, living rooms and other spaces with their beds and room amenities; the space, bed and bathroom types Vrbo offers.
          *
-         *     Read live from the listing's Vrbo listing in the host's connected Vrbo account. **Cost:** 1 Vrbo call + 1 per room on Vrbo, spaced ~3 s apart per account — a few seconds. Vrbo is read live on every request (nothing is cached), so read the section you need rather than polling.
-         *
-         *     Works with messaging or full access. Returns `404` when the listing is not linked to Vrbo, and `403 listing_inactive` when the listing is inactive.
+         *     Answers from Repull's stored copy of the listing's Vrbo content, like the Airbnb endpoints (`dataFreshness.lastSyncedAt` says when it was read from Vrbo). The first read of a section reads Vrbo and stores it; a copy over 24 h old answers and is refreshed in the background (`reason: refreshing`); every write through Repull stores what Vrbo has after it. `?source=live` reads Vrbo now. **Cost:** from the copy, milliseconds. A live read is 1 Vrbo call + 1 per room on Vrbo, spaced ~3 s apart per account — a few seconds.
          */
         get: operations["getVrboListingRooms"];
         /**
-         * Update the Vrbo rooms and spaces
-         * @description Change the rooms and spaces of the listing's existing Vrbo listing. **Partial:** send only the fields to change; a field you leave out is never changed on Vrbo, and a field sent as `null` means "none" (where the field can be cleared). Fields Vrbo can change but never empty once set are refused with `422 invalid_params` when sent empty or `null`, rather than answering OK while Vrbo keeps the old value. `add: [{type, name?, subType?, description?, beds?, amenities?}]`, `update: [{spaceId, …}]`, `delete: [spaceId]`. Beds `{type, size?, quantity 1–99}`: `type` one of the read's `bedTypes`, and `size` is required where that bed type lists `sizes` (bunk, sofa…). **A room description can be replaced but not cleared** (Vrbo never saves an empty one), so an empty `description` is refused.
+         * Update a Vrbo room
+         * @description Change a room's name, description, bathroom type, beds or room amenities. Vrbo cannot change the type of a room: delete it and add one. `beds` replaces the room's beds.
          *
-         *     **Cost:** 1 call per room changed + the read back on Vrbo, spaced ~3 s apart per account. The answer comes once Vrbo has saved and the section has been read back.
-         *
-         *     **When Vrbo refuses** a value the answer is `422 vrbo_rejected` with Vrbo's own message, the refused fields in `errors` and what Vrbo has now in `data` (fields Vrbo accepted in the same request are saved). A malformed body is `422 invalid_params` naming the field, and nothing is sent to Vrbo.
+         *     **When Vrbo refuses** a value the answer is `422 vrbo_rejected` with Vrbo's own message, the refused fields in `errors` and what Vrbo has now in `data`. A malformed body is `422 invalid_params` naming the field, and nothing is sent to Vrbo.
          *
          *     Needs a Vrbo account connected with full access: one connected with messaging access answers `403 vrbo_messaging_access`. Returns `403 listing_inactive` when the listing is inactive.
          */
-        put: operations["updateVrboListingRooms"];
-        post?: never;
-        delete?: never;
+        put: operations["updateVrboListingRoom"];
+        /**
+         * Add a room to the Vrbo listing
+         * @description Add one room with its beds. Room types: Airbnb's words (`bedroom`, `bathroom`, `living_room`, `office`) or Vrbo's (BEDROOM, BATHROOM, LIVING_ROOM, OFFICE) — Vrbo has no other room types; describe a kitchen or outdoor space with the amenities.
+         *
+         *     **When Vrbo refuses** a value the answer is `422 vrbo_rejected` with Vrbo's own message, the refused fields in `errors` and what Vrbo has now in `data`. A malformed body is `422 invalid_params` naming the field, and nothing is sent to Vrbo.
+         *
+         *     Needs a Vrbo account connected with full access: one connected with messaging access answers `403 vrbo_messaging_access`. Returns `403 listing_inactive` when the listing is inactive.
+         */
+        post: operations["addVrboListingRoom"];
+        /**
+         * Remove a Vrbo room
+         * @description Remove the room `roomId`.
+         *
+         *     **When Vrbo refuses** a value the answer is `422 vrbo_rejected` with Vrbo's own message, the refused fields in `errors` and what Vrbo has now in `data`. A malformed body is `422 invalid_params` naming the field, and nothing is sent to Vrbo.
+         *
+         *     Needs a Vrbo account connected with full access: one connected with messaging access answers `403 vrbo_messaging_access`. Returns `403 listing_inactive` when the listing is inactive.
+         */
+        delete: operations["deleteVrboListingRoom"];
         options?: never;
         head?: never;
         patch?: never;
@@ -5962,7 +5886,7 @@ export interface paths {
          * Get the Vrbo host story
          * @description "Your story" on the listing: about you, why this property, what makes it unique.
          *
-         *     Read live from the listing's Vrbo listing in the host's connected Vrbo account. **Cost:** 1 Vrbo call on Vrbo, spaced ~3 s apart per account — a few seconds. Vrbo is read live on every request (nothing is cached), so read the section you need rather than polling.
+         *     Answers from Repull's stored copy of the listing's Vrbo content, like the Airbnb endpoints (`dataFreshness.lastSyncedAt` says when it was read from Vrbo). The first read of a section reads Vrbo and stores it; a copy over 24 h old answers and is refreshed in the background (`reason: refreshing`); every write through Repull stores what Vrbo has after it. `?source=live` reads Vrbo now. **Cost:** from the copy, milliseconds. A live read is 1 Vrbo call on Vrbo, spaced ~3 s apart per account — a few seconds.
          *
          *     Works with messaging or full access. Returns `404` when the listing is not linked to Vrbo, and `403 listing_inactive` when the listing is inactive.
          */
@@ -5973,7 +5897,7 @@ export interface paths {
          *
          *     **Cost:** 1 call + 1 to read back on Vrbo, spaced ~3 s apart per account. The answer comes once Vrbo has saved and the section has been read back.
          *
-         *     **When Vrbo refuses** a value the answer is `422 vrbo_rejected` with Vrbo's own message, the refused fields in `errors` and what Vrbo has now in `data` (fields Vrbo accepted in the same request are saved). A malformed body is `422 invalid_params` naming the field, and nothing is sent to Vrbo.
+         *     **When Vrbo refuses** a value the answer is `422 vrbo_rejected` with Vrbo's own message, the refused fields in `errors` and what Vrbo has now in `data`. A malformed body is `422 invalid_params` naming the field, and nothing is sent to Vrbo.
          *
          *     Needs a Vrbo account connected with full access: one connected with messaging access answers `403 vrbo_messaging_access`. Returns `403 listing_inactive` when the listing is inactive.
          */
@@ -5996,7 +5920,7 @@ export interface paths {
          * Get the Vrbo taxes
          * @description Who collects tax and the rules that apply. Where Vrbo collects (e.g. British Columbia) the rules are read-only.
          *
-         *     Read live from the listing's Vrbo listing in the host's connected Vrbo account. **Cost:** 1 Vrbo call on Vrbo, spaced ~3 s apart per account — a few seconds. Vrbo is read live on every request (nothing is cached), so read the section you need rather than polling.
+         *     Answers from Repull's stored copy of the listing's Vrbo content, like the Airbnb endpoints (`dataFreshness.lastSyncedAt` says when it was read from Vrbo). The first read of a section reads Vrbo and stores it; a copy over 24 h old answers and is refreshed in the background (`reason: refreshing`); every write through Repull stores what Vrbo has after it. `?source=live` reads Vrbo now. **Cost:** from the copy, milliseconds. A live read is 1 Vrbo call on Vrbo, spaced ~3 s apart per account — a few seconds.
          *
          *     Works with messaging or full access. Returns `404` when the listing is not linked to Vrbo, and `403 listing_inactive` when the listing is inactive.
          */
@@ -6007,45 +5931,11 @@ export interface paths {
          *
          *     **Cost:** 2 calls + 1 to read back on Vrbo, spaced ~3 s apart per account. The answer comes once Vrbo has saved and the section has been read back.
          *
-         *     **When Vrbo refuses** a value the answer is `422 vrbo_rejected` with Vrbo's own message, the refused fields in `errors` and what Vrbo has now in `data` (fields Vrbo accepted in the same request are saved). A malformed body is `422 invalid_params` naming the field, and nothing is sent to Vrbo.
+         *     **When Vrbo refuses** a value the answer is `422 vrbo_rejected` with Vrbo's own message, the refused fields in `errors` and what Vrbo has now in `data`. A malformed body is `422 invalid_params` naming the field, and nothing is sent to Vrbo.
          *
          *     Needs a Vrbo account connected with full access: one connected with messaging access answers `403 vrbo_messaging_access`. Returns `403 listing_inactive` when the listing is inactive.
          */
         put: operations["updateVrboListingTaxes"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/channels/vrbo/listings/{id}/translations": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get the Vrbo manual translations
-         * @description Headline and description written per language (they replace Vrbo's automatic translation), and the languages Vrbo offers.
-         *
-         *     Read live from the listing's Vrbo listing in the host's connected Vrbo account. **Cost:** 1 Vrbo call + 1 per language on Vrbo, spaced ~3 s apart per account — a few seconds. Vrbo is read live on every request (nothing is cached), so read the section you need rather than polling.
-         *
-         *     Works with messaging or full access. Returns `404` when the listing is not linked to Vrbo, and `403 listing_inactive` when the listing is inactive.
-         */
-        get: operations["getVrboListingTranslations"];
-        /**
-         * Update the Vrbo manual translations
-         * @description Change the manual translations of the listing's existing Vrbo listing. **Partial:** send only the fields to change; a field you leave out is never changed on Vrbo, and a field sent as `null` means "none" (where the field can be cleared). Fields Vrbo can change but never empty once set are refused with `422 invalid_params` when sent empty or `null`, rather than answering OK while Vrbo keeps the old value. `set: [{locale, headline, description}]` and/or `delete: [locale]`.
-         *
-         *     **Cost:** 1 call per language + the read back on Vrbo, spaced ~3 s apart per account. The answer comes once Vrbo has saved and the section has been read back.
-         *
-         *     **When Vrbo refuses** a value the answer is `422 vrbo_rejected` with Vrbo's own message, the refused fields in `errors` and what Vrbo has now in `data` (fields Vrbo accepted in the same request are saved). A malformed body is `422 invalid_params` naming the field, and nothing is sent to Vrbo.
-         *
-         *     Needs a Vrbo account connected with full access: one connected with messaging access answers `403 vrbo_messaging_access`. Returns `403 listing_inactive` when the listing is inactive.
-         */
-        put: operations["updateVrboListingTranslations"];
         post?: never;
         delete?: never;
         options?: never;
@@ -6064,7 +5954,7 @@ export interface paths {
          * Get the Vrbo videos
          * @description The listing's videos with their file name, Vrbo's processing and review status, player and thumbnail URLs, upload time and any reasons Vrbo rejected them.
          *
-         *     Read live from the listing's Vrbo listing in the host's connected Vrbo account. **Cost:** 1 Vrbo call on Vrbo, spaced ~3 s apart per account — a few seconds. Vrbo is read live on every request (nothing is cached), so read the section you need rather than polling.
+         *     Answers from Repull's stored copy of the listing's Vrbo content, like the Airbnb endpoints (`dataFreshness.lastSyncedAt` says when it was read from Vrbo). The first read of a section reads Vrbo and stores it; a copy over 24 h old answers and is refreshed in the background (`reason: refreshing`); every write through Repull stores what Vrbo has after it. `?source=live` reads Vrbo now. **Cost:** from the copy, milliseconds. A live read is 1 Vrbo call on Vrbo, spaced ~3 s apart per account — a few seconds.
          *
          *     Works with messaging or full access. Returns `404` when the listing is not linked to Vrbo, and `403 listing_inactive` when the listing is inactive.
          */
@@ -6091,40 +5981,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/channels/vrbo/listings/{id}/welcome-guide": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get the Vrbo welcome guide
-         * @description What guests receive before arrival: check-in and check-out instructions, driving and parking directions, access (type, code), wifi, per-amenity instructions, contacts.
-         *
-         *     Read live from the listing's Vrbo listing in the host's connected Vrbo account. **Cost:** 1 Vrbo call on Vrbo, spaced ~3 s apart per account — a few seconds. Vrbo is read live on every request (nothing is cached), so read the section you need rather than polling.
-         *
-         *     Works with messaging or full access. Returns `404` when the listing is not linked to Vrbo, and `403 listing_inactive` when the listing is inactive.
-         */
-        get: operations["getVrboListingWelcomeGuide"];
-        /**
-         * Update the Vrbo welcome guide
-         * @description Change the welcome guide of the listing's existing Vrbo listing. **Partial:** send only the fields to change; a field you leave out is never changed on Vrbo, and a field sent as `null` means "none" (where the field can be cleared). Fields Vrbo can change but never empty once set are refused with `422 invalid_params` when sent empty or `null`, rather than answering OK while Vrbo keeps the old value. Any of `checkIn`, `checkOut`, `drivingDirections`, `parkingDirections` (`{instructions}`), `wifi`, `access`, `amenities` (`{AMENITY_ID: {instructions}}`). **The notes are one-way:** Vrbo has not been shown to remove a note once added, so `null` and empty text are refused — change a note to other text instead.
-         *
-         *     **Cost:** 1–2 calls per item + the read back on Vrbo, spaced ~3 s apart per account. The answer comes once Vrbo has saved and the section has been read back.
-         *
-         *     **When Vrbo refuses** a value the answer is `422 vrbo_rejected` with Vrbo's own message, the refused fields in `errors` and what Vrbo has now in `data` (fields Vrbo accepted in the same request are saved). A malformed body is `422 invalid_params` naming the field, and nothing is sent to Vrbo.
-         *
-         *     Needs a Vrbo account connected with full access: one connected with messaging access answers `403 vrbo_messaging_access`. Returns `403 listing_inactive` when the listing is inactive.
-         */
-        put: operations["updateVrboListingWelcomeGuide"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/v1/channels/vrbo/listings/{id}/rates": {
         parameters: {
             query?: never;
@@ -6136,7 +5992,7 @@ export interface paths {
          * Get the Vrbo rates and stay discounts
          * @description Per night over a date range: the nightly rate, its weekday, the weekly (7–27 nights) and monthly (28+ nights) discounts and the minimum stay. Vrbo offers only these two stay discounts, saved per night with the weekday prices.
          *
-         *     Read live from the listing's Vrbo listing in the host's connected Vrbo account. **Cost:** 1 Vrbo calendar call (`?start=&end=`, default today + 13 days) on Vrbo, spaced ~3 s apart per account — a few seconds. Vrbo is read live on every request (nothing is cached), so read the section you need rather than polling.
+         *     Read live from Vrbo on every request (a date range). **Cost:** 1 Vrbo calendar call (`?start=&end=`, default today + 13 days) on Vrbo, spaced ~3 s apart per account.
          *
          *     Works with messaging or full access. Returns `404` when the listing is not linked to Vrbo, and `403 listing_inactive` when the listing is inactive.
          */
@@ -6147,11 +6003,366 @@ export interface paths {
          *
          *     **Cost:** 1–2 calendar calls + 1 to read back (Vrbo's calendar quota, the one price pushes use) on Vrbo, spaced ~3 s apart per account. The answer comes once Vrbo has saved and the section has been read back.
          *
-         *     **When Vrbo refuses** a value the answer is `422 vrbo_rejected` with Vrbo's own message, the refused fields in `errors` and what Vrbo has now in `data` (fields Vrbo accepted in the same request are saved). A malformed body is `422 invalid_params` naming the field, and nothing is sent to Vrbo.
+         *     **When Vrbo refuses** a value the answer is `422 vrbo_rejected` with Vrbo's own message, the refused fields in `errors` and what Vrbo has now in `data`. A malformed body is `422 invalid_params` naming the field, and nothing is sent to Vrbo.
          *
          *     Needs a Vrbo account connected with full access: one connected with messaging access answers `403 vrbo_messaging_access`. Returns `403 listing_inactive` when the listing is inactive.
          */
         put: operations["updateVrboListingRates"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/vrbo/listings/{id}/checkin-guide": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the Vrbo welcome guide
+         * @description What guests receive before arrival: check-in and check-out instructions, driving and parking directions, access (type, code), wifi, per-amenity instructions, contacts.
+         *
+         *     Answers from Repull's stored copy of the listing's Vrbo content, like the Airbnb endpoints (`dataFreshness.lastSyncedAt` says when it was read from Vrbo). The first read of a section reads Vrbo and stores it; a copy over 24 h old answers and is refreshed in the background (`reason: refreshing`); every write through Repull stores what Vrbo has after it. `?source=live` reads Vrbo now. **Cost:** from the copy, milliseconds. A live read is 1 Vrbo call on Vrbo, spaced ~3 s apart per account — a few seconds.
+         *
+         *     Works with messaging or full access. Returns `404` when the listing is not linked to Vrbo, and `403 listing_inactive` when the listing is inactive.
+         */
+        get: operations["getVrboListingCheckinGuide"];
+        /**
+         * Update the Vrbo welcome guide
+         * @description Change the welcome guide of the listing's existing Vrbo listing. **Partial:** send only the fields to change; a field you leave out is never changed on Vrbo, and a field sent as `null` means "none" (where the field can be cleared). Fields Vrbo can change but never empty once set are refused with `422 invalid_params` when sent empty or `null`, rather than answering OK while Vrbo keeps the old value. Any of `checkIn`, `checkOut`, `drivingDirections`, `parkingDirections` (`{instructions}`), `wifi`, `access`, `amenities` (`{AMENITY_ID: {instructions}}`). **The notes are one-way:** Vrbo has not been shown to remove a note once added, so `null` and empty text are refused — change a note to other text instead.
+         *
+         *     **Cost:** 1–2 calls per item + the read back on Vrbo, spaced ~3 s apart per account. The answer comes once Vrbo has saved and the section has been read back.
+         *
+         *     **When Vrbo refuses** a value the answer is `422 vrbo_rejected` with Vrbo's own message, the refused fields in `errors` and what Vrbo has now in `data`. A malformed body is `422 invalid_params` naming the field, and nothing is sent to Vrbo.
+         *
+         *     Needs a Vrbo account connected with full access: one connected with messaging access answers `403 vrbo_messaging_access`. Returns `403 listing_inactive` when the listing is inactive.
+         */
+        put: operations["updateVrboListingCheckinGuide"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/vrbo/listings/{id}/checkout-guide": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the Vrbo checkout guide
+         * @description The checkout instructions guests get in Vrbo's welcome guide (`instructions`, `photos`). Written with PUT …/checkin-guide (`checkOut`), which holds the whole guide.
+         *
+         *     Answers from Repull's stored copy of the listing's Vrbo content, like the Airbnb endpoints (`dataFreshness.lastSyncedAt` says when it was read from Vrbo). The first read of a section reads Vrbo and stores it; a copy over 24 h old answers and is refreshed in the background (`reason: refreshing`); every write through Repull stores what Vrbo has after it. `?source=live` reads Vrbo now.
+         */
+        get: operations["getVrboListingCheckoutGuide"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/vrbo/listings/{id}/descriptions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the Vrbo headline and description
+         * @description The headline and description guests read: the listing's own language (`primary: true`, `locale: null`) and every language written for it by hand, which replaces Vrbo's automatic translation. `?locale=` returns one language.
+         *
+         *     Answers from Repull's stored copy of the listing's Vrbo content, like the Airbnb endpoints (`dataFreshness.lastSyncedAt` says when it was read from Vrbo). The first read of a section reads Vrbo and stores it; a copy over 24 h old answers and is refreshed in the background (`reason: refreshing`); every write through Repull stores what Vrbo has after it. `?source=live` reads Vrbo now. **Cost:** from the copy, milliseconds; a live read is 2 Vrbo calls plus 1 per language.
+         */
+        get: operations["getVrboListingDescriptions"];
+        /**
+         * Update the Vrbo headline and description
+         * @description Change the headline and/or description. Without `locale` this is the listing's own language; with `locale` (one of `languages`) it writes that language's translation by hand — a field left out keeps the text Vrbo has for it. Vrbo refuses some characters and words (`( ) * $ €`, other platforms' names, "covid") and says which.
+         *
+         *     The answer is every language, as GET returns it.
+         *
+         *     **Cost:** 1 Vrbo call + 1 to read back (a translation with one field: +1 to read the other).
+         *
+         *     **When Vrbo refuses** a value the answer is `422 vrbo_rejected` with Vrbo's own message, the refused fields in `errors` and what Vrbo has now in `data`. A malformed body is `422 invalid_params` naming the field, and nothing is sent to Vrbo.
+         *
+         *     Needs a Vrbo account connected with full access: one connected with messaging access answers `403 vrbo_messaging_access`. Returns `403 listing_inactive` when the listing is inactive.
+         */
+        put: operations["updateVrboListingDescriptions"];
+        post?: never;
+        /**
+         * Remove a Vrbo translation
+         * @description Remove the hand-written translation for `locale`; Vrbo goes back to translating that language automatically. The listing's own description cannot be removed, only changed. The answer is every language left.
+         *
+         *     **When Vrbo refuses** a value the answer is `422 vrbo_rejected` with Vrbo's own message, the refused fields in `errors` and what Vrbo has now in `data`. A malformed body is `422 invalid_params` naming the field, and nothing is sent to Vrbo.
+         *
+         *     Needs a Vrbo account connected with full access: one connected with messaging access answers `403 vrbo_messaging_access`. Returns `403 listing_inactive` when the listing is inactive.
+         */
+        delete: operations["deleteVrboListingDescription"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/vrbo/listings/{id}/details": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the Vrbo property details
+         * @description Property type (and the types Vrbo offers), internal name, interior size, seniors-only and long-term-renter flags.
+         *
+         *     Answers from Repull's stored copy of the listing's Vrbo content, like the Airbnb endpoints (`dataFreshness.lastSyncedAt` says when it was read from Vrbo). The first read of a section reads Vrbo and stores it; a copy over 24 h old answers and is refreshed in the background (`reason: refreshing`); every write through Repull stores what Vrbo has after it. `?source=live` reads Vrbo now. **Cost:** from the copy, milliseconds. A live read is 1 Vrbo call on Vrbo, spaced ~3 s apart per account — a few seconds.
+         *
+         *     Works with messaging or full access. Returns `404` when the listing is not linked to Vrbo, and `403 listing_inactive` when the listing is inactive.
+         */
+        get: operations["getVrboListingDetails"];
+        /**
+         * Update the Vrbo property details
+         * @description Change the property details of the listing's existing Vrbo listing. **Partial:** send only the fields to change; a field you leave out is never changed on Vrbo, and a field sent as `null` means "none" (where the field can be cleared). Fields Vrbo can change but never empty once set are refused with `422 invalid_params` when sent empty or `null`, rather than answering OK while Vrbo keeps the old value. Any of `propertyType` (one of `propertyTypeOptions`), `propertyName`, `interiorSize` `{value, unit: sqft|sqm}`, `seniorsOnly`, `longTermRentersWelcome`. `propertyType` and `propertyName` can be changed but not cleared.
+         *
+         *     **Cost:** 1 call + 1 to read back on Vrbo, spaced ~3 s apart per account. The answer comes once Vrbo has saved and the section has been read back.
+         *
+         *     **When Vrbo refuses** a value the answer is `422 vrbo_rejected` with Vrbo's own message, the refused fields in `errors` and what Vrbo has now in `data`. A malformed body is `422 invalid_params` naming the field, and nothing is sent to Vrbo.
+         *
+         *     Needs a Vrbo account connected with full access: one connected with messaging access answers `403 vrbo_messaging_access`. Returns `403 listing_inactive` when the listing is inactive.
+         */
+        put: operations["updateVrboListingDetails"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/vrbo/listings/{id}/permits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the Vrbo registration / licence
+         * @description The local registration or licence fields Vrbo asks for in the listing's jurisdiction, and their status.
+         *
+         *     Answers from Repull's stored copy of the listing's Vrbo content, like the Airbnb endpoints (`dataFreshness.lastSyncedAt` says when it was read from Vrbo). The first read of a section reads Vrbo and stores it; a copy over 24 h old answers and is refreshed in the background (`reason: refreshing`); every write through Repull stores what Vrbo has after it. `?source=live` reads Vrbo now. **Cost:** from the copy, milliseconds. A live read is 1 Vrbo call on Vrbo, spaced ~3 s apart per account — a few seconds.
+         *
+         *     Works with messaging or full access. Returns `404` when the listing is not linked to Vrbo, and `403 listing_inactive` when the listing is inactive.
+         */
+        get: operations["getVrboListingPermits"];
+        /**
+         * Update the Vrbo registration / licence
+         * @description Change the registration / licence of the listing's existing Vrbo listing. **Partial:** send only the fields to change; a field you leave out is never changed on Vrbo, and a field sent as `null` means "none" (where the field can be cleared). Fields Vrbo can change but never empty once set are refused with `422 invalid_params` when sent empty or `null`, rather than answering OK while Vrbo keeps the old value. `settings: [{name, value}]` with the `name`s the read lists (they differ per city). Vrbo checks them against the registry.
+         *
+         *     **Cost:** 1 call + 1 to read back on Vrbo, spaced ~3 s apart per account. The answer comes once Vrbo has saved and the section has been read back.
+         *
+         *     **When Vrbo refuses** a value the answer is `422 vrbo_rejected` with Vrbo's own message, the refused fields in `errors` and what Vrbo has now in `data`. A malformed body is `422 invalid_params` naming the field, and nothing is sent to Vrbo.
+         *
+         *     Needs a Vrbo account connected with full access: one connected with messaging access answers `403 vrbo_messaging_access`. Returns `403 listing_inactive` when the listing is inactive.
+         */
+        put: operations["updateVrboListingPermits"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/vrbo/listings/{id}/photos/cover": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set the Vrbo cover photo
+         * @description Make one photo the first, the one guests see in search. Photo ids are the `id`s of GET …/photos.
+         *
+         *     **When Vrbo refuses** a value the answer is `422 vrbo_rejected` with Vrbo's own message, the refused fields in `errors` and what Vrbo has now in `data`. A malformed body is `422 invalid_params` naming the field, and nothing is sent to Vrbo.
+         *
+         *     Needs a Vrbo account connected with full access: one connected with messaging access answers `403 vrbo_messaging_access`. Returns `403 listing_inactive` when the listing is inactive.
+         */
+        put: operations["setVrboListingCoverPhoto"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/vrbo/listings/{id}/photos/order": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Reorder the Vrbo photos
+         * @description Put the photos in this order, first photo first. Photos left out keep their order after the ones sent. Photo ids are the `id`s of GET …/photos.
+         *
+         *     **When Vrbo refuses** a value the answer is `422 vrbo_rejected` with Vrbo's own message, the refused fields in `errors` and what Vrbo has now in `data`. A malformed body is `422 invalid_params` naming the field, and nothing is sent to Vrbo.
+         *
+         *     Needs a Vrbo account connected with full access: one connected with messaging access answers `403 vrbo_messaging_access`. Returns `403 listing_inactive` when the listing is inactive.
+         */
+        put: operations["reorderVrboListingPhotos"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/vrbo/listings/{id}/safety-disclosures": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the Vrbo safety disclosures
+         * @description What the listing tells guests about safety — the same path as Airbnb's safety disclosures. On Vrbo these are two amenity groups, field by field like GET …/amenities: `homeSafety` (smoke and carbon-monoxide detectors, fire extinguisher, deadbolt lock, exterior lighting, first-aid kit and where it is, emergency exit instructions, hospital and police contacts) and `safetyDevices` (smoke and carbon-monoxide detectors, gas-powered appliances). The detector questions are choices (`yes` / `no`, see each field's `options`).
+         *
+         *     Answers from Repull's stored copy of the listing's Vrbo content, like the Airbnb endpoints (`dataFreshness.lastSyncedAt` says when it was read from Vrbo). The first read of a section reads Vrbo and stores it; a copy over 24 h old answers and is refreshed in the background (`reason: refreshing`); every write through Repull stores what Vrbo has after it. `?source=live` reads Vrbo now. **Cost:** from the copy, milliseconds; a live read is 2 Vrbo calls.
+         */
+        get: operations["getVrboListingSafetyDisclosures"];
+        /**
+         * Update the Vrbo safety disclosures
+         * @description Set safety values field by field, as PUT …/amenities does for these two groups: `{"groups": {"homeSafety": {"values": {"smockDetector": "yes", "firstAidKit": true}}}}` (Vrbo's own field ids, as the read lists them). Field ids are in the read.
+         *
+         *     **When Vrbo refuses** a value the answer is `422 vrbo_rejected` with Vrbo's own message, the refused fields in `errors` and what Vrbo has now in `data`. A malformed body is `422 invalid_params` naming the field, and nothing is sent to Vrbo.
+         *
+         *     Needs a Vrbo account connected with full access: one connected with messaging access answers `403 vrbo_messaging_access`. Returns `403 listing_inactive` when the listing is inactive.
+         */
+        put: operations["updateVrboListingSafetyDisclosures"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/vrbo/listings/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the Vrbo listing
+         * @description Every Vrbo unit linked to the listing (usually one; live ones first), from Repull's own data — no Vrbo call: the Vrbo listing number and URL, Vrbo's status, headline, capacity, rooms, check-in/out, minimum stay, address, rating, the Vrbo account it is on and that account's access.
+         *
+         *     `?include=content` adds the listing-content sections Repull holds for each unit (descriptions, amenities, house rules, fees, …), so one call returns everything stored.
+         *
+         *     Returns `404` when the listing is not linked to Vrbo and `403 listing_inactive` when the listing is inactive.
+         */
+        get: operations["getVrboListing"];
+        put?: never;
+        /**
+         * Act on the Vrbo listing
+         * @description Airbnb's listing actions, on Vrbo:
+         *
+         *     - `push` / `publish` — push the listing's content onto its Vrbo listing: the same job as `POST /v1/listings/{id}/publish/vrbo` (`202`, poll `GET /v1/listings/{id}/publish/vrbo?jobId=`). Optional `sections` and `vrboListingNumber`.
+         *     - `unlist` — Vrbo's "Hide listing": out of Vrbo search, no new bookings. Read back from Vrbo before answering.
+         *     - `relist` — Vrbo's "Reactivate".
+         *     - `delete` — deactivate the Repull record (local; the Vrbo listing is not touched — use `unlist` for that).
+         *
+         *     `unlist` / `relist` act on every Vrbo unit of the listing, or the one named with `vrboListingNumber`. Needs full access. See https://repull.dev/docs/channels/vrbo/listing-content.
+         */
+        post: operations["vrboListingAction"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/vrbo/connection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the Vrbo connection state
+         * @description Whether the workspace's Vrbo accounts are still signed in — the Vrbo counterpart of `GET /v1/channels/airbnb/connection`, with the same `status` values: `connected` (every account), `reconnect_required` (some), `disconnected` (none), `never_connected` (no Vrbo account). `fixUrl` is set whenever an account needs to be reconnected.
+         *
+         *     Per account: its `account_id`, name, sign-in state, access (`full_access` or `messaging`), the Vrbo units linked through it, when it last synced and its import progress.
+         */
+        get: operations["getVrboConnection"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/vrbo/listings/map": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Link a Vrbo listing to a Repull listing
+         * @description Link a Vrbo unit that is already on the host's connected Vrbo account to a Repull listing — the Vrbo counterpart of `POST /v1/channels/airbnb/listings/map`. Send `listingId` to link it to that listing, or `create: true` to create a Repull listing from what Vrbo shows. Once linked, the unit's bookings and messages are imported (upcoming ones and the last 30 days first).
+         *
+         *     `accountId` names the Vrbo account when the workspace has several (`GET /v1/connect/vrbo-login`). `syncEnabled: true` also sends the listing's calendar to Vrbo (full access; refused with `409 calendar_managed_elsewhere` while another tool manages the account's calendar).
+         *
+         *     The same write as `POST /v1/connections/{id}/mappings`, for one unit.
+         */
+        post: operations["mapVrboListing"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/vrbo/listings/{id}/availability": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the Vrbo calendar
+         * @description The listing's calendar as Vrbo shows it, night by night — the counterpart of `GET /v1/channels/airbnb/listings/{id}/availability`: whether each night is `available`, what holds it (`blockedBy`: a `reservation`, a `block` or an imported `ical` calendar, with the booking's `reservationRef`), the nightly price, minimum stay and whether guests can arrive or leave that day.
+         *
+         *     Read from Vrbo for each request (one Vrbo read for the range): `start_date`..`end_date`, at most 366 nights, default the next 30. `?jobId=` reads the status of a write instead.
+         */
+        get: operations["getVrboListingAvailability"];
+        /**
+         * Update the Vrbo calendar
+         * @description Write nights to Vrbo only — the counterpart of `PUT /v1/channels/airbnb/listings/{id}/availability` with `type: "calendar"`, with its operation fields: `daily_price`, `availability`, `min_nights`, `closed_to_arrival`, `closed_to_departure`.
+         *
+         *     The writes are queued with the account's other Vrbo calendar writes, which Vrbo takes at a pace of its own, so this answers `202` with a `jobId`: read its status with `GET …/availability?jobId=`. The listing's own calendar is not changed, and its next push for the same nights puts its own values back (as on Airbnb). For a change on every channel use `PUT /v1/availability/{propertyId}`.
+         *
+         *     Listing-level stay rules (default minimum stay, notice, booking window) are Vrbo's booking settings: `PUT /v1/channels/vrbo/listings/{id}/booking-settings` (`type: "rules"` is refused with that pointer). Nights up to 730 days ahead. Needs full access (`403 vrbo_messaging_access`); `409 calendar_managed_elsewhere` while another tool manages the account's calendar on Vrbo.
+         */
+        put: operations["updateVrboListingAvailability"];
         post?: never;
         delete?: never;
         options?: never;
@@ -27587,7 +27798,7 @@ export interface operations {
                                 /** Format: date-time */
                                 finishedAt?: string | null;
                             }[];
-                            /** @description Update only: sections the push leaves as they are on Vrbo, and why (rooms, photos, registration, or no value in the listing content). */
+                            /** @description Update only: sections the push leaves as they are on Vrbo, and why (rooms, photos, permits, or no value in the listing content). */
                             skipped?: {
                                 section?: string;
                                 reason?: string;
@@ -27637,7 +27848,7 @@ export interface operations {
                     /** @description Finish this unpublished Vrbo property (from a failed run's `job.propertyId`) instead of starting a new one. */
                     propertyId?: string;
                     /** @description Update only: push just these sections (default: all of them). */
-                    sections?: ("description" | "property" | "amenities" | "house-rules" | "booking-settings" | "cancellation" | "fees" | "pricing" | "rates")[];
+                    sections?: ("descriptions" | "details" | "amenities" | "house-rules" | "booking-settings" | "cancellation" | "fees" | "pricing" | "rates")[];
                     /** @description Update only: the Vrbo listing to push to, when the listing is linked to several. */
                     vrboListingNumber?: string;
                 };
@@ -27711,7 +27922,7 @@ export interface operations {
                                 /** Format: date-time */
                                 finishedAt?: string | null;
                             }[];
-                            /** @description Update only: sections the push leaves as they are on Vrbo, and why (rooms, photos, registration, or no value in the listing content). */
+                            /** @description Update only: sections the push leaves as they are on Vrbo, and why (rooms, photos, permits, or no value in the listing content). */
                             skipped?: {
                                 section?: string;
                                 reason?: string;
@@ -28203,6 +28414,8 @@ export interface operations {
             query?: {
                 /** @description The Vrbo listing number to work on, when the listing is linked to more than one Vrbo unit. */
                 vrboListingNumber?: string;
+                /** @description `stored` (default): Repull's copy, in milliseconds. `live`: read Vrbo now (seconds) and refresh the copy. */
+                source?: "stored" | "live";
             };
             header?: never;
             path: {
@@ -28220,13 +28433,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        listingId: string;
-                        vrboListingNumber: string;
-                        /** @description Vrbo's property id for the unit. */
-                        propertyId: string;
-                        /** @example additional-info */
-                        section: string;
-                        /** @description The section as Vrbo has it now. */
+                        /** @description The section as Vrbo has it. */
                         data: {
                             property?: string | null;
                             bedrooms?: string | null;
@@ -28235,6 +28442,35 @@ export interface operations {
                                 [key: string]: unknown;
                             };
                         };
+                        dataFreshness: {
+                            /**
+                             * Format: date-time
+                             * @description When this data was read from Vrbo.
+                             */
+                            lastSyncedAt: string;
+                            stale: boolean;
+                            /**
+                             * @description `refreshing`: the copy is over 24 h old and is being refreshed now — the next read has the new one. `reconnect_required`: Vrbo signed the account out; reconnect it (`fixUrl`).
+                             * @enum {string}
+                             */
+                            reason: "ok" | "refreshing" | "reconnect_required";
+                            fixUrl?: string;
+                            /**
+                             * @description `stored`: Repull's copy. `live`: read from Vrbo for this request.
+                             * @enum {string}
+                             */
+                            source: "stored" | "live";
+                            accounts: {
+                                accountId?: string | null;
+                                accountName?: string | null;
+                                lastSyncedAt?: string;
+                                stale?: boolean;
+                                reason?: string;
+                                fixUrl?: string;
+                            }[];
+                        };
+                        /** @description The Vrbo listing number this is about. */
+                        vrboListingNumber: string;
                     };
                 };
             };
@@ -28316,15 +28552,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        listingId: string;
-                        vrboListingNumber: string;
-                        /** @description Vrbo's property id for the unit. */
-                        propertyId: string;
-                        /** @example additional-info */
-                        section: string;
-                        /** @description The fields this request sent. */
-                        written: string[];
-                        /** @description What Vrbo has stored for the section, read back after the write. */
+                        /** @description What Vrbo has after the write, read back from Vrbo. */
                         data: {
                             property?: string | null;
                             bedrooms?: string | null;
@@ -28333,6 +28561,36 @@ export interface operations {
                                 [key: string]: unknown;
                             };
                         };
+                        /** @description The fields this request sent. */
+                        written: string[];
+                        dataFreshness: {
+                            /**
+                             * Format: date-time
+                             * @description When this data was read from Vrbo.
+                             */
+                            lastSyncedAt: string;
+                            stale: boolean;
+                            /**
+                             * @description `refreshing`: the copy is over 24 h old and is being refreshed now — the next read has the new one. `reconnect_required`: Vrbo signed the account out; reconnect it (`fixUrl`).
+                             * @enum {string}
+                             */
+                            reason: "ok" | "refreshing" | "reconnect_required";
+                            fixUrl?: string;
+                            /**
+                             * @description `stored`: Repull's copy. `live`: read from Vrbo for this request.
+                             * @enum {string}
+                             */
+                            source: "stored" | "live";
+                            accounts: {
+                                accountId?: string | null;
+                                accountName?: string | null;
+                                lastSyncedAt?: string;
+                                stale?: boolean;
+                                reason?: string;
+                                fixUrl?: string;
+                            }[];
+                        };
+                        vrboListingNumber: string;
                     };
                 };
             };
@@ -28400,7 +28658,9 @@ export interface operations {
             query?: {
                 /** @description The Vrbo listing number to work on, when the listing is linked to more than one Vrbo unit. */
                 vrboListingNumber?: string;
-                /** @description Amenity groups to read, comma-separated (default: all 19 — one Vrbo call each): essentials, internet, climateControl, general, office, kitchenAndDining, parking, poolAndSpa, sustainability, entertainment, outdoor, onsiteService, accessibility, homeSafety, safetyDevices, enhancedCleaning, locationAndView, localAttractionsAndActivities, checkoutInstructions. */
+                /** @description `stored` (default): Repull's copy, in milliseconds. `live`: read Vrbo now (seconds) and refresh the copy. */
+                source?: "stored" | "live";
+                /** @description Amenity groups to read, comma-separated (default: all 19): essentials, internet, climateControl, general, office, kitchenAndDining, parking, poolAndSpa, sustainability, entertainment, outdoor, onsiteService, accessibility, homeSafety, safetyDevices, enhancedCleaning, locationAndView, localAttractionsAndActivities, checkoutInstructions. */
                 groups?: string;
             };
             header?: never;
@@ -28419,13 +28679,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        listingId: string;
-                        vrboListingNumber: string;
-                        /** @description Vrbo's property id for the unit. */
-                        propertyId: string;
-                        /** @example amenities */
-                        section: string;
-                        /** @description The section as Vrbo has it now. */
+                        /** @description The section as Vrbo has it. */
                         data: {
                             /** @description Keyed by group: essentials, internet, climateControl, general, office, kitchenAndDining, parking, poolAndSpa, sustainability, entertainment, outdoor, onsiteService, accessibility, homeSafety, safetyDevices, enhancedCleaning, locationAndView, localAttractionsAndActivities, checkoutInstructions. */
                             groups?: {
@@ -28459,6 +28713,35 @@ export interface operations {
                                 };
                             };
                         };
+                        dataFreshness: {
+                            /**
+                             * Format: date-time
+                             * @description When this data was read from Vrbo.
+                             */
+                            lastSyncedAt: string;
+                            stale: boolean;
+                            /**
+                             * @description `refreshing`: the copy is over 24 h old and is being refreshed now — the next read has the new one. `reconnect_required`: Vrbo signed the account out; reconnect it (`fixUrl`).
+                             * @enum {string}
+                             */
+                            reason: "ok" | "refreshing" | "reconnect_required";
+                            fixUrl?: string;
+                            /**
+                             * @description `stored`: Repull's copy. `live`: read from Vrbo for this request.
+                             * @enum {string}
+                             */
+                            source: "stored" | "live";
+                            accounts: {
+                                accountId?: string | null;
+                                accountName?: string | null;
+                                lastSyncedAt?: string;
+                                stale?: boolean;
+                                reason?: string;
+                                fixUrl?: string;
+                            }[];
+                        };
+                        /** @description The Vrbo listing number this is about. */
+                        vrboListingNumber: string;
                     };
                 };
             };
@@ -28666,15 +28949,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        listingId: string;
-                        vrboListingNumber: string;
-                        /** @description Vrbo's property id for the unit. */
-                        propertyId: string;
-                        /** @example amenities */
-                        section: string;
-                        /** @description The fields this request sent. */
-                        written: string[];
-                        /** @description What Vrbo has stored for the section, read back after the write. */
+                        /** @description What Vrbo has after the write, read back from Vrbo. */
                         data: {
                             /** @description Keyed by group: essentials, internet, climateControl, general, office, kitchenAndDining, parking, poolAndSpa, sustainability, entertainment, outdoor, onsiteService, accessibility, homeSafety, safetyDevices, enhancedCleaning, locationAndView, localAttractionsAndActivities, checkoutInstructions. */
                             groups?: {
@@ -28708,6 +28983,36 @@ export interface operations {
                                 };
                             };
                         };
+                        /** @description The fields this request sent. */
+                        written: string[];
+                        dataFreshness: {
+                            /**
+                             * Format: date-time
+                             * @description When this data was read from Vrbo.
+                             */
+                            lastSyncedAt: string;
+                            stale: boolean;
+                            /**
+                             * @description `refreshing`: the copy is over 24 h old and is being refreshed now — the next read has the new one. `reconnect_required`: Vrbo signed the account out; reconnect it (`fixUrl`).
+                             * @enum {string}
+                             */
+                            reason: "ok" | "refreshing" | "reconnect_required";
+                            fixUrl?: string;
+                            /**
+                             * @description `stored`: Repull's copy. `live`: read from Vrbo for this request.
+                             * @enum {string}
+                             */
+                            source: "stored" | "live";
+                            accounts: {
+                                accountId?: string | null;
+                                accountName?: string | null;
+                                lastSyncedAt?: string;
+                                stale?: boolean;
+                                reason?: string;
+                                fixUrl?: string;
+                            }[];
+                        };
+                        vrboListingNumber: string;
                     };
                 };
             };
@@ -28775,6 +29080,8 @@ export interface operations {
             query?: {
                 /** @description The Vrbo listing number to work on, when the listing is linked to more than one Vrbo unit. */
                 vrboListingNumber?: string;
+                /** @description `stored` (default): Repull's copy, in milliseconds. `live`: read Vrbo now (seconds) and refresh the copy. */
+                source?: "stored" | "live";
             };
             header?: never;
             path: {
@@ -28792,13 +29099,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        listingId: string;
-                        vrboListingNumber: string;
-                        /** @description Vrbo's property id for the unit. */
-                        propertyId: string;
-                        /** @example booking-settings */
-                        section: string;
-                        /** @description The section as Vrbo has it now. */
+                        /** @description The section as Vrbo has it. */
                         data: {
                             /** @enum {string|null} */
                             bookingType?: "INSTANT" | "QUOTEHOLD" | null;
@@ -28821,6 +29122,35 @@ export interface operations {
                             checkInTime?: string | null;
                             checkOutTime?: string | null;
                         };
+                        dataFreshness: {
+                            /**
+                             * Format: date-time
+                             * @description When this data was read from Vrbo.
+                             */
+                            lastSyncedAt: string;
+                            stale: boolean;
+                            /**
+                             * @description `refreshing`: the copy is over 24 h old and is being refreshed now — the next read has the new one. `reconnect_required`: Vrbo signed the account out; reconnect it (`fixUrl`).
+                             * @enum {string}
+                             */
+                            reason: "ok" | "refreshing" | "reconnect_required";
+                            fixUrl?: string;
+                            /**
+                             * @description `stored`: Repull's copy. `live`: read from Vrbo for this request.
+                             * @enum {string}
+                             */
+                            source: "stored" | "live";
+                            accounts: {
+                                accountId?: string | null;
+                                accountName?: string | null;
+                                lastSyncedAt?: string;
+                                stale?: boolean;
+                                reason?: string;
+                                fixUrl?: string;
+                            }[];
+                        };
+                        /** @description The Vrbo listing number this is about. */
+                        vrboListingNumber: string;
                     };
                 };
             };
@@ -28910,15 +29240,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        listingId: string;
-                        vrboListingNumber: string;
-                        /** @description Vrbo's property id for the unit. */
-                        propertyId: string;
-                        /** @example booking-settings */
-                        section: string;
-                        /** @description The fields this request sent. */
-                        written: string[];
-                        /** @description What Vrbo has stored for the section, read back after the write. */
+                        /** @description What Vrbo has after the write, read back from Vrbo. */
                         data: {
                             /** @enum {string|null} */
                             bookingType?: "INSTANT" | "QUOTEHOLD" | null;
@@ -28941,6 +29263,36 @@ export interface operations {
                             checkInTime?: string | null;
                             checkOutTime?: string | null;
                         };
+                        /** @description The fields this request sent. */
+                        written: string[];
+                        dataFreshness: {
+                            /**
+                             * Format: date-time
+                             * @description When this data was read from Vrbo.
+                             */
+                            lastSyncedAt: string;
+                            stale: boolean;
+                            /**
+                             * @description `refreshing`: the copy is over 24 h old and is being refreshed now — the next read has the new one. `reconnect_required`: Vrbo signed the account out; reconnect it (`fixUrl`).
+                             * @enum {string}
+                             */
+                            reason: "ok" | "refreshing" | "reconnect_required";
+                            fixUrl?: string;
+                            /**
+                             * @description `stored`: Repull's copy. `live`: read from Vrbo for this request.
+                             * @enum {string}
+                             */
+                            source: "stored" | "live";
+                            accounts: {
+                                accountId?: string | null;
+                                accountName?: string | null;
+                                lastSyncedAt?: string;
+                                stale?: boolean;
+                                reason?: string;
+                                fixUrl?: string;
+                            }[];
+                        };
+                        vrboListingNumber: string;
                     };
                 };
             };
@@ -29008,6 +29360,8 @@ export interface operations {
             query?: {
                 /** @description The Vrbo listing number to work on, when the listing is linked to more than one Vrbo unit. */
                 vrboListingNumber?: string;
+                /** @description `stored` (default): Repull's copy, in milliseconds. `live`: read Vrbo now (seconds) and refresh the copy. */
+                source?: "stored" | "live";
             };
             header?: never;
             path: {
@@ -29025,13 +29379,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        listingId: string;
-                        vrboListingNumber: string;
-                        /** @description Vrbo's property id for the unit. */
-                        propertyId: string;
-                        /** @example cancellation */
-                        section: string;
-                        /** @description The section as Vrbo has it now. */
+                        /** @description The section as Vrbo has it. */
                         data: {
                             policyType?: string | null;
                             tiers?: {
@@ -29049,6 +29397,35 @@ export interface operations {
                                 }[];
                             }[];
                         };
+                        dataFreshness: {
+                            /**
+                             * Format: date-time
+                             * @description When this data was read from Vrbo.
+                             */
+                            lastSyncedAt: string;
+                            stale: boolean;
+                            /**
+                             * @description `refreshing`: the copy is over 24 h old and is being refreshed now — the next read has the new one. `reconnect_required`: Vrbo signed the account out; reconnect it (`fixUrl`).
+                             * @enum {string}
+                             */
+                            reason: "ok" | "refreshing" | "reconnect_required";
+                            fixUrl?: string;
+                            /**
+                             * @description `stored`: Repull's copy. `live`: read from Vrbo for this request.
+                             * @enum {string}
+                             */
+                            source: "stored" | "live";
+                            accounts: {
+                                accountId?: string | null;
+                                accountName?: string | null;
+                                lastSyncedAt?: string;
+                                stale?: boolean;
+                                reason?: string;
+                                fixUrl?: string;
+                            }[];
+                        };
+                        /** @description The Vrbo listing number this is about. */
+                        vrboListingNumber: string;
                     };
                 };
             };
@@ -29146,15 +29523,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        listingId: string;
-                        vrboListingNumber: string;
-                        /** @description Vrbo's property id for the unit. */
-                        propertyId: string;
-                        /** @example cancellation */
-                        section: string;
-                        /** @description The fields this request sent. */
-                        written: string[];
-                        /** @description What Vrbo has stored for the section, read back after the write. */
+                        /** @description What Vrbo has after the write, read back from Vrbo. */
                         data: {
                             policyType?: string | null;
                             tiers?: {
@@ -29172,6 +29541,36 @@ export interface operations {
                                 }[];
                             }[];
                         };
+                        /** @description The fields this request sent. */
+                        written: string[];
+                        dataFreshness: {
+                            /**
+                             * Format: date-time
+                             * @description When this data was read from Vrbo.
+                             */
+                            lastSyncedAt: string;
+                            stale: boolean;
+                            /**
+                             * @description `refreshing`: the copy is over 24 h old and is being refreshed now — the next read has the new one. `reconnect_required`: Vrbo signed the account out; reconnect it (`fixUrl`).
+                             * @enum {string}
+                             */
+                            reason: "ok" | "refreshing" | "reconnect_required";
+                            fixUrl?: string;
+                            /**
+                             * @description `stored`: Repull's copy. `live`: read from Vrbo for this request.
+                             * @enum {string}
+                             */
+                            source: "stored" | "live";
+                            accounts: {
+                                accountId?: string | null;
+                                accountName?: string | null;
+                                lastSyncedAt?: string;
+                                stale?: boolean;
+                                reason?: string;
+                                fixUrl?: string;
+                            }[];
+                        };
+                        vrboListingNumber: string;
                     };
                 };
             };
@@ -29237,8 +29636,10 @@ export interface operations {
     getVrboListingContent: {
         parameters: {
             query: {
-                /** @description Comma-separated sections, or `all`: description, property, story, additional-info, translations, photos, amenities, rooms, location, house-rules, booking-settings, cancellation, fees, pricing, rates, payment-terms, protection, taxes, registration, welcome-guide, videos. */
+                /** @description Comma-separated sections, or `all`: descriptions, details, story, additional-info, photos, amenities, rooms, location, house-rules, booking-settings, cancellation, fees, pricing, payment-terms, protection, taxes, permits, checkin-guide, videos. */
                 sections: string;
+                /** @description `stored` (default): Repull's copy, in milliseconds. `live`: read Vrbo now (seconds) and refresh the copy. */
+                source?: "stored" | "live";
                 /** @description The Vrbo listing number to work on, when the listing is linked to more than one Vrbo unit. */
                 vrboListingNumber?: string;
             };
@@ -29258,22 +29659,19 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        listingId: string;
-                        vrboListingNumber: string;
-                        propertyId: string;
-                        listing?: {
-                            triad?: string | null;
-                            listingNumber?: string | null;
-                            unitNumber?: string | null;
-                            unitUrl?: string | null;
-                            enabled?: boolean | null;
-                            address?: unknown;
-                        } | null;
-                        /** @description Keyed by section; each is the data of `GET /v1/channels/vrbo/listings/{id}/{section}`, or `{ error: { code, message } }` when that section failed. */
+                        /** @description Keyed by section; each is the `data` of `GET /v1/channels/vrbo/listings/{id}/{section}`, or `{ error: { code, message } }` when that section failed. */
                         sections: {
-                            description?: {
+                            descriptions?: {
+                                /**
+                                 * @description `null` for the listing's own language; a language code for a hand-written translation.
+                                 * @example fr-FR
+                                 */
+                                locale?: string | null;
+                                /** @description `true` for the listing's own language. */
+                                primary?: boolean;
                                 headline?: string | null;
                                 description?: string | null;
+                                /** @description On the primary item: the lengths Vrbo allows. */
                                 limits?: {
                                     headline?: {
                                         minLength?: number | null;
@@ -29284,8 +29682,8 @@ export interface operations {
                                         maxLength?: number | null;
                                     } | null;
                                 };
-                            };
-                            property?: {
+                            }[];
+                            details?: {
                                 /** @example townhome */
                                 propertyType?: string | null;
                                 propertyTypeOptions?: {
@@ -29316,18 +29714,6 @@ export interface operations {
                                 limits?: {
                                     [key: string]: unknown;
                                 };
-                            };
-                            translations?: {
-                                items?: {
-                                    /** @example fr-FR */
-                                    locale?: string;
-                                    headline?: string | null;
-                                    description?: string | null;
-                                }[];
-                                languages?: {
-                                    value?: string;
-                                    label?: string | null;
-                                }[];
                             };
                             photos?: {
                                 items?: {
@@ -29546,21 +29932,6 @@ export interface operations {
                                 defaultMinStay?: number | null;
                                 rateLimits?: unknown;
                             };
-                            rates?: {
-                                start?: string;
-                                end?: string;
-                                currency?: string | null;
-                                days?: {
-                                    /** Format: date */
-                                    date?: string;
-                                    /** @example friday */
-                                    weekday?: string;
-                                    nightlyRate?: number | null;
-                                    weeklyDiscountPercent?: number | null;
-                                    monthlyDiscountPercent?: number | null;
-                                    minStay?: number | null;
-                                }[];
-                            };
                             "payment-terms"?: {
                                 percentDueNow?: number | null;
                                 payments?: {
@@ -29593,7 +29964,7 @@ export interface operations {
                                 /** @description Vrbo's tax settings as Vrbo returns them — the shape a write takes. */
                                 raw?: unknown;
                             };
-                            registration?: {
+                            permits?: {
                                 status?: string | null;
                                 fields?: {
                                     name?: string;
@@ -29605,7 +29976,7 @@ export interface operations {
                                     }[];
                                 }[];
                             };
-                            "welcome-guide"?: {
+                            "checkin-guide"?: {
                                 checkIn?: {
                                     instructions?: string | null;
                                     available?: boolean | null;
@@ -29665,6 +30036,34 @@ export interface operations {
                                 }[];
                             };
                         };
+                        dataFreshness: {
+                            /**
+                             * Format: date-time
+                             * @description When this data was read from Vrbo.
+                             */
+                            lastSyncedAt: string;
+                            stale: boolean;
+                            /**
+                             * @description `refreshing`: the copy is over 24 h old and is being refreshed now — the next read has the new one. `reconnect_required`: Vrbo signed the account out; reconnect it (`fixUrl`).
+                             * @enum {string}
+                             */
+                            reason: "ok" | "refreshing" | "reconnect_required";
+                            fixUrl?: string;
+                            /**
+                             * @description `stored`: Repull's copy. `live`: read from Vrbo for this request.
+                             * @enum {string}
+                             */
+                            source: "stored" | "live";
+                            accounts: {
+                                accountId?: string | null;
+                                accountName?: string | null;
+                                lastSyncedAt?: string;
+                                stale?: boolean;
+                                reason?: string;
+                                fixUrl?: string;
+                            }[];
+                        };
+                        vrboListingNumber: string;
                     };
                 };
             };
@@ -29681,214 +30080,6 @@ export interface operations {
                 };
             };
             422: components["responses"]["UnprocessableEntity"];
-            500: components["responses"]["InternalError"];
-            /** @description Vrbo did not complete the request. */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Vrbo asked us to slow down for this account (`retry_after` seconds). Calendar and messages keep working. */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Vrbo did not answer in time. A write may still have landed: read the section first. */
-            504: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
-    getVrboListingDescription: {
-        parameters: {
-            query?: {
-                /** @description The Vrbo listing number to work on, when the listing is linked to more than one Vrbo unit. */
-                vrboListingNumber?: string;
-            };
-            header?: never;
-            path: {
-                /** @description Repull listing id (numeric string) of a listing linked to Vrbo. */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description The headline and description */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        listingId: string;
-                        vrboListingNumber: string;
-                        /** @description Vrbo's property id for the unit. */
-                        propertyId: string;
-                        /** @example description */
-                        section: string;
-                        /** @description The section as Vrbo has it now. */
-                        data: {
-                            headline?: string | null;
-                            description?: string | null;
-                            limits?: {
-                                headline?: {
-                                    minLength?: number | null;
-                                    maxLength?: number | null;
-                                } | null;
-                                description?: {
-                                    minLength?: number | null;
-                                    maxLength?: number | null;
-                                } | null;
-                            };
-                        };
-                    };
-                };
-            };
-            401: components["responses"]["Unauthorized"];
-            403: components["responses"]["ListingInactive"];
-            404: components["responses"]["NotFound"];
-            /** @description The listing is linked to several Vrbo units (name one), the property is not on the account any more, or the account was signed out. */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            422: components["responses"]["UnprocessableEntity"];
-            500: components["responses"]["InternalError"];
-            /** @description Vrbo did not complete the request. */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Vrbo asked us to slow down for this account (`retry_after` seconds). Calendar and messages keep working. */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Vrbo did not answer in time. A write may still have landed: read the section first. */
-            504: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
-    updateVrboListingDescription: {
-        parameters: {
-            query?: {
-                /** @description The Vrbo listing number to work on, when the listing is linked to more than one Vrbo unit. */
-                vrboListingNumber?: string;
-            };
-            header?: never;
-            path: {
-                /** @description Repull listing id (numeric string) of a listing linked to Vrbo. */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                /**
-                 * @example {
-                 *       "headline": "Cedar Ridge townhouse with hot tub and BBQ"
-                 *     }
-                 */
-                "application/json": {
-                    headline?: string;
-                    description?: string;
-                };
-            };
-        };
-        responses: {
-            /** @description Saved on Vrbo */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        listingId: string;
-                        vrboListingNumber: string;
-                        /** @description Vrbo's property id for the unit. */
-                        propertyId: string;
-                        /** @example description */
-                        section: string;
-                        /** @description The fields this request sent. */
-                        written: string[];
-                        /** @description What Vrbo has stored for the section, read back after the write. */
-                        data: {
-                            headline?: string | null;
-                            description?: string | null;
-                            limits?: {
-                                headline?: {
-                                    minLength?: number | null;
-                                    maxLength?: number | null;
-                                } | null;
-                                description?: {
-                                    minLength?: number | null;
-                                    maxLength?: number | null;
-                                } | null;
-                            };
-                        };
-                    };
-                };
-            };
-            401: components["responses"]["Unauthorized"];
-            /** @description The listing is inactive, or the Vrbo account is connected with messaging access (it never writes to Vrbo). */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            404: components["responses"]["NotFound"];
-            /** @description The listing is linked to several Vrbo units (name one), the property is not on the account any more, or the account was signed out. */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description The request is malformed (`invalid_params`, nothing sent to Vrbo), or Vrbo refused it (`vrbo_rejected`, with Vrbo's own message). */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
             500: components["responses"]["InternalError"];
             /** @description Vrbo did not complete the request. */
             502: {
@@ -29924,6 +30115,8 @@ export interface operations {
             query?: {
                 /** @description The Vrbo listing number to work on, when the listing is linked to more than one Vrbo unit. */
                 vrboListingNumber?: string;
+                /** @description `stored` (default): Repull's copy, in milliseconds. `live`: read Vrbo now (seconds) and refresh the copy. */
+                source?: "stored" | "live";
             };
             header?: never;
             path: {
@@ -29941,13 +30134,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        listingId: string;
-                        vrboListingNumber: string;
-                        /** @description Vrbo's property id for the unit. */
-                        propertyId: string;
-                        /** @example fees */
-                        section: string;
-                        /** @description The section as Vrbo has it now. */
+                        /** @description The section as Vrbo has it. */
                         data: {
                             currency?: string | null;
                             cleaning?: {
@@ -29979,6 +30166,35 @@ export interface operations {
                             feeTypes?: string[];
                             extraGuestFeeTypes?: string[];
                         };
+                        dataFreshness: {
+                            /**
+                             * Format: date-time
+                             * @description When this data was read from Vrbo.
+                             */
+                            lastSyncedAt: string;
+                            stale: boolean;
+                            /**
+                             * @description `refreshing`: the copy is over 24 h old and is being refreshed now — the next read has the new one. `reconnect_required`: Vrbo signed the account out; reconnect it (`fixUrl`).
+                             * @enum {string}
+                             */
+                            reason: "ok" | "refreshing" | "reconnect_required";
+                            fixUrl?: string;
+                            /**
+                             * @description `stored`: Repull's copy. `live`: read from Vrbo for this request.
+                             * @enum {string}
+                             */
+                            source: "stored" | "live";
+                            accounts: {
+                                accountId?: string | null;
+                                accountName?: string | null;
+                                lastSyncedAt?: string;
+                                stale?: boolean;
+                                reason?: string;
+                                fixUrl?: string;
+                            }[];
+                        };
+                        /** @description The Vrbo listing number this is about. */
+                        vrboListingNumber: string;
                     };
                 };
             };
@@ -30092,15 +30308,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        listingId: string;
-                        vrboListingNumber: string;
-                        /** @description Vrbo's property id for the unit. */
-                        propertyId: string;
-                        /** @example fees */
-                        section: string;
-                        /** @description The fields this request sent. */
-                        written: string[];
-                        /** @description What Vrbo has stored for the section, read back after the write. */
+                        /** @description What Vrbo has after the write, read back from Vrbo. */
                         data: {
                             currency?: string | null;
                             cleaning?: {
@@ -30132,6 +30340,36 @@ export interface operations {
                             feeTypes?: string[];
                             extraGuestFeeTypes?: string[];
                         };
+                        /** @description The fields this request sent. */
+                        written: string[];
+                        dataFreshness: {
+                            /**
+                             * Format: date-time
+                             * @description When this data was read from Vrbo.
+                             */
+                            lastSyncedAt: string;
+                            stale: boolean;
+                            /**
+                             * @description `refreshing`: the copy is over 24 h old and is being refreshed now — the next read has the new one. `reconnect_required`: Vrbo signed the account out; reconnect it (`fixUrl`).
+                             * @enum {string}
+                             */
+                            reason: "ok" | "refreshing" | "reconnect_required";
+                            fixUrl?: string;
+                            /**
+                             * @description `stored`: Repull's copy. `live`: read from Vrbo for this request.
+                             * @enum {string}
+                             */
+                            source: "stored" | "live";
+                            accounts: {
+                                accountId?: string | null;
+                                accountName?: string | null;
+                                lastSyncedAt?: string;
+                                stale?: boolean;
+                                reason?: string;
+                                fixUrl?: string;
+                            }[];
+                        };
+                        vrboListingNumber: string;
                     };
                 };
             };
@@ -30199,6 +30437,8 @@ export interface operations {
             query?: {
                 /** @description The Vrbo listing number to work on, when the listing is linked to more than one Vrbo unit. */
                 vrboListingNumber?: string;
+                /** @description `stored` (default): Repull's copy, in milliseconds. `live`: read Vrbo now (seconds) and refresh the copy. */
+                source?: "stored" | "live";
             };
             header?: never;
             path: {
@@ -30216,13 +30456,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        listingId: string;
-                        vrboListingNumber: string;
-                        /** @description Vrbo's property id for the unit. */
-                        propertyId: string;
-                        /** @example house-rules */
-                        section: string;
-                        /** @description The section as Vrbo has it now. */
+                        /** @description The section as Vrbo has it. */
                         data: {
                             checkInTime?: string | null;
                             checkOutTime?: string | null;
@@ -30262,6 +30496,35 @@ export interface operations {
                             rentalAgreement?: unknown;
                             timeOptions?: string[];
                         };
+                        dataFreshness: {
+                            /**
+                             * Format: date-time
+                             * @description When this data was read from Vrbo.
+                             */
+                            lastSyncedAt: string;
+                            stale: boolean;
+                            /**
+                             * @description `refreshing`: the copy is over 24 h old and is being refreshed now — the next read has the new one. `reconnect_required`: Vrbo signed the account out; reconnect it (`fixUrl`).
+                             * @enum {string}
+                             */
+                            reason: "ok" | "refreshing" | "reconnect_required";
+                            fixUrl?: string;
+                            /**
+                             * @description `stored`: Repull's copy. `live`: read from Vrbo for this request.
+                             * @enum {string}
+                             */
+                            source: "stored" | "live";
+                            accounts: {
+                                accountId?: string | null;
+                                accountName?: string | null;
+                                lastSyncedAt?: string;
+                                stale?: boolean;
+                                reason?: string;
+                                fixUrl?: string;
+                            }[];
+                        };
+                        /** @description The Vrbo listing number this is about. */
+                        vrboListingNumber: string;
                     };
                 };
             };
@@ -30382,15 +30645,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        listingId: string;
-                        vrboListingNumber: string;
-                        /** @description Vrbo's property id for the unit. */
-                        propertyId: string;
-                        /** @example house-rules */
-                        section: string;
-                        /** @description The fields this request sent. */
-                        written: string[];
-                        /** @description What Vrbo has stored for the section, read back after the write. */
+                        /** @description What Vrbo has after the write, read back from Vrbo. */
                         data: {
                             checkInTime?: string | null;
                             checkOutTime?: string | null;
@@ -30430,6 +30685,36 @@ export interface operations {
                             rentalAgreement?: unknown;
                             timeOptions?: string[];
                         };
+                        /** @description The fields this request sent. */
+                        written: string[];
+                        dataFreshness: {
+                            /**
+                             * Format: date-time
+                             * @description When this data was read from Vrbo.
+                             */
+                            lastSyncedAt: string;
+                            stale: boolean;
+                            /**
+                             * @description `refreshing`: the copy is over 24 h old and is being refreshed now — the next read has the new one. `reconnect_required`: Vrbo signed the account out; reconnect it (`fixUrl`).
+                             * @enum {string}
+                             */
+                            reason: "ok" | "refreshing" | "reconnect_required";
+                            fixUrl?: string;
+                            /**
+                             * @description `stored`: Repull's copy. `live`: read from Vrbo for this request.
+                             * @enum {string}
+                             */
+                            source: "stored" | "live";
+                            accounts: {
+                                accountId?: string | null;
+                                accountName?: string | null;
+                                lastSyncedAt?: string;
+                                stale?: boolean;
+                                reason?: string;
+                                fixUrl?: string;
+                            }[];
+                        };
+                        vrboListingNumber: string;
                     };
                 };
             };
@@ -30497,6 +30782,8 @@ export interface operations {
             query?: {
                 /** @description The Vrbo listing number to work on, when the listing is linked to more than one Vrbo unit. */
                 vrboListingNumber?: string;
+                /** @description `stored` (default): Repull's copy, in milliseconds. `live`: read Vrbo now (seconds) and refresh the copy. */
+                source?: "stored" | "live";
             };
             header?: never;
             path: {
@@ -30514,19 +30801,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        listingId: string;
-                        vrboListingNumber: string;
-                        /** @description Vrbo's property id for the unit. */
-                        propertyId: string;
-                        /** @example location */
-                        section: string;
-                        /** @description The section as Vrbo has it now. */
+                        /** @description The section as Vrbo has it. */
                         data: {
                             /** @description The address (read-only: Vrbo changes it only through its support). */
                             address?: unknown;
                             addressEditable?: boolean;
                             showExactLocation?: boolean | null;
                         };
+                        dataFreshness: {
+                            /**
+                             * Format: date-time
+                             * @description When this data was read from Vrbo.
+                             */
+                            lastSyncedAt: string;
+                            stale: boolean;
+                            /**
+                             * @description `refreshing`: the copy is over 24 h old and is being refreshed now — the next read has the new one. `reconnect_required`: Vrbo signed the account out; reconnect it (`fixUrl`).
+                             * @enum {string}
+                             */
+                            reason: "ok" | "refreshing" | "reconnect_required";
+                            fixUrl?: string;
+                            /**
+                             * @description `stored`: Repull's copy. `live`: read from Vrbo for this request.
+                             * @enum {string}
+                             */
+                            source: "stored" | "live";
+                            accounts: {
+                                accountId?: string | null;
+                                accountName?: string | null;
+                                lastSyncedAt?: string;
+                                stale?: boolean;
+                                reason?: string;
+                                fixUrl?: string;
+                            }[];
+                        };
+                        /** @description The Vrbo listing number this is about. */
+                        vrboListingNumber: string;
                     };
                 };
             };
@@ -30606,21 +30916,43 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        listingId: string;
-                        vrboListingNumber: string;
-                        /** @description Vrbo's property id for the unit. */
-                        propertyId: string;
-                        /** @example location */
-                        section: string;
-                        /** @description The fields this request sent. */
-                        written: string[];
-                        /** @description What Vrbo has stored for the section, read back after the write. */
+                        /** @description What Vrbo has after the write, read back from Vrbo. */
                         data: {
                             /** @description The address (read-only: Vrbo changes it only through its support). */
                             address?: unknown;
                             addressEditable?: boolean;
                             showExactLocation?: boolean | null;
                         };
+                        /** @description The fields this request sent. */
+                        written: string[];
+                        dataFreshness: {
+                            /**
+                             * Format: date-time
+                             * @description When this data was read from Vrbo.
+                             */
+                            lastSyncedAt: string;
+                            stale: boolean;
+                            /**
+                             * @description `refreshing`: the copy is over 24 h old and is being refreshed now — the next read has the new one. `reconnect_required`: Vrbo signed the account out; reconnect it (`fixUrl`).
+                             * @enum {string}
+                             */
+                            reason: "ok" | "refreshing" | "reconnect_required";
+                            fixUrl?: string;
+                            /**
+                             * @description `stored`: Repull's copy. `live`: read from Vrbo for this request.
+                             * @enum {string}
+                             */
+                            source: "stored" | "live";
+                            accounts: {
+                                accountId?: string | null;
+                                accountName?: string | null;
+                                lastSyncedAt?: string;
+                                stale?: boolean;
+                                reason?: string;
+                                fixUrl?: string;
+                            }[];
+                        };
+                        vrboListingNumber: string;
                     };
                 };
             };
@@ -30688,6 +31020,8 @@ export interface operations {
             query?: {
                 /** @description The Vrbo listing number to work on, when the listing is linked to more than one Vrbo unit. */
                 vrboListingNumber?: string;
+                /** @description `stored` (default): Repull's copy, in milliseconds. `live`: read Vrbo now (seconds) and refresh the copy. */
+                source?: "stored" | "live";
             };
             header?: never;
             path: {
@@ -30705,13 +31039,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        listingId: string;
-                        vrboListingNumber: string;
-                        /** @description Vrbo's property id for the unit. */
-                        propertyId: string;
-                        /** @example payment-terms */
-                        section: string;
-                        /** @description The section as Vrbo has it now. */
+                        /** @description The section as Vrbo has it. */
                         data: {
                             percentDueNow?: number | null;
                             payments?: {
@@ -30719,6 +31047,35 @@ export interface operations {
                                 daysBeforeArrival?: number;
                             }[];
                         };
+                        dataFreshness: {
+                            /**
+                             * Format: date-time
+                             * @description When this data was read from Vrbo.
+                             */
+                            lastSyncedAt: string;
+                            stale: boolean;
+                            /**
+                             * @description `refreshing`: the copy is over 24 h old and is being refreshed now — the next read has the new one. `reconnect_required`: Vrbo signed the account out; reconnect it (`fixUrl`).
+                             * @enum {string}
+                             */
+                            reason: "ok" | "refreshing" | "reconnect_required";
+                            fixUrl?: string;
+                            /**
+                             * @description `stored`: Repull's copy. `live`: read from Vrbo for this request.
+                             * @enum {string}
+                             */
+                            source: "stored" | "live";
+                            accounts: {
+                                accountId?: string | null;
+                                accountName?: string | null;
+                                lastSyncedAt?: string;
+                                stale?: boolean;
+                                reason?: string;
+                                fixUrl?: string;
+                            }[];
+                        };
+                        /** @description The Vrbo listing number this is about. */
+                        vrboListingNumber: string;
                     };
                 };
             };
@@ -30808,15 +31165,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        listingId: string;
-                        vrboListingNumber: string;
-                        /** @description Vrbo's property id for the unit. */
-                        propertyId: string;
-                        /** @example payment-terms */
-                        section: string;
-                        /** @description The fields this request sent. */
-                        written: string[];
-                        /** @description What Vrbo has stored for the section, read back after the write. */
+                        /** @description What Vrbo has after the write, read back from Vrbo. */
                         data: {
                             percentDueNow?: number | null;
                             payments?: {
@@ -30824,6 +31173,36 @@ export interface operations {
                                 daysBeforeArrival?: number;
                             }[];
                         };
+                        /** @description The fields this request sent. */
+                        written: string[];
+                        dataFreshness: {
+                            /**
+                             * Format: date-time
+                             * @description When this data was read from Vrbo.
+                             */
+                            lastSyncedAt: string;
+                            stale: boolean;
+                            /**
+                             * @description `refreshing`: the copy is over 24 h old and is being refreshed now — the next read has the new one. `reconnect_required`: Vrbo signed the account out; reconnect it (`fixUrl`).
+                             * @enum {string}
+                             */
+                            reason: "ok" | "refreshing" | "reconnect_required";
+                            fixUrl?: string;
+                            /**
+                             * @description `stored`: Repull's copy. `live`: read from Vrbo for this request.
+                             * @enum {string}
+                             */
+                            source: "stored" | "live";
+                            accounts: {
+                                accountId?: string | null;
+                                accountName?: string | null;
+                                lastSyncedAt?: string;
+                                stale?: boolean;
+                                reason?: string;
+                                fixUrl?: string;
+                            }[];
+                        };
+                        vrboListingNumber: string;
                     };
                 };
             };
@@ -30889,6 +31268,8 @@ export interface operations {
     getVrboListingPhotos: {
         parameters: {
             query?: {
+                /** @description `stored` (default): Repull's copy, in milliseconds. `live`: read Vrbo now (seconds) and refresh the copy. */
+                source?: "stored" | "live";
                 /** @description The Vrbo listing number to work on, when the listing is linked to more than one Vrbo unit. */
                 vrboListingNumber?: string;
             };
@@ -30908,13 +31289,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        listingId: string;
-                        vrboListingNumber: string;
-                        /** @description Vrbo's property id for the unit. */
-                        propertyId: string;
-                        /** @example photos */
-                        section: string;
-                        /** @description The section as Vrbo has it now. */
+                        /** @description The section as Vrbo has it. */
                         data: {
                             items?: {
                                 id?: string;
@@ -30933,6 +31308,35 @@ export interface operations {
                                 reason?: string;
                             }[];
                         };
+                        dataFreshness: {
+                            /**
+                             * Format: date-time
+                             * @description When this data was read from Vrbo.
+                             */
+                            lastSyncedAt: string;
+                            stale: boolean;
+                            /**
+                             * @description `refreshing`: the copy is over 24 h old and is being refreshed now — the next read has the new one. `reconnect_required`: Vrbo signed the account out; reconnect it (`fixUrl`).
+                             * @enum {string}
+                             */
+                            reason: "ok" | "refreshing" | "reconnect_required";
+                            fixUrl?: string;
+                            /**
+                             * @description `stored`: Repull's copy. `live`: read from Vrbo for this request.
+                             * @enum {string}
+                             */
+                            source: "stored" | "live";
+                            accounts: {
+                                accountId?: string | null;
+                                accountName?: string | null;
+                                lastSyncedAt?: string;
+                                stale?: boolean;
+                                reason?: string;
+                                fixUrl?: string;
+                            }[];
+                        };
+                        /** @description The Vrbo listing number this is about. */
+                        vrboListingNumber: string;
                     };
                 };
             };
@@ -30979,7 +31383,7 @@ export interface operations {
             };
         };
     };
-    updateVrboListingPhotos: {
+    addVrboListingPhotos: {
         parameters: {
             query?: {
                 /** @description The Vrbo listing number to work on, when the listing is linked to more than one Vrbo unit. */
@@ -30996,25 +31400,25 @@ export interface operations {
             content: {
                 /**
                  * @example {
-                 *       "captions": {
-                 *         "1234567": "Living room with fireplace"
-                 *       },
-                 *       "cover": "1234567"
+                 *       "photos": [
+                 *         {
+                 *           "url": "https://cdn.example.com/cedar-ridge/living-room.jpg",
+                 *           "caption": "Living room with fireplace"
+                 *         }
+                 *       ]
                  *     }
                  */
                 "application/json": {
-                    add?: {
-                        /** Format: uri */
-                        url: string;
+                    photos: {
+                        /**
+                         * Format: uri
+                         * @description An https JPEG or PNG Vrbo can download.
+                         */
+                        url?: string;
+                        /** @description Or: the image as base64 (a `data:image/jpeg;base64,` prefix is accepted). */
+                        image?: string;
                         caption?: string;
                     }[];
-                    delete?: string[];
-                    /** @description `{photoId: caption}` */
-                    captions?: {
-                        [key: string]: string;
-                    };
-                    order?: string[];
-                    cover?: string;
                 };
             };
         };
@@ -31026,15 +31430,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        listingId: string;
-                        vrboListingNumber: string;
-                        /** @description Vrbo's property id for the unit. */
-                        propertyId: string;
-                        /** @example photos */
-                        section: string;
-                        /** @description The fields this request sent. */
-                        written: string[];
-                        /** @description What Vrbo has stored for the section, read back after the write. */
+                        /** @description What Vrbo has after the write, read back from Vrbo. */
                         data: {
                             items?: {
                                 id?: string;
@@ -31053,6 +31449,318 @@ export interface operations {
                                 reason?: string;
                             }[];
                         };
+                        /** @description The fields this request sent. */
+                        written: string[];
+                        dataFreshness: {
+                            /**
+                             * Format: date-time
+                             * @description When this data was read from Vrbo.
+                             */
+                            lastSyncedAt: string;
+                            stale: boolean;
+                            /**
+                             * @description `refreshing`: the copy is over 24 h old and is being refreshed now — the next read has the new one. `reconnect_required`: Vrbo signed the account out; reconnect it (`fixUrl`).
+                             * @enum {string}
+                             */
+                            reason: "ok" | "refreshing" | "reconnect_required";
+                            fixUrl?: string;
+                            /**
+                             * @description `stored`: Repull's copy. `live`: read from Vrbo for this request.
+                             * @enum {string}
+                             */
+                            source: "stored" | "live";
+                            accounts: {
+                                accountId?: string | null;
+                                accountName?: string | null;
+                                lastSyncedAt?: string;
+                                stale?: boolean;
+                                reason?: string;
+                                fixUrl?: string;
+                            }[];
+                        };
+                        vrboListingNumber: string;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description The listing is inactive, or the Vrbo account is connected with messaging access (it never writes to Vrbo). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            /** @description The listing is linked to several Vrbo units (name one), the property is not on the account any more, or the account was signed out. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The request is malformed (`invalid_params`, nothing sent to Vrbo), or Vrbo refused it (`vrbo_rejected`, with Vrbo's own message). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            500: components["responses"]["InternalError"];
+            /** @description Vrbo did not complete the request. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Vrbo asked us to slow down for this account (`retry_after` seconds). Calendar and messages keep working. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Vrbo did not answer in time. A write may still have landed: read the section first. */
+            504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    deleteVrboListingPhotos: {
+        parameters: {
+            query: {
+                /** @description The `id` of the photo to remove (comma-separated for several). */
+                photoId: string;
+                /** @description The Vrbo listing number to work on, when the listing is linked to more than one Vrbo unit. */
+                vrboListingNumber?: string;
+            };
+            header?: never;
+            path: {
+                /** @description Repull listing id (numeric string) of a listing linked to Vrbo. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Saved on Vrbo */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @description What Vrbo has after the write, read back from Vrbo. */
+                        data: {
+                            items?: {
+                                id?: string;
+                                url?: string | null;
+                                caption?: string | null;
+                                /** @description Vrbo's own tags for the photo (read-only). */
+                                tags?: unknown;
+                                rank?: number | null;
+                                roomIds?: string[];
+                                status?: string | null;
+                            }[];
+                            count?: number;
+                            rejected?: {
+                                id?: string;
+                                url?: string | null;
+                                reason?: string;
+                            }[];
+                        };
+                        /** @description The fields this request sent. */
+                        written: string[];
+                        dataFreshness: {
+                            /**
+                             * Format: date-time
+                             * @description When this data was read from Vrbo.
+                             */
+                            lastSyncedAt: string;
+                            stale: boolean;
+                            /**
+                             * @description `refreshing`: the copy is over 24 h old and is being refreshed now — the next read has the new one. `reconnect_required`: Vrbo signed the account out; reconnect it (`fixUrl`).
+                             * @enum {string}
+                             */
+                            reason: "ok" | "refreshing" | "reconnect_required";
+                            fixUrl?: string;
+                            /**
+                             * @description `stored`: Repull's copy. `live`: read from Vrbo for this request.
+                             * @enum {string}
+                             */
+                            source: "stored" | "live";
+                            accounts: {
+                                accountId?: string | null;
+                                accountName?: string | null;
+                                lastSyncedAt?: string;
+                                stale?: boolean;
+                                reason?: string;
+                                fixUrl?: string;
+                            }[];
+                        };
+                        vrboListingNumber: string;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description The listing is inactive, or the Vrbo account is connected with messaging access (it never writes to Vrbo). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            /** @description The listing is linked to several Vrbo units (name one), the property is not on the account any more, or the account was signed out. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The request is malformed (`invalid_params`, nothing sent to Vrbo), or Vrbo refused it (`vrbo_rejected`, with Vrbo's own message). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            500: components["responses"]["InternalError"];
+            /** @description Vrbo did not complete the request. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Vrbo asked us to slow down for this account (`retry_after` seconds). Calendar and messages keep working. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Vrbo did not answer in time. A write may still have landed: read the section first. */
+            504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    updateVrboListingPhoto: {
+        parameters: {
+            query?: {
+                /** @description The Vrbo listing number to work on, when the listing is linked to more than one Vrbo unit. */
+                vrboListingNumber?: string;
+            };
+            header?: never;
+            path: {
+                /** @description Repull listing id (numeric string) of a listing linked to Vrbo. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "photo_id": "1234567",
+                 *       "caption": "Hot tub at sunset"
+                 *     }
+                 */
+                "application/json": {
+                    photo_id: string;
+                    caption?: string;
+                    sort_order?: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Saved on Vrbo */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @description What Vrbo has after the write, read back from Vrbo. */
+                        data: {
+                            items?: {
+                                id?: string;
+                                url?: string | null;
+                                caption?: string | null;
+                                /** @description Vrbo's own tags for the photo (read-only). */
+                                tags?: unknown;
+                                rank?: number | null;
+                                roomIds?: string[];
+                                status?: string | null;
+                            }[];
+                            count?: number;
+                            rejected?: {
+                                id?: string;
+                                url?: string | null;
+                                reason?: string;
+                            }[];
+                        };
+                        /** @description The fields this request sent. */
+                        written: string[];
+                        dataFreshness: {
+                            /**
+                             * Format: date-time
+                             * @description When this data was read from Vrbo.
+                             */
+                            lastSyncedAt: string;
+                            stale: boolean;
+                            /**
+                             * @description `refreshing`: the copy is over 24 h old and is being refreshed now — the next read has the new one. `reconnect_required`: Vrbo signed the account out; reconnect it (`fixUrl`).
+                             * @enum {string}
+                             */
+                            reason: "ok" | "refreshing" | "reconnect_required";
+                            fixUrl?: string;
+                            /**
+                             * @description `stored`: Repull's copy. `live`: read from Vrbo for this request.
+                             * @enum {string}
+                             */
+                            source: "stored" | "live";
+                            accounts: {
+                                accountId?: string | null;
+                                accountName?: string | null;
+                                lastSyncedAt?: string;
+                                stale?: boolean;
+                                reason?: string;
+                                fixUrl?: string;
+                            }[];
+                        };
+                        vrboListingNumber: string;
                     };
                 };
             };
@@ -31120,6 +31828,8 @@ export interface operations {
             query?: {
                 /** @description The Vrbo listing number to work on, when the listing is linked to more than one Vrbo unit. */
                 vrboListingNumber?: string;
+                /** @description `stored` (default): Repull's copy, in milliseconds. `live`: read Vrbo now (seconds) and refresh the copy. */
+                source?: "stored" | "live";
             };
             header?: never;
             path: {
@@ -31137,13 +31847,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        listingId: string;
-                        vrboListingNumber: string;
-                        /** @description Vrbo's property id for the unit. */
-                        propertyId: string;
-                        /** @example pricing */
-                        section: string;
-                        /** @description The section as Vrbo has it now. */
+                        /** @description The section as Vrbo has it. */
                         data: {
                             currency?: string | null;
                             /** @description Base rate per weekday (sunday … saturday). */
@@ -31155,6 +31859,35 @@ export interface operations {
                             defaultMinStay?: number | null;
                             rateLimits?: unknown;
                         };
+                        dataFreshness: {
+                            /**
+                             * Format: date-time
+                             * @description When this data was read from Vrbo.
+                             */
+                            lastSyncedAt: string;
+                            stale: boolean;
+                            /**
+                             * @description `refreshing`: the copy is over 24 h old and is being refreshed now — the next read has the new one. `reconnect_required`: Vrbo signed the account out; reconnect it (`fixUrl`).
+                             * @enum {string}
+                             */
+                            reason: "ok" | "refreshing" | "reconnect_required";
+                            fixUrl?: string;
+                            /**
+                             * @description `stored`: Repull's copy. `live`: read from Vrbo for this request.
+                             * @enum {string}
+                             */
+                            source: "stored" | "live";
+                            accounts: {
+                                accountId?: string | null;
+                                accountName?: string | null;
+                                lastSyncedAt?: string;
+                                stale?: boolean;
+                                reason?: string;
+                                fixUrl?: string;
+                            }[];
+                        };
+                        /** @description The Vrbo listing number this is about. */
+                        vrboListingNumber: string;
                     };
                 };
             };
@@ -31234,15 +31967,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        listingId: string;
-                        vrboListingNumber: string;
-                        /** @description Vrbo's property id for the unit. */
-                        propertyId: string;
-                        /** @example pricing */
-                        section: string;
-                        /** @description The fields this request sent. */
-                        written: string[];
-                        /** @description What Vrbo has stored for the section, read back after the write. */
+                        /** @description What Vrbo has after the write, read back from Vrbo. */
                         data: {
                             currency?: string | null;
                             /** @description Base rate per weekday (sunday … saturday). */
@@ -31254,6 +31979,36 @@ export interface operations {
                             defaultMinStay?: number | null;
                             rateLimits?: unknown;
                         };
+                        /** @description The fields this request sent. */
+                        written: string[];
+                        dataFreshness: {
+                            /**
+                             * Format: date-time
+                             * @description When this data was read from Vrbo.
+                             */
+                            lastSyncedAt: string;
+                            stale: boolean;
+                            /**
+                             * @description `refreshing`: the copy is over 24 h old and is being refreshed now — the next read has the new one. `reconnect_required`: Vrbo signed the account out; reconnect it (`fixUrl`).
+                             * @enum {string}
+                             */
+                            reason: "ok" | "refreshing" | "reconnect_required";
+                            fixUrl?: string;
+                            /**
+                             * @description `stored`: Repull's copy. `live`: read from Vrbo for this request.
+                             * @enum {string}
+                             */
+                            source: "stored" | "live";
+                            accounts: {
+                                accountId?: string | null;
+                                accountName?: string | null;
+                                lastSyncedAt?: string;
+                                stale?: boolean;
+                                reason?: string;
+                                fixUrl?: string;
+                            }[];
+                        };
+                        vrboListingNumber: string;
                     };
                 };
             };
@@ -31316,235 +32071,13 @@ export interface operations {
             };
         };
     };
-    getVrboListingProperty: {
-        parameters: {
-            query?: {
-                /** @description The Vrbo listing number to work on, when the listing is linked to more than one Vrbo unit. */
-                vrboListingNumber?: string;
-            };
-            header?: never;
-            path: {
-                /** @description Repull listing id (numeric string) of a listing linked to Vrbo. */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description The property details */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        listingId: string;
-                        vrboListingNumber: string;
-                        /** @description Vrbo's property id for the unit. */
-                        propertyId: string;
-                        /** @example property */
-                        section: string;
-                        /** @description The section as Vrbo has it now. */
-                        data: {
-                            /** @example townhome */
-                            propertyType?: string | null;
-                            propertyTypeOptions?: {
-                                value?: string;
-                                label?: string | null;
-                            }[];
-                            propertyName?: string | null;
-                            interiorSize?: {
-                                value?: number | null;
-                                /** @enum {string|null} */
-                                unit?: "sqft" | "sqm" | null;
-                            };
-                            seniorsOnly?: boolean | null;
-                            longTermRentersWelcome?: boolean | null;
-                        };
-                    };
-                };
-            };
-            401: components["responses"]["Unauthorized"];
-            403: components["responses"]["ListingInactive"];
-            404: components["responses"]["NotFound"];
-            /** @description The listing is linked to several Vrbo units (name one), the property is not on the account any more, or the account was signed out. */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            422: components["responses"]["UnprocessableEntity"];
-            500: components["responses"]["InternalError"];
-            /** @description Vrbo did not complete the request. */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Vrbo asked us to slow down for this account (`retry_after` seconds). Calendar and messages keep working. */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Vrbo did not answer in time. A write may still have landed: read the section first. */
-            504: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
-    updateVrboListingProperty: {
-        parameters: {
-            query?: {
-                /** @description The Vrbo listing number to work on, when the listing is linked to more than one Vrbo unit. */
-                vrboListingNumber?: string;
-            };
-            header?: never;
-            path: {
-                /** @description Repull listing id (numeric string) of a listing linked to Vrbo. */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                /**
-                 * @example {
-                 *       "interiorSize": {
-                 *         "value": 1450,
-                 *         "unit": "sqft"
-                 *       }
-                 *     }
-                 */
-                "application/json": {
-                    /** @description One of the read's `propertyTypeOptions[].value`. */
-                    propertyType?: string;
-                    /** @description Internal name (not shown to guests). */
-                    propertyName?: string;
-                    interiorSize?: {
-                        value: number;
-                        /** @enum {string} */
-                        unit: "sqft" | "sqm";
-                    };
-                    seniorsOnly?: boolean;
-                    longTermRentersWelcome?: boolean;
-                };
-            };
-        };
-        responses: {
-            /** @description Saved on Vrbo */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        listingId: string;
-                        vrboListingNumber: string;
-                        /** @description Vrbo's property id for the unit. */
-                        propertyId: string;
-                        /** @example property */
-                        section: string;
-                        /** @description The fields this request sent. */
-                        written: string[];
-                        /** @description What Vrbo has stored for the section, read back after the write. */
-                        data: {
-                            /** @example townhome */
-                            propertyType?: string | null;
-                            propertyTypeOptions?: {
-                                value?: string;
-                                label?: string | null;
-                            }[];
-                            propertyName?: string | null;
-                            interiorSize?: {
-                                value?: number | null;
-                                /** @enum {string|null} */
-                                unit?: "sqft" | "sqm" | null;
-                            };
-                            seniorsOnly?: boolean | null;
-                            longTermRentersWelcome?: boolean | null;
-                        };
-                    };
-                };
-            };
-            401: components["responses"]["Unauthorized"];
-            /** @description The listing is inactive, or the Vrbo account is connected with messaging access (it never writes to Vrbo). */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            404: components["responses"]["NotFound"];
-            /** @description The listing is linked to several Vrbo units (name one), the property is not on the account any more, or the account was signed out. */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description The request is malformed (`invalid_params`, nothing sent to Vrbo), or Vrbo refused it (`vrbo_rejected`, with Vrbo's own message). */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            500: components["responses"]["InternalError"];
-            /** @description Vrbo did not complete the request. */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Vrbo asked us to slow down for this account (`retry_after` seconds). Calendar and messages keep working. */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Vrbo did not answer in time. A write may still have landed: read the section first. */
-            504: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
     getVrboListingProtection: {
         parameters: {
             query?: {
                 /** @description The Vrbo listing number to work on, when the listing is linked to more than one Vrbo unit. */
                 vrboListingNumber?: string;
+                /** @description `stored` (default): Repull's copy, in milliseconds. `live`: read Vrbo now (seconds) and refresh the copy. */
+                source?: "stored" | "live";
             };
             header?: never;
             path: {
@@ -31562,13 +32095,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        listingId: string;
-                        vrboListingNumber: string;
-                        /** @description Vrbo's property id for the unit. */
-                        propertyId: string;
-                        /** @example protection */
-                        section: string;
-                        /** @description The section as Vrbo has it now. */
+                        /** @description The section as Vrbo has it. */
                         data: {
                             currency?: string | null;
                             damageCoverageEnabled?: boolean | null;
@@ -31581,6 +32108,35 @@ export interface operations {
                                 limit?: unknown;
                             }[];
                         };
+                        dataFreshness: {
+                            /**
+                             * Format: date-time
+                             * @description When this data was read from Vrbo.
+                             */
+                            lastSyncedAt: string;
+                            stale: boolean;
+                            /**
+                             * @description `refreshing`: the copy is over 24 h old and is being refreshed now — the next read has the new one. `reconnect_required`: Vrbo signed the account out; reconnect it (`fixUrl`).
+                             * @enum {string}
+                             */
+                            reason: "ok" | "refreshing" | "reconnect_required";
+                            fixUrl?: string;
+                            /**
+                             * @description `stored`: Repull's copy. `live`: read from Vrbo for this request.
+                             * @enum {string}
+                             */
+                            source: "stored" | "live";
+                            accounts: {
+                                accountId?: string | null;
+                                accountName?: string | null;
+                                lastSyncedAt?: string;
+                                stale?: boolean;
+                                reason?: string;
+                                fixUrl?: string;
+                            }[];
+                        };
+                        /** @description The Vrbo listing number this is about. */
+                        vrboListingNumber: string;
                     };
                 };
             };
@@ -31666,15 +32222,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        listingId: string;
-                        vrboListingNumber: string;
-                        /** @description Vrbo's property id for the unit. */
-                        propertyId: string;
-                        /** @example protection */
-                        section: string;
-                        /** @description The fields this request sent. */
-                        written: string[];
-                        /** @description What Vrbo has stored for the section, read back after the write. */
+                        /** @description What Vrbo has after the write, read back from Vrbo. */
                         data: {
                             currency?: string | null;
                             damageCoverageEnabled?: boolean | null;
@@ -31687,218 +32235,36 @@ export interface operations {
                                 limit?: unknown;
                             }[];
                         };
-                    };
-                };
-            };
-            401: components["responses"]["Unauthorized"];
-            /** @description The listing is inactive, or the Vrbo account is connected with messaging access (it never writes to Vrbo). */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            404: components["responses"]["NotFound"];
-            /** @description The listing is linked to several Vrbo units (name one), the property is not on the account any more, or the account was signed out. */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description The request is malformed (`invalid_params`, nothing sent to Vrbo), or Vrbo refused it (`vrbo_rejected`, with Vrbo's own message). */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            500: components["responses"]["InternalError"];
-            /** @description Vrbo did not complete the request. */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Vrbo asked us to slow down for this account (`retry_after` seconds). Calendar and messages keep working. */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Vrbo did not answer in time. A write may still have landed: read the section first. */
-            504: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
-    getVrboListingRegistration: {
-        parameters: {
-            query?: {
-                /** @description The Vrbo listing number to work on, when the listing is linked to more than one Vrbo unit. */
-                vrboListingNumber?: string;
-            };
-            header?: never;
-            path: {
-                /** @description Repull listing id (numeric string) of a listing linked to Vrbo. */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description The registration / licence */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        listingId: string;
-                        vrboListingNumber: string;
-                        /** @description Vrbo's property id for the unit. */
-                        propertyId: string;
-                        /** @example registration */
-                        section: string;
-                        /** @description The section as Vrbo has it now. */
-                        data: {
-                            status?: string | null;
-                            fields?: {
-                                name?: string;
-                                label?: string | null;
-                                value?: unknown;
-                                options?: {
-                                    value?: string;
-                                    label?: string | null;
-                                }[];
-                            }[];
-                        };
-                    };
-                };
-            };
-            401: components["responses"]["Unauthorized"];
-            403: components["responses"]["ListingInactive"];
-            404: components["responses"]["NotFound"];
-            /** @description The listing is linked to several Vrbo units (name one), the property is not on the account any more, or the account was signed out. */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            422: components["responses"]["UnprocessableEntity"];
-            500: components["responses"]["InternalError"];
-            /** @description Vrbo did not complete the request. */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Vrbo asked us to slow down for this account (`retry_after` seconds). Calendar and messages keep working. */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Vrbo did not answer in time. A write may still have landed: read the section first. */
-            504: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
-    updateVrboListingRegistration: {
-        parameters: {
-            query?: {
-                /** @description The Vrbo listing number to work on, when the listing is linked to more than one Vrbo unit. */
-                vrboListingNumber?: string;
-            };
-            header?: never;
-            path: {
-                /** @description Repull listing id (numeric string) of a listing linked to Vrbo. */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                /**
-                 * @example {
-                 *       "settings": [
-                 *         {
-                 *           "name": "registrationNumber",
-                 *           "value": "H123456789"
-                 *         }
-                 *       ]
-                 *     }
-                 */
-                "application/json": {
-                    settings: {
-                        /** @description A `fields[].name` from the read (they differ per jurisdiction). */
-                        name: string;
-                        value: (string | number | boolean) | null;
-                    }[];
-                };
-            };
-        };
-        responses: {
-            /** @description Saved on Vrbo */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        listingId: string;
-                        vrboListingNumber: string;
-                        /** @description Vrbo's property id for the unit. */
-                        propertyId: string;
-                        /** @example registration */
-                        section: string;
                         /** @description The fields this request sent. */
                         written: string[];
-                        /** @description What Vrbo has stored for the section, read back after the write. */
-                        data: {
-                            status?: string | null;
-                            fields?: {
-                                name?: string;
-                                label?: string | null;
-                                value?: unknown;
-                                options?: {
-                                    value?: string;
-                                    label?: string | null;
-                                }[];
+                        dataFreshness: {
+                            /**
+                             * Format: date-time
+                             * @description When this data was read from Vrbo.
+                             */
+                            lastSyncedAt: string;
+                            stale: boolean;
+                            /**
+                             * @description `refreshing`: the copy is over 24 h old and is being refreshed now — the next read has the new one. `reconnect_required`: Vrbo signed the account out; reconnect it (`fixUrl`).
+                             * @enum {string}
+                             */
+                            reason: "ok" | "refreshing" | "reconnect_required";
+                            fixUrl?: string;
+                            /**
+                             * @description `stored`: Repull's copy. `live`: read from Vrbo for this request.
+                             * @enum {string}
+                             */
+                            source: "stored" | "live";
+                            accounts: {
+                                accountId?: string | null;
+                                accountName?: string | null;
+                                lastSyncedAt?: string;
+                                stale?: boolean;
+                                reason?: string;
+                                fixUrl?: string;
                             }[];
                         };
+                        vrboListingNumber: string;
                     };
                 };
             };
@@ -31964,6 +32330,8 @@ export interface operations {
     getVrboListingRooms: {
         parameters: {
             query?: {
+                /** @description `stored` (default): Repull's copy, in milliseconds. `live`: read Vrbo now (seconds) and refresh the copy. */
+                source?: "stored" | "live";
                 /** @description The Vrbo listing number to work on, when the listing is linked to more than one Vrbo unit. */
                 vrboListingNumber?: string;
             };
@@ -31976,20 +32344,14 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description The rooms and spaces */
+            /** @description The rooms */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": {
-                        listingId: string;
-                        vrboListingNumber: string;
-                        /** @description Vrbo's property id for the unit. */
-                        propertyId: string;
-                        /** @example rooms */
-                        section: string;
-                        /** @description The section as Vrbo has it now. */
+                        /** @description The section as Vrbo has it. */
                         data: {
                             unitId?: string | null;
                             spaces?: {
@@ -32030,6 +32392,35 @@ export interface operations {
                                 label?: string | null;
                             }[];
                         };
+                        dataFreshness: {
+                            /**
+                             * Format: date-time
+                             * @description When this data was read from Vrbo.
+                             */
+                            lastSyncedAt: string;
+                            stale: boolean;
+                            /**
+                             * @description `refreshing`: the copy is over 24 h old and is being refreshed now — the next read has the new one. `reconnect_required`: Vrbo signed the account out; reconnect it (`fixUrl`).
+                             * @enum {string}
+                             */
+                            reason: "ok" | "refreshing" | "reconnect_required";
+                            fixUrl?: string;
+                            /**
+                             * @description `stored`: Repull's copy. `live`: read from Vrbo for this request.
+                             * @enum {string}
+                             */
+                            source: "stored" | "live";
+                            accounts: {
+                                accountId?: string | null;
+                                accountName?: string | null;
+                                lastSyncedAt?: string;
+                                stale?: boolean;
+                                reason?: string;
+                                fixUrl?: string;
+                            }[];
+                        };
+                        /** @description The Vrbo listing number this is about. */
+                        vrboListingNumber: string;
                     };
                 };
             };
@@ -32076,9 +32467,11 @@ export interface operations {
             };
         };
     };
-    updateVrboListingRooms: {
+    updateVrboListingRoom: {
         parameters: {
-            query?: {
+            query: {
+                /** @description The room's `spaceId` from GET …/rooms. */
+                roomId: string;
                 /** @description The Vrbo listing number to work on, when the listing is linked to more than one Vrbo unit. */
                 vrboListingNumber?: string;
             };
@@ -32093,70 +32486,45 @@ export interface operations {
             content: {
                 /**
                  * @example {
-                 *       "update": [
+                 *       "beds": [
                  *         {
-                 *           "spaceId": "abc-123",
-                 *           "beds": [
-                 *             {
-                 *               "type": "KING_BED",
-                 *               "size": "KING",
-                 *               "quantity": 1
-                 *             }
-                 *           ]
+                 *           "type": "king_bed",
+                 *           "quantity": 1
                  *         }
                  *       ]
                  *     }
                  */
                 "application/json": {
-                    add?: {
+                    name?: string;
+                    /** @description Vrbo cannot clear a room description once set. */
+                    description?: string;
+                    /**
+                     * @description Bathrooms: FULL_BATH (default) or NO_TUB_OR_SHOWER (half bath).
+                     * @example FULL_BATH
+                     */
+                    sub_type?: string;
+                    /** @description The room's whole sleeping arrangement: every bed, not just the changed one. */
+                    beds?: {
                         /**
-                         * @description One of the read's `addableTypes` (BEDROOM, BATHROOM, LIVING_ROOM, OFFICE, …).
-                         * @example BEDROOM
+                         * @description Airbnb's bed words (king_bed, queen_bed, double_bed, single_bed, bunk_bed, sofa_bed, couch, toddler_bed, crib) or Vrbo's (KING_BED, FUTON, MURPHY_BED, …).
+                         * @example king_bed
                          */
                         type: string;
-                        name?: string;
-                        /** @description Bathrooms: one of the read's `bathroomTypes` (FULL_BATH, HALF_BATH, …). */
-                        subType?: string;
-                        description?: string;
-                        beds?: {
-                            /** @example QUEEN_BED */
-                            type?: string;
-                            /** @example QUEEN */
-                            size?: string | null;
-                            quantity?: number;
-                        }[];
-                        /** @description `{amenityId: true|false}` or `[{id, selected, detail?}]` — only the ones given change. */
-                        amenities?: {
-                            [key: string]: unknown;
-                        } | {
-                            id?: string;
-                            selected?: boolean;
-                            detail?: string;
-                        }[];
+                        /**
+                         * @description Vrbo's size, for beds that come in several (BUNK_BED, SOFA_BED, FUTON, MURPHY_BED). Defaults to the usual one.
+                         * @example KING
+                         */
+                        size?: string;
+                        quantity: number;
                     }[];
-                    update?: {
-                        spaceId: string;
-                        name?: string;
-                        /** @description Bathrooms: one of the read's `bathroomTypes` (FULL_BATH, HALF_BATH, …). */
-                        subType?: string;
-                        description?: string;
-                        beds?: {
-                            /** @example QUEEN_BED */
-                            type?: string;
-                            /** @example QUEEN */
-                            size?: string | null;
-                            quantity?: number;
-                        }[];
-                        /** @description `{amenityId: true|false}` or `[{id, selected, detail?}]` — only the ones given change. */
-                        amenities?: {
-                            [key: string]: unknown;
-                        } | {
-                            id?: string;
-                            selected?: boolean;
-                            detail?: string;
-                        }[];
+                    /** @description `{amenityId: true|false}` or `[{id, selected, detail?}]` — only the ones given change. Ids are in GET …/rooms. */
+                    amenities?: {
+                        [key: string]: unknown;
+                    } | {
+                        id?: string;
+                        selected?: boolean;
+                        detail?: string;
                     }[];
-                    delete?: string[];
                 };
             };
         };
@@ -32168,15 +32536,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        listingId: string;
-                        vrboListingNumber: string;
-                        /** @description Vrbo's property id for the unit. */
-                        propertyId: string;
-                        /** @example rooms */
-                        section: string;
-                        /** @description The fields this request sent. */
-                        written: string[];
-                        /** @description What Vrbo has stored for the section, read back after the write. */
+                        /** @description What Vrbo has after the write, read back from Vrbo. */
                         data: {
                             unitId?: string | null;
                             spaces?: {
@@ -32217,6 +32577,399 @@ export interface operations {
                                 label?: string | null;
                             }[];
                         };
+                        /** @description The fields this request sent. */
+                        written: string[];
+                        dataFreshness: {
+                            /**
+                             * Format: date-time
+                             * @description When this data was read from Vrbo.
+                             */
+                            lastSyncedAt: string;
+                            stale: boolean;
+                            /**
+                             * @description `refreshing`: the copy is over 24 h old and is being refreshed now — the next read has the new one. `reconnect_required`: Vrbo signed the account out; reconnect it (`fixUrl`).
+                             * @enum {string}
+                             */
+                            reason: "ok" | "refreshing" | "reconnect_required";
+                            fixUrl?: string;
+                            /**
+                             * @description `stored`: Repull's copy. `live`: read from Vrbo for this request.
+                             * @enum {string}
+                             */
+                            source: "stored" | "live";
+                            accounts: {
+                                accountId?: string | null;
+                                accountName?: string | null;
+                                lastSyncedAt?: string;
+                                stale?: boolean;
+                                reason?: string;
+                                fixUrl?: string;
+                            }[];
+                        };
+                        vrboListingNumber: string;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description The listing is inactive, or the Vrbo account is connected with messaging access (it never writes to Vrbo). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            /** @description The listing is linked to several Vrbo units (name one), the property is not on the account any more, or the account was signed out. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The request is malformed (`invalid_params`, nothing sent to Vrbo), or Vrbo refused it (`vrbo_rejected`, with Vrbo's own message). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            500: components["responses"]["InternalError"];
+            /** @description Vrbo did not complete the request. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Vrbo asked us to slow down for this account (`retry_after` seconds). Calendar and messages keep working. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Vrbo did not answer in time. A write may still have landed: read the section first. */
+            504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    addVrboListingRoom: {
+        parameters: {
+            query?: {
+                /** @description The Vrbo listing number to work on, when the listing is linked to more than one Vrbo unit. */
+                vrboListingNumber?: string;
+            };
+            header?: never;
+            path: {
+                /** @description Repull listing id (numeric string) of a listing linked to Vrbo. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "room_type": "bedroom",
+                 *       "room_number": 3,
+                 *       "beds": [
+                 *         {
+                 *           "type": "queen_bed",
+                 *           "quantity": 1
+                 *         }
+                 *       ]
+                 *     }
+                 */
+                "application/json": {
+                    /** @example bedroom */
+                    room_type: string;
+                    /** @description Names the room "Bedroom 2" etc. when no `name` is given. */
+                    room_number?: number;
+                    name?: string;
+                    /** @description Vrbo cannot clear a room description once set. */
+                    description?: string;
+                    /**
+                     * @description Bathrooms: FULL_BATH (default) or NO_TUB_OR_SHOWER (half bath).
+                     * @example FULL_BATH
+                     */
+                    sub_type?: string;
+                    /** @description The room's whole sleeping arrangement: every bed, not just the changed one. */
+                    beds?: {
+                        /**
+                         * @description Airbnb's bed words (king_bed, queen_bed, double_bed, single_bed, bunk_bed, sofa_bed, couch, toddler_bed, crib) or Vrbo's (KING_BED, FUTON, MURPHY_BED, …).
+                         * @example king_bed
+                         */
+                        type: string;
+                        /**
+                         * @description Vrbo's size, for beds that come in several (BUNK_BED, SOFA_BED, FUTON, MURPHY_BED). Defaults to the usual one.
+                         * @example KING
+                         */
+                        size?: string;
+                        quantity: number;
+                    }[];
+                    /** @description `{amenityId: true|false}` or `[{id, selected, detail?}]` — only the ones given change. Ids are in GET …/rooms. */
+                    amenities?: {
+                        [key: string]: unknown;
+                    } | {
+                        id?: string;
+                        selected?: boolean;
+                        detail?: string;
+                    }[];
+                };
+            };
+        };
+        responses: {
+            /** @description Saved on Vrbo */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @description What Vrbo has after the write, read back from Vrbo. */
+                        data: {
+                            unitId?: string | null;
+                            spaces?: {
+                                spaceId?: string;
+                                /** @example BEDROOM */
+                                type?: string;
+                                /** @example FULL_BATH */
+                                subType?: string | null;
+                                name?: string | null;
+                                description?: string | null;
+                                isLegacyCommonArea?: boolean;
+                                beds?: {
+                                    /** @example QUEEN_BED */
+                                    type?: string;
+                                    /** @example QUEEN */
+                                    size?: string | null;
+                                    quantity?: number;
+                                }[];
+                                amenities?: {
+                                    id?: string;
+                                    label?: string | null;
+                                    selected?: boolean;
+                                    detailId?: string | null;
+                                    detail?: string | null;
+                                }[];
+                            }[];
+                            addableTypes?: string[];
+                            bedTypes?: {
+                                value?: string;
+                                label?: string | null;
+                                sizes?: {
+                                    value?: string;
+                                    label?: string | null;
+                                }[];
+                            }[];
+                            bathroomTypes?: {
+                                value?: string;
+                                label?: string | null;
+                            }[];
+                        };
+                        /** @description The fields this request sent. */
+                        written: string[];
+                        dataFreshness: {
+                            /**
+                             * Format: date-time
+                             * @description When this data was read from Vrbo.
+                             */
+                            lastSyncedAt: string;
+                            stale: boolean;
+                            /**
+                             * @description `refreshing`: the copy is over 24 h old and is being refreshed now — the next read has the new one. `reconnect_required`: Vrbo signed the account out; reconnect it (`fixUrl`).
+                             * @enum {string}
+                             */
+                            reason: "ok" | "refreshing" | "reconnect_required";
+                            fixUrl?: string;
+                            /**
+                             * @description `stored`: Repull's copy. `live`: read from Vrbo for this request.
+                             * @enum {string}
+                             */
+                            source: "stored" | "live";
+                            accounts: {
+                                accountId?: string | null;
+                                accountName?: string | null;
+                                lastSyncedAt?: string;
+                                stale?: boolean;
+                                reason?: string;
+                                fixUrl?: string;
+                            }[];
+                        };
+                        vrboListingNumber: string;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description The listing is inactive, or the Vrbo account is connected with messaging access (it never writes to Vrbo). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            /** @description The listing is linked to several Vrbo units (name one), the property is not on the account any more, or the account was signed out. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The request is malformed (`invalid_params`, nothing sent to Vrbo), or Vrbo refused it (`vrbo_rejected`, with Vrbo's own message). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            500: components["responses"]["InternalError"];
+            /** @description Vrbo did not complete the request. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Vrbo asked us to slow down for this account (`retry_after` seconds). Calendar and messages keep working. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Vrbo did not answer in time. A write may still have landed: read the section first. */
+            504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    deleteVrboListingRoom: {
+        parameters: {
+            query: {
+                /** @description The room's `spaceId` from GET …/rooms. */
+                roomId: string;
+                /** @description The Vrbo listing number to work on, when the listing is linked to more than one Vrbo unit. */
+                vrboListingNumber?: string;
+            };
+            header?: never;
+            path: {
+                /** @description Repull listing id (numeric string) of a listing linked to Vrbo. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Saved on Vrbo */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @description What Vrbo has after the write, read back from Vrbo. */
+                        data: {
+                            unitId?: string | null;
+                            spaces?: {
+                                spaceId?: string;
+                                /** @example BEDROOM */
+                                type?: string;
+                                /** @example FULL_BATH */
+                                subType?: string | null;
+                                name?: string | null;
+                                description?: string | null;
+                                isLegacyCommonArea?: boolean;
+                                beds?: {
+                                    /** @example QUEEN_BED */
+                                    type?: string;
+                                    /** @example QUEEN */
+                                    size?: string | null;
+                                    quantity?: number;
+                                }[];
+                                amenities?: {
+                                    id?: string;
+                                    label?: string | null;
+                                    selected?: boolean;
+                                    detailId?: string | null;
+                                    detail?: string | null;
+                                }[];
+                            }[];
+                            addableTypes?: string[];
+                            bedTypes?: {
+                                value?: string;
+                                label?: string | null;
+                                sizes?: {
+                                    value?: string;
+                                    label?: string | null;
+                                }[];
+                            }[];
+                            bathroomTypes?: {
+                                value?: string;
+                                label?: string | null;
+                            }[];
+                        };
+                        /** @description The fields this request sent. */
+                        written: string[];
+                        dataFreshness: {
+                            /**
+                             * Format: date-time
+                             * @description When this data was read from Vrbo.
+                             */
+                            lastSyncedAt: string;
+                            stale: boolean;
+                            /**
+                             * @description `refreshing`: the copy is over 24 h old and is being refreshed now — the next read has the new one. `reconnect_required`: Vrbo signed the account out; reconnect it (`fixUrl`).
+                             * @enum {string}
+                             */
+                            reason: "ok" | "refreshing" | "reconnect_required";
+                            fixUrl?: string;
+                            /**
+                             * @description `stored`: Repull's copy. `live`: read from Vrbo for this request.
+                             * @enum {string}
+                             */
+                            source: "stored" | "live";
+                            accounts: {
+                                accountId?: string | null;
+                                accountName?: string | null;
+                                lastSyncedAt?: string;
+                                stale?: boolean;
+                                reason?: string;
+                                fixUrl?: string;
+                            }[];
+                        };
+                        vrboListingNumber: string;
                     };
                 };
             };
@@ -32284,6 +33037,8 @@ export interface operations {
             query?: {
                 /** @description The Vrbo listing number to work on, when the listing is linked to more than one Vrbo unit. */
                 vrboListingNumber?: string;
+                /** @description `stored` (default): Repull's copy, in milliseconds. `live`: read Vrbo now (seconds) and refresh the copy. */
+                source?: "stored" | "live";
             };
             header?: never;
             path: {
@@ -32301,13 +33056,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        listingId: string;
-                        vrboListingNumber: string;
-                        /** @description Vrbo's property id for the unit. */
-                        propertyId: string;
-                        /** @example story */
-                        section: string;
-                        /** @description The section as Vrbo has it now. */
+                        /** @description The section as Vrbo has it. */
                         data: {
                             aboutYou?: string | null;
                             whyThisProperty?: string | null;
@@ -32316,6 +33065,35 @@ export interface operations {
                                 [key: string]: unknown;
                             };
                         };
+                        dataFreshness: {
+                            /**
+                             * Format: date-time
+                             * @description When this data was read from Vrbo.
+                             */
+                            lastSyncedAt: string;
+                            stale: boolean;
+                            /**
+                             * @description `refreshing`: the copy is over 24 h old and is being refreshed now — the next read has the new one. `reconnect_required`: Vrbo signed the account out; reconnect it (`fixUrl`).
+                             * @enum {string}
+                             */
+                            reason: "ok" | "refreshing" | "reconnect_required";
+                            fixUrl?: string;
+                            /**
+                             * @description `stored`: Repull's copy. `live`: read from Vrbo for this request.
+                             * @enum {string}
+                             */
+                            source: "stored" | "live";
+                            accounts: {
+                                accountId?: string | null;
+                                accountName?: string | null;
+                                lastSyncedAt?: string;
+                                stale?: boolean;
+                                reason?: string;
+                                fixUrl?: string;
+                            }[];
+                        };
+                        /** @description The Vrbo listing number this is about. */
+                        vrboListingNumber: string;
                     };
                 };
             };
@@ -32397,15 +33175,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        listingId: string;
-                        vrboListingNumber: string;
-                        /** @description Vrbo's property id for the unit. */
-                        propertyId: string;
-                        /** @example story */
-                        section: string;
-                        /** @description The fields this request sent. */
-                        written: string[];
-                        /** @description What Vrbo has stored for the section, read back after the write. */
+                        /** @description What Vrbo has after the write, read back from Vrbo. */
                         data: {
                             aboutYou?: string | null;
                             whyThisProperty?: string | null;
@@ -32414,6 +33184,36 @@ export interface operations {
                                 [key: string]: unknown;
                             };
                         };
+                        /** @description The fields this request sent. */
+                        written: string[];
+                        dataFreshness: {
+                            /**
+                             * Format: date-time
+                             * @description When this data was read from Vrbo.
+                             */
+                            lastSyncedAt: string;
+                            stale: boolean;
+                            /**
+                             * @description `refreshing`: the copy is over 24 h old and is being refreshed now — the next read has the new one. `reconnect_required`: Vrbo signed the account out; reconnect it (`fixUrl`).
+                             * @enum {string}
+                             */
+                            reason: "ok" | "refreshing" | "reconnect_required";
+                            fixUrl?: string;
+                            /**
+                             * @description `stored`: Repull's copy. `live`: read from Vrbo for this request.
+                             * @enum {string}
+                             */
+                            source: "stored" | "live";
+                            accounts: {
+                                accountId?: string | null;
+                                accountName?: string | null;
+                                lastSyncedAt?: string;
+                                stale?: boolean;
+                                reason?: string;
+                                fixUrl?: string;
+                            }[];
+                        };
+                        vrboListingNumber: string;
                     };
                 };
             };
@@ -32481,6 +33281,8 @@ export interface operations {
             query?: {
                 /** @description The Vrbo listing number to work on, when the listing is linked to more than one Vrbo unit. */
                 vrboListingNumber?: string;
+                /** @description `stored` (default): Repull's copy, in milliseconds. `live`: read Vrbo now (seconds) and refresh the copy. */
+                source?: "stored" | "live";
             };
             header?: never;
             path: {
@@ -32498,13 +33300,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        listingId: string;
-                        vrboListingNumber: string;
-                        /** @description Vrbo's property id for the unit. */
-                        propertyId: string;
-                        /** @example taxes */
-                        section: string;
-                        /** @description The section as Vrbo has it now. */
+                        /** @description The section as Vrbo has it. */
                         data: {
                             taxSource?: string | null;
                             vrboCollects?: boolean;
@@ -32518,6 +33314,35 @@ export interface operations {
                             /** @description Vrbo's tax settings as Vrbo returns them — the shape a write takes. */
                             raw?: unknown;
                         };
+                        dataFreshness: {
+                            /**
+                             * Format: date-time
+                             * @description When this data was read from Vrbo.
+                             */
+                            lastSyncedAt: string;
+                            stale: boolean;
+                            /**
+                             * @description `refreshing`: the copy is over 24 h old and is being refreshed now — the next read has the new one. `reconnect_required`: Vrbo signed the account out; reconnect it (`fixUrl`).
+                             * @enum {string}
+                             */
+                            reason: "ok" | "refreshing" | "reconnect_required";
+                            fixUrl?: string;
+                            /**
+                             * @description `stored`: Repull's copy. `live`: read from Vrbo for this request.
+                             * @enum {string}
+                             */
+                            source: "stored" | "live";
+                            accounts: {
+                                accountId?: string | null;
+                                accountName?: string | null;
+                                lastSyncedAt?: string;
+                                stale?: boolean;
+                                reason?: string;
+                                fixUrl?: string;
+                            }[];
+                        };
+                        /** @description The Vrbo listing number this is about. */
+                        vrboListingNumber: string;
                     };
                 };
             };
@@ -32610,15 +33435,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        listingId: string;
-                        vrboListingNumber: string;
-                        /** @description Vrbo's property id for the unit. */
-                        propertyId: string;
-                        /** @example taxes */
-                        section: string;
-                        /** @description The fields this request sent. */
-                        written: string[];
-                        /** @description What Vrbo has stored for the section, read back after the write. */
+                        /** @description What Vrbo has after the write, read back from Vrbo. */
                         data: {
                             taxSource?: string | null;
                             vrboCollects?: boolean;
@@ -32632,220 +33449,36 @@ export interface operations {
                             /** @description Vrbo's tax settings as Vrbo returns them — the shape a write takes. */
                             raw?: unknown;
                         };
-                    };
-                };
-            };
-            401: components["responses"]["Unauthorized"];
-            /** @description The listing is inactive, or the Vrbo account is connected with messaging access (it never writes to Vrbo). */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            404: components["responses"]["NotFound"];
-            /** @description The listing is linked to several Vrbo units (name one), the property is not on the account any more, or the account was signed out. */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description The request is malformed (`invalid_params`, nothing sent to Vrbo), or Vrbo refused it (`vrbo_rejected`, with Vrbo's own message). */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            500: components["responses"]["InternalError"];
-            /** @description Vrbo did not complete the request. */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Vrbo asked us to slow down for this account (`retry_after` seconds). Calendar and messages keep working. */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Vrbo did not answer in time. A write may still have landed: read the section first. */
-            504: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
-    getVrboListingTranslations: {
-        parameters: {
-            query?: {
-                /** @description The Vrbo listing number to work on, when the listing is linked to more than one Vrbo unit. */
-                vrboListingNumber?: string;
-            };
-            header?: never;
-            path: {
-                /** @description Repull listing id (numeric string) of a listing linked to Vrbo. */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description The manual translations */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        listingId: string;
-                        vrboListingNumber: string;
-                        /** @description Vrbo's property id for the unit. */
-                        propertyId: string;
-                        /** @example translations */
-                        section: string;
-                        /** @description The section as Vrbo has it now. */
-                        data: {
-                            items?: {
-                                /** @example fr-FR */
-                                locale?: string;
-                                headline?: string | null;
-                                description?: string | null;
-                            }[];
-                            languages?: {
-                                value?: string;
-                                label?: string | null;
-                            }[];
-                        };
-                    };
-                };
-            };
-            401: components["responses"]["Unauthorized"];
-            403: components["responses"]["ListingInactive"];
-            404: components["responses"]["NotFound"];
-            /** @description The listing is linked to several Vrbo units (name one), the property is not on the account any more, or the account was signed out. */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            422: components["responses"]["UnprocessableEntity"];
-            500: components["responses"]["InternalError"];
-            /** @description Vrbo did not complete the request. */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Vrbo asked us to slow down for this account (`retry_after` seconds). Calendar and messages keep working. */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Vrbo did not answer in time. A write may still have landed: read the section first. */
-            504: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
-    updateVrboListingTranslations: {
-        parameters: {
-            query?: {
-                /** @description The Vrbo listing number to work on, when the listing is linked to more than one Vrbo unit. */
-                vrboListingNumber?: string;
-            };
-            header?: never;
-            path: {
-                /** @description Repull listing id (numeric string) of a listing linked to Vrbo. */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                /**
-                 * @example {
-                 *       "set": [
-                 *         {
-                 *           "locale": "fr-FR",
-                 *           "headline": "Maison de ville avec spa",
-                 *           "description": "Une maison de ville sur quatre niveaux…"
-                 *         }
-                 *       ]
-                 *     }
-                 */
-                "application/json": {
-                    set?: {
-                        locale: string;
-                        headline?: string | null;
-                        description?: string | null;
-                    }[];
-                    delete?: string[];
-                };
-            };
-        };
-        responses: {
-            /** @description Saved on Vrbo */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        listingId: string;
-                        vrboListingNumber: string;
-                        /** @description Vrbo's property id for the unit. */
-                        propertyId: string;
-                        /** @example translations */
-                        section: string;
                         /** @description The fields this request sent. */
                         written: string[];
-                        /** @description What Vrbo has stored for the section, read back after the write. */
-                        data: {
-                            items?: {
-                                /** @example fr-FR */
-                                locale?: string;
-                                headline?: string | null;
-                                description?: string | null;
-                            }[];
-                            languages?: {
-                                value?: string;
-                                label?: string | null;
+                        dataFreshness: {
+                            /**
+                             * Format: date-time
+                             * @description When this data was read from Vrbo.
+                             */
+                            lastSyncedAt: string;
+                            stale: boolean;
+                            /**
+                             * @description `refreshing`: the copy is over 24 h old and is being refreshed now — the next read has the new one. `reconnect_required`: Vrbo signed the account out; reconnect it (`fixUrl`).
+                             * @enum {string}
+                             */
+                            reason: "ok" | "refreshing" | "reconnect_required";
+                            fixUrl?: string;
+                            /**
+                             * @description `stored`: Repull's copy. `live`: read from Vrbo for this request.
+                             * @enum {string}
+                             */
+                            source: "stored" | "live";
+                            accounts: {
+                                accountId?: string | null;
+                                accountName?: string | null;
+                                lastSyncedAt?: string;
+                                stale?: boolean;
+                                reason?: string;
+                                fixUrl?: string;
                             }[];
                         };
+                        vrboListingNumber: string;
                     };
                 };
             };
@@ -32913,6 +33546,8 @@ export interface operations {
             query?: {
                 /** @description The Vrbo listing number to work on, when the listing is linked to more than one Vrbo unit. */
                 vrboListingNumber?: string;
+                /** @description `stored` (default): Repull's copy, in milliseconds. `live`: read Vrbo now (seconds) and refresh the copy. */
+                source?: "stored" | "live";
             };
             header?: never;
             path: {
@@ -32930,13 +33565,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        listingId: string;
-                        vrboListingNumber: string;
-                        /** @description Vrbo's property id for the unit. */
-                        propertyId: string;
-                        /** @example videos */
-                        section: string;
-                        /** @description The section as Vrbo has it now. */
+                        /** @description The section as Vrbo has it. */
                         data: {
                             items?: {
                                 id?: string;
@@ -32950,6 +33579,35 @@ export interface operations {
                                 rejectedReasons?: unknown;
                             }[];
                         };
+                        dataFreshness: {
+                            /**
+                             * Format: date-time
+                             * @description When this data was read from Vrbo.
+                             */
+                            lastSyncedAt: string;
+                            stale: boolean;
+                            /**
+                             * @description `refreshing`: the copy is over 24 h old and is being refreshed now — the next read has the new one. `reconnect_required`: Vrbo signed the account out; reconnect it (`fixUrl`).
+                             * @enum {string}
+                             */
+                            reason: "ok" | "refreshing" | "reconnect_required";
+                            fixUrl?: string;
+                            /**
+                             * @description `stored`: Repull's copy. `live`: read from Vrbo for this request.
+                             * @enum {string}
+                             */
+                            source: "stored" | "live";
+                            accounts: {
+                                accountId?: string | null;
+                                accountName?: string | null;
+                                lastSyncedAt?: string;
+                                stale?: boolean;
+                                reason?: string;
+                                fixUrl?: string;
+                            }[];
+                        };
+                        /** @description The Vrbo listing number this is about. */
+                        vrboListingNumber: string;
                     };
                 };
             };
@@ -33033,15 +33691,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        listingId: string;
-                        vrboListingNumber: string;
-                        /** @description Vrbo's property id for the unit. */
-                        propertyId: string;
-                        /** @example videos */
-                        section: string;
-                        /** @description The fields this request sent. */
-                        written: string[];
-                        /** @description What Vrbo has stored for the section, read back after the write. */
+                        /** @description What Vrbo has after the write, read back from Vrbo. */
                         data: {
                             items?: {
                                 id?: string;
@@ -33055,6 +33705,36 @@ export interface operations {
                                 rejectedReasons?: unknown;
                             }[];
                         };
+                        /** @description The fields this request sent. */
+                        written: string[];
+                        dataFreshness: {
+                            /**
+                             * Format: date-time
+                             * @description When this data was read from Vrbo.
+                             */
+                            lastSyncedAt: string;
+                            stale: boolean;
+                            /**
+                             * @description `refreshing`: the copy is over 24 h old and is being refreshed now — the next read has the new one. `reconnect_required`: Vrbo signed the account out; reconnect it (`fixUrl`).
+                             * @enum {string}
+                             */
+                            reason: "ok" | "refreshing" | "reconnect_required";
+                            fixUrl?: string;
+                            /**
+                             * @description `stored`: Repull's copy. `live`: read from Vrbo for this request.
+                             * @enum {string}
+                             */
+                            source: "stored" | "live";
+                            accounts: {
+                                accountId?: string | null;
+                                accountName?: string | null;
+                                lastSyncedAt?: string;
+                                stale?: boolean;
+                                reason?: string;
+                                fixUrl?: string;
+                            }[];
+                        };
+                        vrboListingNumber: string;
                     };
                 };
             };
@@ -33141,15 +33821,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        listingId: string;
-                        vrboListingNumber: string;
-                        /** @description Vrbo's property id for the unit. */
-                        propertyId: string;
-                        /** @example videos */
-                        section: string;
-                        /** @description The fields this request sent. */
-                        written: string[];
-                        /** @description What Vrbo has stored for the section, read back after the write. */
+                        /** @description What Vrbo has after the write, read back from Vrbo. */
                         data: {
                             items?: {
                                 id?: string;
@@ -33163,307 +33835,36 @@ export interface operations {
                                 rejectedReasons?: unknown;
                             }[];
                         };
-                    };
-                };
-            };
-            401: components["responses"]["Unauthorized"];
-            /** @description The listing is inactive, or the Vrbo account is connected with messaging access (it never writes to Vrbo). */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            404: components["responses"]["NotFound"];
-            /** @description The listing is linked to several Vrbo units (name one), the property is not on the account any more, or the account was signed out. */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description The request is malformed (`invalid_params`, nothing sent to Vrbo), or Vrbo refused it (`vrbo_rejected`, with Vrbo's own message). */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            500: components["responses"]["InternalError"];
-            /** @description Vrbo did not complete the request. */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Vrbo asked us to slow down for this account (`retry_after` seconds). Calendar and messages keep working. */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Vrbo did not answer in time. A write may still have landed: read the section first. */
-            504: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
-    getVrboListingWelcomeGuide: {
-        parameters: {
-            query?: {
-                /** @description The Vrbo listing number to work on, when the listing is linked to more than one Vrbo unit. */
-                vrboListingNumber?: string;
-            };
-            header?: never;
-            path: {
-                /** @description Repull listing id (numeric string) of a listing linked to Vrbo. */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description The welcome guide */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        listingId: string;
-                        vrboListingNumber: string;
-                        /** @description Vrbo's property id for the unit. */
-                        propertyId: string;
-                        /** @example welcome-guide */
-                        section: string;
-                        /** @description The section as Vrbo has it now. */
-                        data: {
-                            checkIn?: {
-                                instructions?: string | null;
-                                available?: boolean | null;
-                                photos?: string[];
-                            } | null;
-                            checkOut?: {
-                                instructions?: string | null;
-                                available?: boolean | null;
-                                photos?: string[];
-                            } | null;
-                            drivingDirections?: {
-                                instructions?: string | null;
-                                available?: boolean | null;
-                                photos?: string[];
-                            } | null;
-                            parkingDirections?: {
-                                instructions?: string | null;
-                                available?: boolean | null;
-                                photos?: string[];
-                            } | null;
-                            access?: {
-                                type?: string | null;
-                                code?: string | null;
-                                instructions?: string | null;
-                            } | null;
-                            wifi?: {
-                                networkName?: string | null;
-                                password?: string | null;
-                                instructions?: string | null;
-                                available?: boolean | null;
-                            } | null;
-                            /** @description Keyed by Vrbo amenity id (e.g. HOT_TUB_HOSPITALITY). */
-                            amenities?: {
-                                [key: string]: {
-                                    instructions?: string | null;
-                                    available?: boolean | null;
-                                    photos?: string[];
-                                } | null;
-                            };
-                            contacts?: {
-                                scope?: string | null;
-                                name?: string | null;
-                                phone?: string | null;
-                            }[];
-                        };
-                    };
-                };
-            };
-            401: components["responses"]["Unauthorized"];
-            403: components["responses"]["ListingInactive"];
-            404: components["responses"]["NotFound"];
-            /** @description The listing is linked to several Vrbo units (name one), the property is not on the account any more, or the account was signed out. */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            422: components["responses"]["UnprocessableEntity"];
-            500: components["responses"]["InternalError"];
-            /** @description Vrbo did not complete the request. */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Vrbo asked us to slow down for this account (`retry_after` seconds). Calendar and messages keep working. */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Vrbo did not answer in time. A write may still have landed: read the section first. */
-            504: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
-    updateVrboListingWelcomeGuide: {
-        parameters: {
-            query?: {
-                /** @description The Vrbo listing number to work on, when the listing is linked to more than one Vrbo unit. */
-                vrboListingNumber?: string;
-            };
-            header?: never;
-            path: {
-                /** @description Repull listing id (numeric string) of a listing linked to Vrbo. */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                /**
-                 * @example {
-                 *       "wifi": {
-                 *         "networkName": "CedarRidge",
-                 *         "password": "hotspring21"
-                 *       }
-                 *     }
-                 */
-                "application/json": {
-                    checkIn?: {
-                        instructions: string;
-                    };
-                    checkOut?: {
-                        instructions: string;
-                    };
-                    drivingDirections?: {
-                        instructions: string;
-                    };
-                    parkingDirections?: {
-                        instructions: string;
-                    };
-                    wifi?: {
-                        networkName?: string;
-                        password?: string;
-                        instructions?: string;
-                    };
-                    access?: {
-                        type?: string;
-                        code?: string;
-                        instructions?: string;
-                    };
-                    /** @description `{AMENITY_ID: {instructions}}` — notes are one-way (not removable). */
-                    amenities?: {
-                        [key: string]: {
-                            instructions: string;
-                        };
-                    };
-                };
-            };
-        };
-        responses: {
-            /** @description Saved on Vrbo */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        listingId: string;
-                        vrboListingNumber: string;
-                        /** @description Vrbo's property id for the unit. */
-                        propertyId: string;
-                        /** @example welcome-guide */
-                        section: string;
                         /** @description The fields this request sent. */
                         written: string[];
-                        /** @description What Vrbo has stored for the section, read back after the write. */
-                        data: {
-                            checkIn?: {
-                                instructions?: string | null;
-                                available?: boolean | null;
-                                photos?: string[];
-                            } | null;
-                            checkOut?: {
-                                instructions?: string | null;
-                                available?: boolean | null;
-                                photos?: string[];
-                            } | null;
-                            drivingDirections?: {
-                                instructions?: string | null;
-                                available?: boolean | null;
-                                photos?: string[];
-                            } | null;
-                            parkingDirections?: {
-                                instructions?: string | null;
-                                available?: boolean | null;
-                                photos?: string[];
-                            } | null;
-                            access?: {
-                                type?: string | null;
-                                code?: string | null;
-                                instructions?: string | null;
-                            } | null;
-                            wifi?: {
-                                networkName?: string | null;
-                                password?: string | null;
-                                instructions?: string | null;
-                                available?: boolean | null;
-                            } | null;
-                            /** @description Keyed by Vrbo amenity id (e.g. HOT_TUB_HOSPITALITY). */
-                            amenities?: {
-                                [key: string]: {
-                                    instructions?: string | null;
-                                    available?: boolean | null;
-                                    photos?: string[];
-                                } | null;
-                            };
-                            contacts?: {
-                                scope?: string | null;
-                                name?: string | null;
-                                phone?: string | null;
+                        dataFreshness: {
+                            /**
+                             * Format: date-time
+                             * @description When this data was read from Vrbo.
+                             */
+                            lastSyncedAt: string;
+                            stale: boolean;
+                            /**
+                             * @description `refreshing`: the copy is over 24 h old and is being refreshed now — the next read has the new one. `reconnect_required`: Vrbo signed the account out; reconnect it (`fixUrl`).
+                             * @enum {string}
+                             */
+                            reason: "ok" | "refreshing" | "reconnect_required";
+                            fixUrl?: string;
+                            /**
+                             * @description `stored`: Repull's copy. `live`: read from Vrbo for this request.
+                             * @enum {string}
+                             */
+                            source: "stored" | "live";
+                            accounts: {
+                                accountId?: string | null;
+                                accountName?: string | null;
+                                lastSyncedAt?: string;
+                                stale?: boolean;
+                                reason?: string;
+                                fixUrl?: string;
                             }[];
                         };
+                        vrboListingNumber: string;
                     };
                 };
             };
@@ -33552,13 +33953,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        listingId: string;
-                        vrboListingNumber: string;
-                        /** @description Vrbo's property id for the unit. */
-                        propertyId: string;
-                        /** @example rates */
-                        section: string;
-                        /** @description The section as Vrbo has it now. */
+                        /** @description The section as Vrbo has it. */
                         data: {
                             start?: string;
                             end?: string;
@@ -33574,6 +33969,35 @@ export interface operations {
                                 minStay?: number | null;
                             }[];
                         };
+                        dataFreshness: {
+                            /**
+                             * Format: date-time
+                             * @description When this data was read from Vrbo.
+                             */
+                            lastSyncedAt: string;
+                            stale: boolean;
+                            /**
+                             * @description `refreshing`: the copy is over 24 h old and is being refreshed now — the next read has the new one. `reconnect_required`: Vrbo signed the account out; reconnect it (`fixUrl`).
+                             * @enum {string}
+                             */
+                            reason: "ok" | "refreshing" | "reconnect_required";
+                            fixUrl?: string;
+                            /**
+                             * @description `stored`: Repull's copy. `live`: read from Vrbo for this request.
+                             * @enum {string}
+                             */
+                            source: "stored" | "live";
+                            accounts: {
+                                accountId?: string | null;
+                                accountName?: string | null;
+                                lastSyncedAt?: string;
+                                stale?: boolean;
+                                reason?: string;
+                                fixUrl?: string;
+                            }[];
+                        };
+                        /** @description The Vrbo listing number this is about. */
+                        vrboListingNumber: string;
                     };
                 };
             };
@@ -33678,15 +34102,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        listingId: string;
-                        vrboListingNumber: string;
-                        /** @description Vrbo's property id for the unit. */
-                        propertyId: string;
-                        /** @example rates */
-                        section: string;
-                        /** @description The fields this request sent. */
-                        written: string[];
-                        /** @description What Vrbo has stored for the section, read back after the write. */
+                        /** @description What Vrbo has after the write, read back from Vrbo. */
                         data: {
                             start?: string;
                             end?: string;
@@ -33702,6 +34118,36 @@ export interface operations {
                                 minStay?: number | null;
                             }[];
                         };
+                        /** @description The fields this request sent. */
+                        written: string[];
+                        dataFreshness: {
+                            /**
+                             * Format: date-time
+                             * @description When this data was read from Vrbo.
+                             */
+                            lastSyncedAt: string;
+                            stale: boolean;
+                            /**
+                             * @description `refreshing`: the copy is over 24 h old and is being refreshed now — the next read has the new one. `reconnect_required`: Vrbo signed the account out; reconnect it (`fixUrl`).
+                             * @enum {string}
+                             */
+                            reason: "ok" | "refreshing" | "reconnect_required";
+                            fixUrl?: string;
+                            /**
+                             * @description `stored`: Repull's copy. `live`: read from Vrbo for this request.
+                             * @enum {string}
+                             */
+                            source: "stored" | "live";
+                            accounts: {
+                                accountId?: string | null;
+                                accountName?: string | null;
+                                lastSyncedAt?: string;
+                                stale?: boolean;
+                                reason?: string;
+                                fixUrl?: string;
+                            }[];
+                        };
+                        vrboListingNumber: string;
                     };
                 };
             };
@@ -33762,6 +34208,2485 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+        };
+    };
+    getVrboListingCheckinGuide: {
+        parameters: {
+            query?: {
+                /** @description The Vrbo listing number to work on, when the listing is linked to more than one Vrbo unit. */
+                vrboListingNumber?: string;
+                /** @description `stored` (default): Repull's copy, in milliseconds. `live`: read Vrbo now (seconds) and refresh the copy. */
+                source?: "stored" | "live";
+            };
+            header?: never;
+            path: {
+                /** @description Repull listing id (numeric string) of a listing linked to Vrbo. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The welcome guide */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @description The section as Vrbo has it. */
+                        data: {
+                            checkIn?: {
+                                instructions?: string | null;
+                                available?: boolean | null;
+                                photos?: string[];
+                            } | null;
+                            checkOut?: {
+                                instructions?: string | null;
+                                available?: boolean | null;
+                                photos?: string[];
+                            } | null;
+                            drivingDirections?: {
+                                instructions?: string | null;
+                                available?: boolean | null;
+                                photos?: string[];
+                            } | null;
+                            parkingDirections?: {
+                                instructions?: string | null;
+                                available?: boolean | null;
+                                photos?: string[];
+                            } | null;
+                            access?: {
+                                type?: string | null;
+                                code?: string | null;
+                                instructions?: string | null;
+                            } | null;
+                            wifi?: {
+                                networkName?: string | null;
+                                password?: string | null;
+                                instructions?: string | null;
+                                available?: boolean | null;
+                            } | null;
+                            /** @description Keyed by Vrbo amenity id (e.g. HOT_TUB_HOSPITALITY). */
+                            amenities?: {
+                                [key: string]: {
+                                    instructions?: string | null;
+                                    available?: boolean | null;
+                                    photos?: string[];
+                                } | null;
+                            };
+                            contacts?: {
+                                scope?: string | null;
+                                name?: string | null;
+                                phone?: string | null;
+                            }[];
+                        };
+                        dataFreshness: {
+                            /**
+                             * Format: date-time
+                             * @description When this data was read from Vrbo.
+                             */
+                            lastSyncedAt: string;
+                            stale: boolean;
+                            /**
+                             * @description `refreshing`: the copy is over 24 h old and is being refreshed now — the next read has the new one. `reconnect_required`: Vrbo signed the account out; reconnect it (`fixUrl`).
+                             * @enum {string}
+                             */
+                            reason: "ok" | "refreshing" | "reconnect_required";
+                            fixUrl?: string;
+                            /**
+                             * @description `stored`: Repull's copy. `live`: read from Vrbo for this request.
+                             * @enum {string}
+                             */
+                            source: "stored" | "live";
+                            accounts: {
+                                accountId?: string | null;
+                                accountName?: string | null;
+                                lastSyncedAt?: string;
+                                stale?: boolean;
+                                reason?: string;
+                                fixUrl?: string;
+                            }[];
+                        };
+                        /** @description The Vrbo listing number this is about. */
+                        vrboListingNumber: string;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
+            404: components["responses"]["NotFound"];
+            /** @description The listing is linked to several Vrbo units (name one), the property is not on the account any more, or the account was signed out. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            422: components["responses"]["UnprocessableEntity"];
+            500: components["responses"]["InternalError"];
+            /** @description Vrbo did not complete the request. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Vrbo asked us to slow down for this account (`retry_after` seconds). Calendar and messages keep working. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Vrbo did not answer in time. A write may still have landed: read the section first. */
+            504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    updateVrboListingCheckinGuide: {
+        parameters: {
+            query?: {
+                /** @description The Vrbo listing number to work on, when the listing is linked to more than one Vrbo unit. */
+                vrboListingNumber?: string;
+            };
+            header?: never;
+            path: {
+                /** @description Repull listing id (numeric string) of a listing linked to Vrbo. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "wifi": {
+                 *         "networkName": "CedarRidge",
+                 *         "password": "hotspring21"
+                 *       }
+                 *     }
+                 */
+                "application/json": {
+                    checkIn?: {
+                        instructions: string;
+                    };
+                    checkOut?: {
+                        instructions: string;
+                    };
+                    drivingDirections?: {
+                        instructions: string;
+                    };
+                    parkingDirections?: {
+                        instructions: string;
+                    };
+                    wifi?: {
+                        networkName?: string;
+                        password?: string;
+                        instructions?: string;
+                    };
+                    access?: {
+                        type?: string;
+                        code?: string;
+                        instructions?: string;
+                    };
+                    /** @description `{AMENITY_ID: {instructions}}` — notes are one-way (not removable). */
+                    amenities?: {
+                        [key: string]: {
+                            instructions: string;
+                        };
+                    };
+                };
+            };
+        };
+        responses: {
+            /** @description Saved on Vrbo */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @description What Vrbo has after the write, read back from Vrbo. */
+                        data: {
+                            checkIn?: {
+                                instructions?: string | null;
+                                available?: boolean | null;
+                                photos?: string[];
+                            } | null;
+                            checkOut?: {
+                                instructions?: string | null;
+                                available?: boolean | null;
+                                photos?: string[];
+                            } | null;
+                            drivingDirections?: {
+                                instructions?: string | null;
+                                available?: boolean | null;
+                                photos?: string[];
+                            } | null;
+                            parkingDirections?: {
+                                instructions?: string | null;
+                                available?: boolean | null;
+                                photos?: string[];
+                            } | null;
+                            access?: {
+                                type?: string | null;
+                                code?: string | null;
+                                instructions?: string | null;
+                            } | null;
+                            wifi?: {
+                                networkName?: string | null;
+                                password?: string | null;
+                                instructions?: string | null;
+                                available?: boolean | null;
+                            } | null;
+                            /** @description Keyed by Vrbo amenity id (e.g. HOT_TUB_HOSPITALITY). */
+                            amenities?: {
+                                [key: string]: {
+                                    instructions?: string | null;
+                                    available?: boolean | null;
+                                    photos?: string[];
+                                } | null;
+                            };
+                            contacts?: {
+                                scope?: string | null;
+                                name?: string | null;
+                                phone?: string | null;
+                            }[];
+                        };
+                        /** @description The fields this request sent. */
+                        written: string[];
+                        dataFreshness: {
+                            /**
+                             * Format: date-time
+                             * @description When this data was read from Vrbo.
+                             */
+                            lastSyncedAt: string;
+                            stale: boolean;
+                            /**
+                             * @description `refreshing`: the copy is over 24 h old and is being refreshed now — the next read has the new one. `reconnect_required`: Vrbo signed the account out; reconnect it (`fixUrl`).
+                             * @enum {string}
+                             */
+                            reason: "ok" | "refreshing" | "reconnect_required";
+                            fixUrl?: string;
+                            /**
+                             * @description `stored`: Repull's copy. `live`: read from Vrbo for this request.
+                             * @enum {string}
+                             */
+                            source: "stored" | "live";
+                            accounts: {
+                                accountId?: string | null;
+                                accountName?: string | null;
+                                lastSyncedAt?: string;
+                                stale?: boolean;
+                                reason?: string;
+                                fixUrl?: string;
+                            }[];
+                        };
+                        vrboListingNumber: string;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description The listing is inactive, or the Vrbo account is connected with messaging access (it never writes to Vrbo). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            /** @description The listing is linked to several Vrbo units (name one), the property is not on the account any more, or the account was signed out. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The request is malformed (`invalid_params`, nothing sent to Vrbo), or Vrbo refused it (`vrbo_rejected`, with Vrbo's own message). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            500: components["responses"]["InternalError"];
+            /** @description Vrbo did not complete the request. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Vrbo asked us to slow down for this account (`retry_after` seconds). Calendar and messages keep working. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Vrbo did not answer in time. A write may still have landed: read the section first. */
+            504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getVrboListingCheckoutGuide: {
+        parameters: {
+            query?: {
+                /** @description `stored` (default): Repull's copy, in milliseconds. `live`: read Vrbo now (seconds) and refresh the copy. */
+                source?: "stored" | "live";
+                /** @description The Vrbo listing number to work on, when the listing is linked to more than one Vrbo unit. */
+                vrboListingNumber?: string;
+            };
+            header?: never;
+            path: {
+                /** @description Repull listing id (numeric string) of a listing linked to Vrbo. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The checkout guide */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @description The section as Vrbo has it. */
+                        data: {
+                            instructions?: string | null;
+                            available?: boolean | null;
+                            photos?: string[];
+                        } | null;
+                        dataFreshness: {
+                            /**
+                             * Format: date-time
+                             * @description When this data was read from Vrbo.
+                             */
+                            lastSyncedAt: string;
+                            stale: boolean;
+                            /**
+                             * @description `refreshing`: the copy is over 24 h old and is being refreshed now — the next read has the new one. `reconnect_required`: Vrbo signed the account out; reconnect it (`fixUrl`).
+                             * @enum {string}
+                             */
+                            reason: "ok" | "refreshing" | "reconnect_required";
+                            fixUrl?: string;
+                            /**
+                             * @description `stored`: Repull's copy. `live`: read from Vrbo for this request.
+                             * @enum {string}
+                             */
+                            source: "stored" | "live";
+                            accounts: {
+                                accountId?: string | null;
+                                accountName?: string | null;
+                                lastSyncedAt?: string;
+                                stale?: boolean;
+                                reason?: string;
+                                fixUrl?: string;
+                            }[];
+                        };
+                        /** @description The Vrbo listing number this is about. */
+                        vrboListingNumber: string;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
+            404: components["responses"]["NotFound"];
+            /** @description The listing is linked to several Vrbo units (name one), the property is not on the account any more, or the account was signed out. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            422: components["responses"]["UnprocessableEntity"];
+            500: components["responses"]["InternalError"];
+            /** @description Vrbo did not complete the request. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Vrbo asked us to slow down for this account (`retry_after` seconds). Calendar and messages keep working. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Vrbo did not answer in time. A write may still have landed: read the section first. */
+            504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getVrboListingDescriptions: {
+        parameters: {
+            query?: {
+                /** @description Only this language (a code from `languages`). */
+                locale?: string;
+                /** @description `stored` (default): Repull's copy, in milliseconds. `live`: read Vrbo now (seconds) and refresh the copy. */
+                source?: "stored" | "live";
+                /** @description The Vrbo listing number to work on, when the listing is linked to more than one Vrbo unit. */
+                vrboListingNumber?: string;
+            };
+            header?: never;
+            path: {
+                /** @description Repull listing id (numeric string) of a listing linked to Vrbo. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The descriptions */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @description The section as Vrbo has it. */
+                        data: {
+                            /**
+                             * @description `null` for the listing's own language; a language code for a hand-written translation.
+                             * @example fr-FR
+                             */
+                            locale?: string | null;
+                            /** @description `true` for the listing's own language. */
+                            primary?: boolean;
+                            headline?: string | null;
+                            description?: string | null;
+                            /** @description On the primary item: the lengths Vrbo allows. */
+                            limits?: {
+                                headline?: {
+                                    minLength?: number | null;
+                                    maxLength?: number | null;
+                                } | null;
+                                description?: {
+                                    minLength?: number | null;
+                                    maxLength?: number | null;
+                                } | null;
+                            };
+                        }[];
+                        /** @description The languages a translation can be written in (`value` is the `locale`). */
+                        languages?: {
+                            value?: string;
+                            label?: string | null;
+                        }[];
+                        dataFreshness: {
+                            /**
+                             * Format: date-time
+                             * @description When this data was read from Vrbo.
+                             */
+                            lastSyncedAt: string;
+                            stale: boolean;
+                            /**
+                             * @description `refreshing`: the copy is over 24 h old and is being refreshed now — the next read has the new one. `reconnect_required`: Vrbo signed the account out; reconnect it (`fixUrl`).
+                             * @enum {string}
+                             */
+                            reason: "ok" | "refreshing" | "reconnect_required";
+                            fixUrl?: string;
+                            /**
+                             * @description `stored`: Repull's copy. `live`: read from Vrbo for this request.
+                             * @enum {string}
+                             */
+                            source: "stored" | "live";
+                            accounts: {
+                                accountId?: string | null;
+                                accountName?: string | null;
+                                lastSyncedAt?: string;
+                                stale?: boolean;
+                                reason?: string;
+                                fixUrl?: string;
+                            }[];
+                        };
+                        /** @description The Vrbo listing number this is about. */
+                        vrboListingNumber: string;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
+            404: components["responses"]["NotFound"];
+            /** @description The listing is linked to several Vrbo units (name one), the property is not on the account any more, or the account was signed out. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            422: components["responses"]["UnprocessableEntity"];
+            500: components["responses"]["InternalError"];
+            /** @description Vrbo did not complete the request. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Vrbo asked us to slow down for this account (`retry_after` seconds). Calendar and messages keep working. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Vrbo did not answer in time. A write may still have landed: read the section first. */
+            504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    updateVrboListingDescriptions: {
+        parameters: {
+            query?: {
+                /** @description The Vrbo listing number to work on, when the listing is linked to more than one Vrbo unit. */
+                vrboListingNumber?: string;
+            };
+            header?: never;
+            path: {
+                /** @description Repull listing id (numeric string) of a listing linked to Vrbo. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "headline": "Cedar Ridge townhouse with hot tub and BBQ"
+                 *     }
+                 */
+                "application/json": {
+                    /**
+                     * @description Leave out for the listing's own language. A language code (one of `languages` in the read) writes that language's hand-written translation, which replaces Vrbo's automatic one.
+                     * @example fr-FR
+                     */
+                    locale?: string;
+                    headline?: string;
+                    description?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Saved on Vrbo */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @description What Vrbo has after the write, read back from Vrbo. */
+                        data: {
+                            /**
+                             * @description `null` for the listing's own language; a language code for a hand-written translation.
+                             * @example fr-FR
+                             */
+                            locale?: string | null;
+                            /** @description `true` for the listing's own language. */
+                            primary?: boolean;
+                            headline?: string | null;
+                            description?: string | null;
+                            /** @description On the primary item: the lengths Vrbo allows. */
+                            limits?: {
+                                headline?: {
+                                    minLength?: number | null;
+                                    maxLength?: number | null;
+                                } | null;
+                                description?: {
+                                    minLength?: number | null;
+                                    maxLength?: number | null;
+                                } | null;
+                            };
+                        }[];
+                        /** @description The fields this request sent. */
+                        written: string[];
+                        dataFreshness: {
+                            /**
+                             * Format: date-time
+                             * @description When this data was read from Vrbo.
+                             */
+                            lastSyncedAt: string;
+                            stale: boolean;
+                            /**
+                             * @description `refreshing`: the copy is over 24 h old and is being refreshed now — the next read has the new one. `reconnect_required`: Vrbo signed the account out; reconnect it (`fixUrl`).
+                             * @enum {string}
+                             */
+                            reason: "ok" | "refreshing" | "reconnect_required";
+                            fixUrl?: string;
+                            /**
+                             * @description `stored`: Repull's copy. `live`: read from Vrbo for this request.
+                             * @enum {string}
+                             */
+                            source: "stored" | "live";
+                            accounts: {
+                                accountId?: string | null;
+                                accountName?: string | null;
+                                lastSyncedAt?: string;
+                                stale?: boolean;
+                                reason?: string;
+                                fixUrl?: string;
+                            }[];
+                        };
+                        vrboListingNumber: string;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description The listing is inactive, or the Vrbo account is connected with messaging access (it never writes to Vrbo). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            /** @description The listing is linked to several Vrbo units (name one), the property is not on the account any more, or the account was signed out. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The request is malformed (`invalid_params`, nothing sent to Vrbo), or Vrbo refused it (`vrbo_rejected`, with Vrbo's own message). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            500: components["responses"]["InternalError"];
+            /** @description Vrbo did not complete the request. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Vrbo asked us to slow down for this account (`retry_after` seconds). Calendar and messages keep working. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Vrbo did not answer in time. A write may still have landed: read the section first. */
+            504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    deleteVrboListingDescription: {
+        parameters: {
+            query: {
+                /** @description The language to remove. */
+                locale: string;
+                /** @description The Vrbo listing number to work on, when the listing is linked to more than one Vrbo unit. */
+                vrboListingNumber?: string;
+            };
+            header?: never;
+            path: {
+                /** @description Repull listing id (numeric string) of a listing linked to Vrbo. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Saved on Vrbo */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @description What Vrbo has after the write, read back from Vrbo. */
+                        data: {
+                            /**
+                             * @description `null` for the listing's own language; a language code for a hand-written translation.
+                             * @example fr-FR
+                             */
+                            locale?: string | null;
+                            /** @description `true` for the listing's own language. */
+                            primary?: boolean;
+                            headline?: string | null;
+                            description?: string | null;
+                            /** @description On the primary item: the lengths Vrbo allows. */
+                            limits?: {
+                                headline?: {
+                                    minLength?: number | null;
+                                    maxLength?: number | null;
+                                } | null;
+                                description?: {
+                                    minLength?: number | null;
+                                    maxLength?: number | null;
+                                } | null;
+                            };
+                        }[];
+                        /** @description The fields this request sent. */
+                        written: string[];
+                        dataFreshness: {
+                            /**
+                             * Format: date-time
+                             * @description When this data was read from Vrbo.
+                             */
+                            lastSyncedAt: string;
+                            stale: boolean;
+                            /**
+                             * @description `refreshing`: the copy is over 24 h old and is being refreshed now — the next read has the new one. `reconnect_required`: Vrbo signed the account out; reconnect it (`fixUrl`).
+                             * @enum {string}
+                             */
+                            reason: "ok" | "refreshing" | "reconnect_required";
+                            fixUrl?: string;
+                            /**
+                             * @description `stored`: Repull's copy. `live`: read from Vrbo for this request.
+                             * @enum {string}
+                             */
+                            source: "stored" | "live";
+                            accounts: {
+                                accountId?: string | null;
+                                accountName?: string | null;
+                                lastSyncedAt?: string;
+                                stale?: boolean;
+                                reason?: string;
+                                fixUrl?: string;
+                            }[];
+                        };
+                        vrboListingNumber: string;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description The listing is inactive, or the Vrbo account is connected with messaging access (it never writes to Vrbo). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            /** @description The listing is linked to several Vrbo units (name one), the property is not on the account any more, or the account was signed out. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The request is malformed (`invalid_params`, nothing sent to Vrbo), or Vrbo refused it (`vrbo_rejected`, with Vrbo's own message). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            500: components["responses"]["InternalError"];
+            /** @description Vrbo did not complete the request. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Vrbo asked us to slow down for this account (`retry_after` seconds). Calendar and messages keep working. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Vrbo did not answer in time. A write may still have landed: read the section first. */
+            504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getVrboListingDetails: {
+        parameters: {
+            query?: {
+                /** @description The Vrbo listing number to work on, when the listing is linked to more than one Vrbo unit. */
+                vrboListingNumber?: string;
+                /** @description `stored` (default): Repull's copy, in milliseconds. `live`: read Vrbo now (seconds) and refresh the copy. */
+                source?: "stored" | "live";
+            };
+            header?: never;
+            path: {
+                /** @description Repull listing id (numeric string) of a listing linked to Vrbo. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The property details */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @description The section as Vrbo has it. */
+                        data: {
+                            /** @example townhome */
+                            propertyType?: string | null;
+                            propertyTypeOptions?: {
+                                value?: string;
+                                label?: string | null;
+                            }[];
+                            propertyName?: string | null;
+                            interiorSize?: {
+                                value?: number | null;
+                                /** @enum {string|null} */
+                                unit?: "sqft" | "sqm" | null;
+                            };
+                            seniorsOnly?: boolean | null;
+                            longTermRentersWelcome?: boolean | null;
+                        };
+                        dataFreshness: {
+                            /**
+                             * Format: date-time
+                             * @description When this data was read from Vrbo.
+                             */
+                            lastSyncedAt: string;
+                            stale: boolean;
+                            /**
+                             * @description `refreshing`: the copy is over 24 h old and is being refreshed now — the next read has the new one. `reconnect_required`: Vrbo signed the account out; reconnect it (`fixUrl`).
+                             * @enum {string}
+                             */
+                            reason: "ok" | "refreshing" | "reconnect_required";
+                            fixUrl?: string;
+                            /**
+                             * @description `stored`: Repull's copy. `live`: read from Vrbo for this request.
+                             * @enum {string}
+                             */
+                            source: "stored" | "live";
+                            accounts: {
+                                accountId?: string | null;
+                                accountName?: string | null;
+                                lastSyncedAt?: string;
+                                stale?: boolean;
+                                reason?: string;
+                                fixUrl?: string;
+                            }[];
+                        };
+                        /** @description The Vrbo listing number this is about. */
+                        vrboListingNumber: string;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
+            404: components["responses"]["NotFound"];
+            /** @description The listing is linked to several Vrbo units (name one), the property is not on the account any more, or the account was signed out. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            422: components["responses"]["UnprocessableEntity"];
+            500: components["responses"]["InternalError"];
+            /** @description Vrbo did not complete the request. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Vrbo asked us to slow down for this account (`retry_after` seconds). Calendar and messages keep working. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Vrbo did not answer in time. A write may still have landed: read the section first. */
+            504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    updateVrboListingDetails: {
+        parameters: {
+            query?: {
+                /** @description The Vrbo listing number to work on, when the listing is linked to more than one Vrbo unit. */
+                vrboListingNumber?: string;
+            };
+            header?: never;
+            path: {
+                /** @description Repull listing id (numeric string) of a listing linked to Vrbo. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "interiorSize": {
+                 *         "value": 1450,
+                 *         "unit": "sqft"
+                 *       }
+                 *     }
+                 */
+                "application/json": {
+                    /** @description One of the read's `propertyTypeOptions[].value`. */
+                    propertyType?: string;
+                    /** @description Internal name (not shown to guests). */
+                    propertyName?: string;
+                    interiorSize?: {
+                        value: number;
+                        /** @enum {string} */
+                        unit: "sqft" | "sqm";
+                    };
+                    seniorsOnly?: boolean;
+                    longTermRentersWelcome?: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Saved on Vrbo */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @description What Vrbo has after the write, read back from Vrbo. */
+                        data: {
+                            /** @example townhome */
+                            propertyType?: string | null;
+                            propertyTypeOptions?: {
+                                value?: string;
+                                label?: string | null;
+                            }[];
+                            propertyName?: string | null;
+                            interiorSize?: {
+                                value?: number | null;
+                                /** @enum {string|null} */
+                                unit?: "sqft" | "sqm" | null;
+                            };
+                            seniorsOnly?: boolean | null;
+                            longTermRentersWelcome?: boolean | null;
+                        };
+                        /** @description The fields this request sent. */
+                        written: string[];
+                        dataFreshness: {
+                            /**
+                             * Format: date-time
+                             * @description When this data was read from Vrbo.
+                             */
+                            lastSyncedAt: string;
+                            stale: boolean;
+                            /**
+                             * @description `refreshing`: the copy is over 24 h old and is being refreshed now — the next read has the new one. `reconnect_required`: Vrbo signed the account out; reconnect it (`fixUrl`).
+                             * @enum {string}
+                             */
+                            reason: "ok" | "refreshing" | "reconnect_required";
+                            fixUrl?: string;
+                            /**
+                             * @description `stored`: Repull's copy. `live`: read from Vrbo for this request.
+                             * @enum {string}
+                             */
+                            source: "stored" | "live";
+                            accounts: {
+                                accountId?: string | null;
+                                accountName?: string | null;
+                                lastSyncedAt?: string;
+                                stale?: boolean;
+                                reason?: string;
+                                fixUrl?: string;
+                            }[];
+                        };
+                        vrboListingNumber: string;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description The listing is inactive, or the Vrbo account is connected with messaging access (it never writes to Vrbo). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            /** @description The listing is linked to several Vrbo units (name one), the property is not on the account any more, or the account was signed out. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The request is malformed (`invalid_params`, nothing sent to Vrbo), or Vrbo refused it (`vrbo_rejected`, with Vrbo's own message). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            500: components["responses"]["InternalError"];
+            /** @description Vrbo did not complete the request. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Vrbo asked us to slow down for this account (`retry_after` seconds). Calendar and messages keep working. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Vrbo did not answer in time. A write may still have landed: read the section first. */
+            504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getVrboListingPermits: {
+        parameters: {
+            query?: {
+                /** @description The Vrbo listing number to work on, when the listing is linked to more than one Vrbo unit. */
+                vrboListingNumber?: string;
+                /** @description `stored` (default): Repull's copy, in milliseconds. `live`: read Vrbo now (seconds) and refresh the copy. */
+                source?: "stored" | "live";
+            };
+            header?: never;
+            path: {
+                /** @description Repull listing id (numeric string) of a listing linked to Vrbo. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The registration / licence */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @description The section as Vrbo has it. */
+                        data: {
+                            status?: string | null;
+                            fields?: {
+                                name?: string;
+                                label?: string | null;
+                                value?: unknown;
+                                options?: {
+                                    value?: string;
+                                    label?: string | null;
+                                }[];
+                            }[];
+                        };
+                        dataFreshness: {
+                            /**
+                             * Format: date-time
+                             * @description When this data was read from Vrbo.
+                             */
+                            lastSyncedAt: string;
+                            stale: boolean;
+                            /**
+                             * @description `refreshing`: the copy is over 24 h old and is being refreshed now — the next read has the new one. `reconnect_required`: Vrbo signed the account out; reconnect it (`fixUrl`).
+                             * @enum {string}
+                             */
+                            reason: "ok" | "refreshing" | "reconnect_required";
+                            fixUrl?: string;
+                            /**
+                             * @description `stored`: Repull's copy. `live`: read from Vrbo for this request.
+                             * @enum {string}
+                             */
+                            source: "stored" | "live";
+                            accounts: {
+                                accountId?: string | null;
+                                accountName?: string | null;
+                                lastSyncedAt?: string;
+                                stale?: boolean;
+                                reason?: string;
+                                fixUrl?: string;
+                            }[];
+                        };
+                        /** @description The Vrbo listing number this is about. */
+                        vrboListingNumber: string;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
+            404: components["responses"]["NotFound"];
+            /** @description The listing is linked to several Vrbo units (name one), the property is not on the account any more, or the account was signed out. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            422: components["responses"]["UnprocessableEntity"];
+            500: components["responses"]["InternalError"];
+            /** @description Vrbo did not complete the request. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Vrbo asked us to slow down for this account (`retry_after` seconds). Calendar and messages keep working. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Vrbo did not answer in time. A write may still have landed: read the section first. */
+            504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    updateVrboListingPermits: {
+        parameters: {
+            query?: {
+                /** @description The Vrbo listing number to work on, when the listing is linked to more than one Vrbo unit. */
+                vrboListingNumber?: string;
+            };
+            header?: never;
+            path: {
+                /** @description Repull listing id (numeric string) of a listing linked to Vrbo. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "settings": [
+                 *         {
+                 *           "name": "registrationNumber",
+                 *           "value": "H123456789"
+                 *         }
+                 *       ]
+                 *     }
+                 */
+                "application/json": {
+                    settings: {
+                        /** @description A `fields[].name` from the read (they differ per jurisdiction). */
+                        name: string;
+                        value: (string | number | boolean) | null;
+                    }[];
+                };
+            };
+        };
+        responses: {
+            /** @description Saved on Vrbo */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @description What Vrbo has after the write, read back from Vrbo. */
+                        data: {
+                            status?: string | null;
+                            fields?: {
+                                name?: string;
+                                label?: string | null;
+                                value?: unknown;
+                                options?: {
+                                    value?: string;
+                                    label?: string | null;
+                                }[];
+                            }[];
+                        };
+                        /** @description The fields this request sent. */
+                        written: string[];
+                        dataFreshness: {
+                            /**
+                             * Format: date-time
+                             * @description When this data was read from Vrbo.
+                             */
+                            lastSyncedAt: string;
+                            stale: boolean;
+                            /**
+                             * @description `refreshing`: the copy is over 24 h old and is being refreshed now — the next read has the new one. `reconnect_required`: Vrbo signed the account out; reconnect it (`fixUrl`).
+                             * @enum {string}
+                             */
+                            reason: "ok" | "refreshing" | "reconnect_required";
+                            fixUrl?: string;
+                            /**
+                             * @description `stored`: Repull's copy. `live`: read from Vrbo for this request.
+                             * @enum {string}
+                             */
+                            source: "stored" | "live";
+                            accounts: {
+                                accountId?: string | null;
+                                accountName?: string | null;
+                                lastSyncedAt?: string;
+                                stale?: boolean;
+                                reason?: string;
+                                fixUrl?: string;
+                            }[];
+                        };
+                        vrboListingNumber: string;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description The listing is inactive, or the Vrbo account is connected with messaging access (it never writes to Vrbo). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            /** @description The listing is linked to several Vrbo units (name one), the property is not on the account any more, or the account was signed out. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The request is malformed (`invalid_params`, nothing sent to Vrbo), or Vrbo refused it (`vrbo_rejected`, with Vrbo's own message). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            500: components["responses"]["InternalError"];
+            /** @description Vrbo did not complete the request. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Vrbo asked us to slow down for this account (`retry_after` seconds). Calendar and messages keep working. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Vrbo did not answer in time. A write may still have landed: read the section first. */
+            504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    setVrboListingCoverPhoto: {
+        parameters: {
+            query?: {
+                /** @description The Vrbo listing number to work on, when the listing is linked to more than one Vrbo unit. */
+                vrboListingNumber?: string;
+            };
+            header?: never;
+            path: {
+                /** @description Repull listing id (numeric string) of a listing linked to Vrbo. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "photo_id": "1234567"
+                 *     }
+                 */
+                "application/json": {
+                    photo_id: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Saved on Vrbo */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @description What Vrbo has after the write, read back from Vrbo. */
+                        data: {
+                            items?: {
+                                id?: string;
+                                url?: string | null;
+                                caption?: string | null;
+                                /** @description Vrbo's own tags for the photo (read-only). */
+                                tags?: unknown;
+                                rank?: number | null;
+                                roomIds?: string[];
+                                status?: string | null;
+                            }[];
+                            count?: number;
+                            rejected?: {
+                                id?: string;
+                                url?: string | null;
+                                reason?: string;
+                            }[];
+                        };
+                        /** @description The fields this request sent. */
+                        written: string[];
+                        dataFreshness: {
+                            /**
+                             * Format: date-time
+                             * @description When this data was read from Vrbo.
+                             */
+                            lastSyncedAt: string;
+                            stale: boolean;
+                            /**
+                             * @description `refreshing`: the copy is over 24 h old and is being refreshed now — the next read has the new one. `reconnect_required`: Vrbo signed the account out; reconnect it (`fixUrl`).
+                             * @enum {string}
+                             */
+                            reason: "ok" | "refreshing" | "reconnect_required";
+                            fixUrl?: string;
+                            /**
+                             * @description `stored`: Repull's copy. `live`: read from Vrbo for this request.
+                             * @enum {string}
+                             */
+                            source: "stored" | "live";
+                            accounts: {
+                                accountId?: string | null;
+                                accountName?: string | null;
+                                lastSyncedAt?: string;
+                                stale?: boolean;
+                                reason?: string;
+                                fixUrl?: string;
+                            }[];
+                        };
+                        vrboListingNumber: string;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description The listing is inactive, or the Vrbo account is connected with messaging access (it never writes to Vrbo). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            /** @description The listing is linked to several Vrbo units (name one), the property is not on the account any more, or the account was signed out. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The request is malformed (`invalid_params`, nothing sent to Vrbo), or Vrbo refused it (`vrbo_rejected`, with Vrbo's own message). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            500: components["responses"]["InternalError"];
+            /** @description Vrbo did not complete the request. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Vrbo asked us to slow down for this account (`retry_after` seconds). Calendar and messages keep working. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Vrbo did not answer in time. A write may still have landed: read the section first. */
+            504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    reorderVrboListingPhotos: {
+        parameters: {
+            query?: {
+                /** @description The Vrbo listing number to work on, when the listing is linked to more than one Vrbo unit. */
+                vrboListingNumber?: string;
+            };
+            header?: never;
+            path: {
+                /** @description Repull listing id (numeric string) of a listing linked to Vrbo. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "photo_ids": [
+                 *         "1234567",
+                 *         "1234570",
+                 *         "1234568"
+                 *       ]
+                 *     }
+                 */
+                "application/json": {
+                    photo_ids: string[];
+                };
+            };
+        };
+        responses: {
+            /** @description Saved on Vrbo */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @description What Vrbo has after the write, read back from Vrbo. */
+                        data: {
+                            items?: {
+                                id?: string;
+                                url?: string | null;
+                                caption?: string | null;
+                                /** @description Vrbo's own tags for the photo (read-only). */
+                                tags?: unknown;
+                                rank?: number | null;
+                                roomIds?: string[];
+                                status?: string | null;
+                            }[];
+                            count?: number;
+                            rejected?: {
+                                id?: string;
+                                url?: string | null;
+                                reason?: string;
+                            }[];
+                        };
+                        /** @description The fields this request sent. */
+                        written: string[];
+                        dataFreshness: {
+                            /**
+                             * Format: date-time
+                             * @description When this data was read from Vrbo.
+                             */
+                            lastSyncedAt: string;
+                            stale: boolean;
+                            /**
+                             * @description `refreshing`: the copy is over 24 h old and is being refreshed now — the next read has the new one. `reconnect_required`: Vrbo signed the account out; reconnect it (`fixUrl`).
+                             * @enum {string}
+                             */
+                            reason: "ok" | "refreshing" | "reconnect_required";
+                            fixUrl?: string;
+                            /**
+                             * @description `stored`: Repull's copy. `live`: read from Vrbo for this request.
+                             * @enum {string}
+                             */
+                            source: "stored" | "live";
+                            accounts: {
+                                accountId?: string | null;
+                                accountName?: string | null;
+                                lastSyncedAt?: string;
+                                stale?: boolean;
+                                reason?: string;
+                                fixUrl?: string;
+                            }[];
+                        };
+                        vrboListingNumber: string;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description The listing is inactive, or the Vrbo account is connected with messaging access (it never writes to Vrbo). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            /** @description The listing is linked to several Vrbo units (name one), the property is not on the account any more, or the account was signed out. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The request is malformed (`invalid_params`, nothing sent to Vrbo), or Vrbo refused it (`vrbo_rejected`, with Vrbo's own message). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            500: components["responses"]["InternalError"];
+            /** @description Vrbo did not complete the request. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Vrbo asked us to slow down for this account (`retry_after` seconds). Calendar and messages keep working. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Vrbo did not answer in time. A write may still have landed: read the section first. */
+            504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getVrboListingSafetyDisclosures: {
+        parameters: {
+            query?: {
+                /** @description `stored` (default): Repull's copy, in milliseconds. `live`: read Vrbo now (seconds) and refresh the copy. */
+                source?: "stored" | "live";
+                /** @description The Vrbo listing number to work on, when the listing is linked to more than one Vrbo unit. */
+                vrboListingNumber?: string;
+            };
+            header?: never;
+            path: {
+                /** @description Repull listing id (numeric string) of a listing linked to Vrbo. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The safety disclosures */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @description The section as Vrbo has it. */
+                        data: {
+                            /** @description Keyed by group: homeSafety, safetyDevices. */
+                            groups?: {
+                                [key: string]: {
+                                    groupId?: string;
+                                    fields?: {
+                                        /**
+                                         * @description The field id to write in `values`.
+                                         * @example haveInternet:yes:haveWifi
+                                         */
+                                        id?: string;
+                                        /** @enum {string} */
+                                        type?: "checkbox" | "choice" | "text" | "number" | "measurement" | "checkboxGroup";
+                                        title?: string | null;
+                                        section?: string | null;
+                                        /** @description Checkbox: true/false. Choice: one of `options[].value`. Text / number as such. */
+                                        value?: (string | number | boolean) | null;
+                                        options?: {
+                                            value?: string;
+                                            label?: string | null;
+                                        }[];
+                                        min?: number | null;
+                                        max?: number | null;
+                                        maxLength?: number | null;
+                                        /** @description The parent field and value this field is shown under. */
+                                        shownWhen?: {
+                                            id?: string;
+                                            value?: string;
+                                        } | null;
+                                    }[];
+                                };
+                            };
+                        };
+                        dataFreshness: {
+                            /**
+                             * Format: date-time
+                             * @description When this data was read from Vrbo.
+                             */
+                            lastSyncedAt: string;
+                            stale: boolean;
+                            /**
+                             * @description `refreshing`: the copy is over 24 h old and is being refreshed now — the next read has the new one. `reconnect_required`: Vrbo signed the account out; reconnect it (`fixUrl`).
+                             * @enum {string}
+                             */
+                            reason: "ok" | "refreshing" | "reconnect_required";
+                            fixUrl?: string;
+                            /**
+                             * @description `stored`: Repull's copy. `live`: read from Vrbo for this request.
+                             * @enum {string}
+                             */
+                            source: "stored" | "live";
+                            accounts: {
+                                accountId?: string | null;
+                                accountName?: string | null;
+                                lastSyncedAt?: string;
+                                stale?: boolean;
+                                reason?: string;
+                                fixUrl?: string;
+                            }[];
+                        };
+                        /** @description The Vrbo listing number this is about. */
+                        vrboListingNumber: string;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
+            404: components["responses"]["NotFound"];
+            /** @description The listing is linked to several Vrbo units (name one), the property is not on the account any more, or the account was signed out. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            422: components["responses"]["UnprocessableEntity"];
+            500: components["responses"]["InternalError"];
+            /** @description Vrbo did not complete the request. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Vrbo asked us to slow down for this account (`retry_after` seconds). Calendar and messages keep working. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Vrbo did not answer in time. A write may still have landed: read the section first. */
+            504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    updateVrboListingSafetyDisclosures: {
+        parameters: {
+            query?: {
+                /** @description The Vrbo listing number to work on, when the listing is linked to more than one Vrbo unit. */
+                vrboListingNumber?: string;
+            };
+            header?: never;
+            path: {
+                /** @description Repull listing id (numeric string) of a listing linked to Vrbo. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    groups: {
+                        homeSafety?: {
+                            values: {
+                                [key: string]: (boolean | string | number) | null;
+                            };
+                        };
+                        safetyDevices?: {
+                            values: {
+                                [key: string]: (boolean | string | number) | null;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        responses: {
+            /** @description Saved on Vrbo */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @description What Vrbo has after the write, read back from Vrbo. */
+                        data: {
+                            /** @description Keyed by group: homeSafety, safetyDevices. */
+                            groups?: {
+                                [key: string]: {
+                                    groupId?: string;
+                                    fields?: {
+                                        /**
+                                         * @description The field id to write in `values`.
+                                         * @example haveInternet:yes:haveWifi
+                                         */
+                                        id?: string;
+                                        /** @enum {string} */
+                                        type?: "checkbox" | "choice" | "text" | "number" | "measurement" | "checkboxGroup";
+                                        title?: string | null;
+                                        section?: string | null;
+                                        /** @description Checkbox: true/false. Choice: one of `options[].value`. Text / number as such. */
+                                        value?: (string | number | boolean) | null;
+                                        options?: {
+                                            value?: string;
+                                            label?: string | null;
+                                        }[];
+                                        min?: number | null;
+                                        max?: number | null;
+                                        maxLength?: number | null;
+                                        /** @description The parent field and value this field is shown under. */
+                                        shownWhen?: {
+                                            id?: string;
+                                            value?: string;
+                                        } | null;
+                                    }[];
+                                };
+                            };
+                        };
+                        /** @description The fields this request sent. */
+                        written: string[];
+                        dataFreshness: {
+                            /**
+                             * Format: date-time
+                             * @description When this data was read from Vrbo.
+                             */
+                            lastSyncedAt: string;
+                            stale: boolean;
+                            /**
+                             * @description `refreshing`: the copy is over 24 h old and is being refreshed now — the next read has the new one. `reconnect_required`: Vrbo signed the account out; reconnect it (`fixUrl`).
+                             * @enum {string}
+                             */
+                            reason: "ok" | "refreshing" | "reconnect_required";
+                            fixUrl?: string;
+                            /**
+                             * @description `stored`: Repull's copy. `live`: read from Vrbo for this request.
+                             * @enum {string}
+                             */
+                            source: "stored" | "live";
+                            accounts: {
+                                accountId?: string | null;
+                                accountName?: string | null;
+                                lastSyncedAt?: string;
+                                stale?: boolean;
+                                reason?: string;
+                                fixUrl?: string;
+                            }[];
+                        };
+                        vrboListingNumber: string;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description The listing is inactive, or the Vrbo account is connected with messaging access (it never writes to Vrbo). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            /** @description The listing is linked to several Vrbo units (name one), the property is not on the account any more, or the account was signed out. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The request is malformed (`invalid_params`, nothing sent to Vrbo), or Vrbo refused it (`vrbo_rejected`, with Vrbo's own message). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            500: components["responses"]["InternalError"];
+            /** @description Vrbo did not complete the request. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Vrbo asked us to slow down for this account (`retry_after` seconds). Calendar and messages keep working. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Vrbo did not answer in time. A write may still have landed: read the section first. */
+            504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getVrboListing: {
+        parameters: {
+            query?: {
+                /** @description `content`: add the stored listing-content sections. */
+                include?: "content";
+            };
+            header?: never;
+            path: {
+                /** @description Repull listing id (numeric string). */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The Vrbo units */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            /** @description Repull's id for this link. */
+                            id?: string;
+                            listingId?: string;
+                            /**
+                             * @description The number in the Vrbo URL (vrbo.com/5506023).
+                             * @example 5506023
+                             */
+                            vrboListingNumber?: string;
+                            unitId?: string | null;
+                            /** @description Vrbo's property id. */
+                            propertyId?: string | null;
+                            advertiserId?: string | null;
+                            url?: string | null;
+                            /**
+                             * @description Vrbo's own status: `LIVE`, `InactiveByOwnerRequest` (hidden), …
+                             * @example LIVE
+                             */
+                            status?: string | null;
+                            live?: boolean;
+                            /** @description Linked through a connected Vrbo account — the link content, calendar and messages go through. */
+                            connected?: boolean;
+                            active?: boolean;
+                            syncEnabled?: boolean;
+                            /**
+                             * @description The Vrbo account the unit is on, as `GET /v1/connect/vrbo-login` lists it.
+                             * @example vrbo:7001234
+                             */
+                            accountId?: string | null;
+                            accountName?: string | null;
+                            /** @enum {string|null} */
+                            accessType?: "full_access" | "messaging" | null;
+                            accountStatus?: string | null;
+                            headline?: string | null;
+                            name?: string | null;
+                            thumbnailUrl?: string | null;
+                            currency?: string | null;
+                            /** @description The markup Repull adds to this unit's prices. */
+                            markupPercent?: number | null;
+                            bookingPolicy?: string | null;
+                            capacity?: {
+                                maxGuests?: number | null;
+                                maxAdults?: number | null;
+                                maxChildren?: number | null;
+                                pets?: {
+                                    allowed?: boolean | null;
+                                    max?: number | null;
+                                };
+                            };
+                            bedrooms?: number | null;
+                            bathrooms?: number | null;
+                            beds?: number | null;
+                            checkInTime?: string | null;
+                            checkOutTime?: string | null;
+                            minStay?: number | null;
+                            maxStay?: number | null;
+                            minAdvanceNoticeDays?: number | null;
+                            address?: {
+                                line1?: string | null;
+                                city?: string | null;
+                                state?: string | null;
+                                postalCode?: string | null;
+                                countryCode?: string | null;
+                                lat?: number | null;
+                                lng?: number | null;
+                            };
+                            rating?: {
+                                average?: number | null;
+                                count?: number | null;
+                            };
+                            hostName?: string | null;
+                            linkedAt?: string | null;
+                            disconnectedAt?: string | null;
+                            detailsSyncedAt?: string | null;
+                            content?: {
+                                /** @description With `include=content`: each section Repull holds, as `GET /v1/channels/vrbo/listings/{id}/{section}` returns its `data`. */
+                                sections?: {
+                                    [key: string]: unknown;
+                                };
+                                /** @description When each section was read from Vrbo. */
+                                syncedAt?: {
+                                    [key: string]: string;
+                                };
+                            };
+                        }[];
+                        /** @description Whether the Vrbo accounts are in sync — the same envelope as the Airbnb reads. */
+                        dataFreshness?: {
+                            lastSyncedAt?: string | null;
+                            stale?: boolean;
+                            reason?: string;
+                            fixUrl?: string;
+                            accounts?: {
+                                accountId?: string;
+                                accountName?: string | null;
+                                lastSyncedAt?: string | null;
+                                stale?: boolean;
+                                reason?: string;
+                                fixUrl?: string;
+                            }[];
+                        };
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["UnprocessableEntity"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    vrboListingAction: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Repull listing id (numeric string). */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "action": "unlist"
+                 *     }
+                 */
+                "application/json": {
+                    /** @enum {string} */
+                    action: "push" | "publish" | "unlist" | "relist" | "delete";
+                    /** @description `push` / `unlist` / `relist`: the Vrbo listing, when the listing is linked to several. */
+                    vrboListingNumber?: string;
+                    /** @description `push`: only these sections (as for `POST /v1/listings/{id}/publish/vrbo`). */
+                    sections?: string[];
+                };
+            };
+        };
+        responses: {
+            /** @description `unlist` / `relist` / `delete` done */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        id?: string;
+                        action?: string;
+                        /** @example vrbo */
+                        channel?: string;
+                        /** @description What Vrbo now shows (read back). */
+                        live?: boolean;
+                        /** @description `delete`: the Repull record. */
+                        active?: boolean;
+                        units?: {
+                            vrboListingNumber?: string;
+                            live?: boolean;
+                            ok?: boolean;
+                            verified?: boolean;
+                            code?: string;
+                            message?: string;
+                        }[];
+                    };
+                };
+            };
+            /** @description `push` started — a job; poll `GET /v1/listings/{id}/publish/vrbo?jobId=`. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["UnprocessableEntity"];
+            500: components["responses"]["InternalError"];
+            /** @description Vrbo did not complete the change (`vrbo_error`); `units` says which. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getVrboConnection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The Vrbo connection state */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data?: {
+                            /** @enum {string} */
+                            status?: "connected" | "reconnect_required" | "disconnected" | "never_connected";
+                            accountCount?: number;
+                            accounts?: {
+                                /** @example vrbo:7001234 */
+                                accountId?: string;
+                                accountName?: string | null;
+                                /** @enum {string} */
+                                status?: "connected" | "reconnect_required";
+                                sessionStatus?: string | null;
+                                /** @enum {string|null} */
+                                accessType?: "full_access" | "messaging" | null;
+                                linkedUnits?: number;
+                                connectedAt?: string | null;
+                                lastSyncedAt?: string | null;
+                                sync?: {
+                                    stale?: boolean;
+                                    reason?: string;
+                                };
+                                /** @description The account's import progress, as `GET /v1/connect/vrbo-login` reports it. */
+                                import?: {
+                                    [key: string]: unknown;
+                                } | null;
+                                fixUrl?: string;
+                            }[];
+                            fixUrl?: string;
+                        };
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    mapVrboListing: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "vrboListingNumber": "5506023",
+                 *       "listingId": 6199
+                 *     }
+                 */
+                "application/json": {
+                    /**
+                     * @description The number in the Vrbo URL (vrbo.com/5506023).
+                     * @example 5506023
+                     */
+                    vrboListingNumber: string;
+                    /**
+                     * @description The Repull listing to link it to. Or `create: true`.
+                     * @example 6199
+                     */
+                    listingId?: number;
+                    /** @description Create a Repull listing from what Vrbo shows, instead of `listingId`. */
+                    create?: boolean;
+                    /**
+                     * @description The Vrbo account the unit is on, when the workspace has several.
+                     * @example vrbo:7001234
+                     */
+                    accountId?: string;
+                    /** @description Also send the listing's calendar to Vrbo. */
+                    syncEnabled?: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Linked */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        success?: boolean;
+                        vrboListingNumber?: string;
+                        listingId?: string;
+                        created?: boolean;
+                        accountId?: string;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["UnprocessableEntity"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    getVrboListingAvailability: {
+        parameters: {
+            query?: {
+                /** @description First night (default today). */
+                start_date?: string;
+                /** @description Last night (default start + 29 days). */
+                end_date?: string;
+                /** @description The `jobId` a PUT returned: read that write's status. */
+                jobId?: string;
+                /** @description The Vrbo listing number, when the listing is linked to more than one Vrbo unit. */
+                vrboListingNumber?: string;
+            };
+            header?: never;
+            path: {
+                /** @description Repull listing id (numeric string) of a listing linked to Vrbo. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The nights, or the job */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data?: {
+                            /** Format: date */
+                            date?: string;
+                            available?: boolean;
+                            /** @enum {string|null} */
+                            blockedBy?: "reservation" | "block" | "ical" | null;
+                            reservationRef?: string | null;
+                            nightlyRate?: number | null;
+                            currency?: string | null;
+                            minStay?: number | null;
+                            checkIn?: boolean | null;
+                            checkOut?: boolean | null;
+                        }[] | {
+                            jobId?: number;
+                            /** @example done */
+                            status?: string;
+                            nights?: number;
+                            queuedAt?: string | null;
+                            finishedAt?: string | null;
+                            error?: string | null;
+                            stats?: {
+                                [key: string]: unknown;
+                            } | null;
+                        };
+                        range?: {
+                            start?: string;
+                            end?: string;
+                        };
+                        /** @description Set when Vrbo did not return the bookings and blocks for the range. */
+                        warning?: string;
+                        dataFreshness?: {
+                            [key: string]: unknown;
+                        };
+                        vrboListingNumber?: string;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["UnprocessableEntity"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    updateVrboListingAvailability: {
+        parameters: {
+            query?: {
+                /** @description The Vrbo listing number, when the listing is linked to more than one Vrbo unit. */
+                vrboListingNumber?: string;
+            };
+            header?: never;
+            path: {
+                /** @description Repull listing id (numeric string) of a listing linked to Vrbo. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "type": "calendar",
+                 *       "operations": [
+                 *         {
+                 *           "start_date": "2027-01-10",
+                 *           "end_date": "2027-01-12",
+                 *           "daily_price": 240,
+                 *           "min_nights": 2
+                 *         },
+                 *         {
+                 *           "dates": [
+                 *             "2027-02-14"
+                 *           ],
+                 *           "availability": "unavailable"
+                 *         }
+                 *       ]
+                 *     }
+                 */
+                "application/json": {
+                    /**
+                     * @default calendar
+                     * @enum {string}
+                     */
+                    type?: "calendar";
+                    operations: {
+                        /** Format: date */
+                        start_date?: string;
+                        /** Format: date */
+                        end_date?: string;
+                        /** @description `YYYY-MM-DD`, or ranges as `YYYY-MM-DD:YYYY-MM-DD`. */
+                        dates?: string[];
+                        /** @description The nightly price on Vrbo, in the listing's Vrbo currency (sent as is — no markup). */
+                        daily_price?: number;
+                        /**
+                         * @description `unavailable` blocks the nights on Vrbo; `available` opens them (never a night a booking holds).
+                         * @enum {string}
+                         */
+                        availability?: "available" | "unavailable";
+                        min_nights?: number;
+                        /** @description No check-in on these nights. */
+                        closed_to_arrival?: boolean;
+                        /** @description No check-out on these nights. */
+                        closed_to_departure?: boolean;
+                    }[];
+                };
+            };
+        };
+        responses: {
+            /** @description Queued */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data?: {
+                            jobId?: string;
+                            /** @example queued */
+                            status?: string;
+                            nights?: number;
+                        };
+                        vrboListingNumber?: string;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["UnprocessableEntity"];
+            500: components["responses"]["InternalError"];
         };
     };
 }
