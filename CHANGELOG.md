@@ -3,6 +3,29 @@
 All notable changes to `@repull/sdk` and `@repull/types` are recorded here.
 This project follows [Semantic Versioning](https://semver.org/).
 
+## 0.2.60 — 2026-11-22
+
+- New: `DELETE /v1/channels/vrbo/offers`
+- New: `GET /v1/channels/airbnb/listings/{id}/cancellation`
+- New: `GET /v1/channels/airbnb/listings/{id}/fees`
+- New: `GET /v1/channels/airbnb/listings/{id}/house-rules`
+- New: `GET /v1/channels/airbnb/listings/{id}/location`
+- New: `GET /v1/channels/airbnb/listings/{id}/taxes`
+- New: `GET /v1/channels/vrbo/listings/{id}/settings`
+- New: `GET /v1/channels/vrbo/messaging`
+- New: `GET /v1/channels/vrbo/messaging/{threadId}`
+- New: `GET /v1/channels/vrbo/messaging/{threadId}/messages`
+- New: `GET /v1/channels/vrbo/offers`
+- New: `GET /v1/channels/vrbo/reviews`
+- New: `POST /v1/channels/vrbo/messaging/{threadId}/messages`
+- New: `POST /v1/channels/vrbo/offers`
+- New: `POST /v1/listings/{id}/pull/vrbo`
+- New: `PUT /v1/channels/airbnb/listings/{id}/cancellation`
+- New: `PUT /v1/channels/airbnb/listings/{id}/fees`
+- New: `PUT /v1/channels/airbnb/listings/{id}/house-rules`
+- New: `PUT /v1/channels/vrbo/reviews/{id}`
+- Regenerated from the live spec (automated spec refresh).
+
 ## 0.2.59 — 2026-11-21
 
 `channels.vrbo.reservations.get(code, { options })` / `.action(code, body)` and `channels.vrbo.alterations.create(body)`: Vrbo bookings on Airbnb's reservation endpoints — accept, decline, cancel, extra charge, refund and changes, each with Vrbo's own preview (`preview: true`). `reviews.guestReview` also rates Vrbo guests (same body; Vrbo takes the ratings, not the text). `channels.vrbo.transactions.list()` / `.refresh()`: the Vrbo payout ledger (every deposit with the bookings it paid, scheduled payouts).
