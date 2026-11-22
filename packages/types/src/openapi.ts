@@ -1588,7 +1588,7 @@ export interface paths {
         };
         /**
          * List Airbnb message threads
-         * @description List Airbnb message threads (one per guest conversation). Cursor-paginated. Each thread includes a preview of the latest message.
+         * @description List Airbnb message threads (one per guest conversation), newest activity first (up to 200). Only Airbnb threads: conversations from other channels are on their own channel routes (`GET /v1/channels/vrbo/messaging`) or `GET /v1/conversations`.
          *
          *     Threads on inactive listings are left out; they keep syncing and reappear once the listing is activated. Filtering by an inactive listing (`listing_id`) returns `403 listing_inactive`.
          *
@@ -6462,6 +6462,342 @@ export interface paths {
          * @description Read the ledger from Vrbo now — every connected Vrbo account, or the one in `?account_id=` — and keep it; then read it with GET. Body (optional): `start_date` / `end_date` (YYYY-MM-DD) for the deposits to read; without them, the last 12 months. The payouts Vrbo has scheduled are always read again. One account failing never stops the others: it carries `error` in `accounts[]`. About 15 seconds per account.
          */
         post: operations["syncVrboTransactions"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/airbnb/listings/{id}/cancellation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the Airbnb cancellation policy
+         * @description The short-stay and long-stay cancellation policies and the non-refundable option — the same section as `GET /v1/channels/vrbo/listings/{id}/cancellation`, and the `cancellation` of `GET …/booking-settings`. **Repull's stored copy**, like every Airbnb read: check `dataFreshness` before treating a value as current. `POST /v1/listings/{id}/pull/airbnb` refreshes it from Airbnb.
+         *
+         *     Returns `404` when the listing has no Airbnb connection in this workspace, and `403 listing_inactive` when the listing is inactive.
+         */
+        get: operations["get_airbnb_listing_cancellation"];
+        /**
+         * Update the Airbnb cancellation policy
+         * @description Set any of `shortStayPolicy`, `longStayPolicy`, `nonRefundable` (`{ enabled, discountPercent }`, 0–30%). The same write as `PUT …/booking-settings` `{ "cancellation": … }`; the answer is the policy Airbnb holds after it.
+         *
+         *     Returns `404` when the listing has no Airbnb connection in this workspace, and `403 listing_inactive` when the listing is inactive.
+         */
+        put: operations["update_airbnb_listing_cancellation"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/airbnb/listings/{id}/fees": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Airbnb fees
+         * @description The listing's Airbnb fees (cleaning, pets, extra guests, management, linens, …) — the same section as `GET /v1/channels/vrbo/listings/{id}/fees`, and the `fees` of `GET …/pricing`. **Repull's stored copy**, like every Airbnb read: check `dataFreshness` before treating a value as current. `POST /v1/listings/{id}/pull/airbnb` refreshes it from Airbnb.
+         *
+         *     Returns `404` when the listing has no Airbnb connection in this workspace, and `403 listing_inactive` when the listing is inactive.
+         */
+        get: operations["get_airbnb_listing_fees"];
+        /**
+         * Update Airbnb fees
+         * @description Set Airbnb fees by type: each fee you send replaces that type, the others are kept. The same write as `PUT …/pricing` `{ "type": "fees", "fees": […] }`; `amount: null` removes a fee. `fee_type` is Airbnb's (`PASS_THROUGH_CLEANING_FEE`, `PASS_THROUGH_PET_FEE`, `PASS_THROUGH_SHORT_TERM_CLEANING_FEE`, …).
+         *
+         *     Returns `404` when the listing has no Airbnb connection in this workspace, and `403 listing_inactive` when the listing is inactive.
+         */
+        put: operations["update_airbnb_listing_fees"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/airbnb/listings/{id}/house-rules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Airbnb house rules
+         * @description The listing's house rules under the names Vrbo's `GET /v1/channels/vrbo/listings/{id}/house-rules` uses: check-in and check-out times, guest capacity, whether children, infants, pets, smoking and events are allowed, Airbnb's "things to know" (`expectations`), and the written rules per language. **Repull's stored copy**, like every Airbnb read: check `dataFreshness` before treating a value as current. `POST /v1/listings/{id}/pull/airbnb` refreshes it from Airbnb.
+         *
+         *     Returns `404` when the listing has no Airbnb connection in this workspace, and `403 listing_inactive` when the listing is inactive.
+         */
+        get: operations["get_airbnb_house_rules"];
+        /**
+         * Update Airbnb house rules
+         * @description Write the house rules text for one language — the same write as `PUT …/descriptions` `{ locale, description: { house_rules } }`, with the same answer (`written`, `blockedFields`). On Airbnb the check-in and check-out times are booking settings: set them with `PUT …/booking-settings`. Whether pets, smoking, events or children are allowed is set in the Airbnb app.
+         *
+         *     Returns `404` when the listing has no Airbnb connection in this workspace, and `403 listing_inactive` when the listing is inactive.
+         */
+        put: operations["update_airbnb_house_rules"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/airbnb/listings/{id}/location": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the Airbnb location
+         * @description The listing's address, map pin, directions and whether guests see the exact location — the same section as `GET /v1/channels/vrbo/listings/{id}/location`. Read-only: Airbnb changes a listed address only in its own flow in the host app (`addressEditable: false`). **Repull's stored copy**, like every Airbnb read: check `dataFreshness` before treating a value as current. `POST /v1/listings/{id}/pull/airbnb` refreshes it from Airbnb.
+         *
+         *     Returns `404` when the listing has no Airbnb connection in this workspace, and `403 listing_inactive` when the listing is inactive.
+         */
+        get: operations["get_airbnb_location"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/airbnb/listings/{id}/taxes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Airbnb taxes
+         * @description The listing's taxes — host-remitted pass-through taxes and the taxes Airbnb collects itself, each with `source` (`pass_through` | `airbnb_collected`) — the same section as `GET /v1/channels/vrbo/listings/{id}/taxes`, and the `taxes` of `GET …/pricing`. Read-only here: Airbnb's pass-through taxes are part of its pricing settings (`PUT …/pricing` `{ "type": "standard" }`). **Repull's stored copy**, like every Airbnb read: check `dataFreshness` before treating a value as current. `POST /v1/listings/{id}/pull/airbnb` refreshes it from Airbnb.
+         *
+         *     Returns `404` when the listing has no Airbnb connection in this workspace, and `403 listing_inactive` when the listing is inactive.
+         */
+        get: operations["get_airbnb_listing_taxes"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/vrbo/listings/{id}/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Vrbo listing settings
+         * @description The counterpart of `GET /v1/channels/airbnb/listings/{id}/settings`: the languages the listing has a hand-written description in (`locales`), and with `?type=permits` its registration / licence (the `data` of `GET …/permits`). `type=all` (default) returns `{ locales }`, `type=locales` the array.
+         *
+         *     Vrbo has no co-host roles, so `type=hosts` answers `422 not_available_on_vrbo`: a Vrbo listing belongs to the one Vrbo account it is in (`accountId` on `GET /v1/channels/vrbo/listings`).
+         *
+         *     Answers from Repull's stored copy of the listing's Vrbo content, like the Airbnb endpoints (`dataFreshness.lastSyncedAt` says when it was read from Vrbo). The first read of a section reads Vrbo and stores it; a copy over 24 h old answers and is refreshed in the background (`reason: refreshing`); every write through Repull stores what Vrbo has after it. `?source=live` reads Vrbo now.
+         *
+         *     Works with messaging or full access. Returns `404` when the listing is not linked to Vrbo, and `403 listing_inactive` when the listing is inactive.
+         */
+        get: operations["getVrboListingSettings"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/vrbo/messaging": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Vrbo message threads
+         * @description The workspace's Vrbo conversations, newest activity first (up to 200) — the counterpart of `GET /v1/channels/airbnb/messaging`, read from Repull's copy of the Vrbo inbox. Each thread carries the Vrbo account it belongs to (`accountId`, `accountName`). `externalThreadId` (`vrbo:<uuid>`) addresses the thread on these routes; `id` is the Repull conversation id of `/v1/conversations/{id}`.
+         *
+         *     Only conversations Vrbo itself holds are listed: a Vrbo booking that reached Repull another way (a PMS, iCal) has no Vrbo conversation to message.
+         *
+         *     Threads on inactive listings are left out. Filtering by an inactive listing (`listing_id`) returns `403 listing_inactive`.
+         */
+        get: operations["list_vrbo_threads"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/vrbo/messaging/{threadId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get a Vrbo message thread
+         * @description One Vrbo conversation by its Vrbo id — the counterpart of `GET /v1/channels/airbnb/messaging/{threadId}`.
+         *
+         *     Returns `403 listing_inactive` when the conversation's listing is inactive.
+         */
+        get: operations["get_vrbo_thread"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/vrbo/messaging/{threadId}/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Vrbo messages
+         * @description The messages of a Vrbo conversation, as recorded rows — the counterpart of `GET /v1/channels/airbnb/messaging/{threadId}/messages`, same shape. 50 per page, newest first; walk older pages with `?cursor=` until `pagination.hasMore` is `false`. `?all=true` returns up to 1000 oldest first, without `pagination`.
+         *
+         *     Returns `403 listing_inactive` when the conversation's listing is inactive.
+         */
+        get: operations["list_vrbo_thread_messages"];
+        put?: never;
+        /**
+         * Send a Vrbo message
+         * @description Send a message in a Vrbo conversation through the host's connected Vrbo account — the counterpart of `POST /v1/channels/airbnb/messaging/{threadId}/messages`, with the same body. It is sent the way the dashboard sends it and recorded in the conversation, so it also appears on `GET /v1/conversations/{id}/messages`.
+         *
+         *     `201` with `status: "sent"` when Vrbo took it; `202` with `status: "queued"` when Vrbo was slow and the send finishes in the background — do not send it again, watch `conversation.message.status_changed`. Vrbo messages are text: a `mediaUrl` is refused with `422 attachments_not_supported`. Send `Idempotency-Key` to make a retry safe.
+         *
+         *     Vrbo has no edit, unsend or reaction on a sent message (Airbnb's `PATCH …/messages/{messageId}`).
+         *
+         *     Returns `403 listing_inactive` when the conversation's listing is inactive.
+         */
+        post: operations["send_vrbo_message"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/vrbo/offers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the Vrbo quote
+         * @description The conversation's live quote as Vrbo shows it — its parts and Vrbo's guest total. The counterpart of `GET /v1/channels/airbnb/offers`; Vrbo keeps one quote per conversation, so it is read by `thread_id` rather than an offer id.
+         */
+        get: operations["get_vrbo_offer"];
+        put?: never;
+        /**
+         * Pre-approve or quote a Vrbo inquiry
+         * @description Answer a Vrbo inquiry — the counterpart of `POST /v1/channels/airbnb/offers`, the same body addressed by the Vrbo conversation. `type: "preapproval"` invites the guest to book their dates at the listed price; `type: "offer"` sends Vrbo's edited quote.
+         *
+         *     **Priced by its parts, not a total.** Vrbo adds its taxes and service fee itself, so a quote takes `rental_amount`, `fees` (`[{ type, value }]`, Vrbo fee types such as `CLEANING`, `PET`) and `damage_deposit`; `total_price` is refused. The stay is `start_date` + `nights` and `guest_details`, as on Airbnb; leave them out to keep the guest's own. Both types may carry a `message` to the guest. Vrbo has no instant-book switch on a pre-approval (`block_instant_booking` is refused) and a quote is always for the conversation's property (`listing_id` is refused).
+         *
+         *     The same as `POST /v1/conversations/{id}/pre-approval` and `/special-offers` on a Vrbo conversation, which take the Repull conversation id. Send `Idempotency-Key`: a retry without it can send the guest two quotes. Returns `403 listing_inactive` when the conversation's listing is inactive.
+         */
+        post: operations["create_vrbo_offer"];
+        /**
+         * Withdraw the Vrbo pre-approval or quote
+         * @description Withdraw the conversation's pre-approval or quote: the guest can no longer book on it. The counterpart of `DELETE /v1/channels/airbnb/offers`, by `thread_id`.
+         */
+        delete: operations["withdraw_vrbo_offer"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/vrbo/reviews": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Vrbo reviews
+         * @description The workspace's Vrbo reviews — the counterpart of `GET /v1/channels/airbnb/reviews`. The same list, filters, paging and review shape as `GET /v1/reviews?platform=vrbo`, with the channel fixed: `reviewerRole=guest` (default) is what guests wrote, `reviewerRole=host` your ratings of guests. Reply to a review with `POST /v1/reviews/{id}/reply`; rate a guest with `PUT /v1/channels/vrbo/reviews/{id}`.
+         *
+         *     Reviews of inactive listings are left out; `listingId` naming an inactive listing returns `403 listing_inactive`. `platform` other than `vrbo` is refused.
+         */
+        get: operations["list_vrbo_reviews"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/vrbo/reviews/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Rate a Vrbo guest
+         * @description Rate the guest of a Vrbo stay — Vrbo's "Rate guest", the counterpart of `PUT /v1/channels/airbnb/reviews/{id}`, and the same as `POST /v1/reviews/{id}/guest-review` on a Vrbo review. `rating` (overall, 1–5), `categoryRatings` (`cleanliness`, `communication`, `respect_house_rules`) and `isRevieweeRecommended` (would host again). Vrbo's rating has no text: `publicReview` / `privateFeedback` are refused when not empty. Publishing is final.
+         *
+         *     `{id}` is the review `id` from `GET /v1/channels/vrbo/reviews?reviewerRole=host`; a review from another channel is `404`.
+         */
+        put: operations["submit_vrbo_guest_review"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/listings/{id}/pull/vrbo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Refresh a listing from Vrbo
+         * @description Re-read every content section of the listing's Vrbo listing from Vrbo and keep it as Repull's copy, then report what was refreshed and when — the counterpart of `POST /v1/listings/{id}/pull/airbnb`. Use it after the host changed something on Vrbo, so the `/v1/channels/vrbo/listings/{id}/…` reads answer with what Vrbo holds now.
+         *
+         *     **What it refreshes:** descriptions, details, story, additional-info, photos, amenities, rooms, location, house-rules, booking-settings, cancellation, fees, pricing, payment-terms, protection, taxes, permits, checkin-guide, videos. **Not** the calendar, rates per night, bookings, messages, reviews or payouts — those arrive through the channel's own sync.
+         *
+         *     **Runs synchronously:** about 45 Vrbo calls spaced ~3 s apart per account, **around 2.5 minutes**. A section Vrbo fails to return is listed in `failedSections`; the others are refreshed.
+         *
+         *     **One pull per listing per 15 minutes**, as on Airbnb: a second call inside the window returns `429 rate_limit_exceeded` with `Retry-After` and `nextPullAvailableAt`, and makes no Vrbo calls.
+         *
+         *     Works with messaging or full access. Returns `404` when the listing is not linked to Vrbo, and `403 listing_inactive` when the listing is inactive.
+         */
+        post: operations["pullListingFromVrbo"];
         delete?: never;
         options?: never;
         head?: never;
@@ -36338,8 +36674,8 @@ export interface operations {
                             id?: string;
                             listingId?: string;
                             /**
-                             * @description The number in the Vrbo URL (vrbo.com/5506023).
-                             * @example 5506023
+                             * @description The number in the Vrbo URL (vrbo.com/4512345).
+                             * @example 4512345
                              */
                             vrboListingNumber?: string;
                             unitId?: string | null;
@@ -36583,19 +36919,19 @@ export interface operations {
             content: {
                 /**
                  * @example {
-                 *       "vrboListingNumber": "5506023",
-                 *       "listingId": 6199
+                 *       "vrboListingNumber": "4512345",
+                 *       "listingId": 98765
                  *     }
                  */
                 "application/json": {
                     /**
-                     * @description The number in the Vrbo URL (vrbo.com/5506023).
-                     * @example 5506023
+                     * @description The number in the Vrbo URL (vrbo.com/4512345).
+                     * @example 4512345
                      */
                     vrboListingNumber: string;
                     /**
                      * @description The Repull listing to link it to. Or `create: true`.
-                     * @example 6199
+                     * @example 98765
                      */
                     listingId?: number;
                     /** @description Create a Repull listing from what Vrbo shows, instead of `listingId`. */
@@ -37398,6 +37734,1228 @@ export interface operations {
             };
             /** @description `invalid_params` — a date not YYYY-MM-DD, an unknown field, or an unknown `account_id`. */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    get_airbnb_listing_cancellation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Repull listing id (numeric string), not the Airbnb listing id. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Cancellation policy */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            /**
+                             * @description Policy for stays under 28 nights.
+                             * @enum {string|null}
+                             */
+                            shortStayPolicy?: "flexible" | "moderate" | "firm" | "strict" | "super_strict" | null;
+                            /** @description Airbnb's long-term-stay policy id (28+ nights). */
+                            longStayPolicy?: string | null;
+                            nonRefundable?: {
+                                enabled?: boolean | null;
+                                discountPercent?: number | null;
+                                priceFactor?: number | null;
+                            };
+                        };
+                        dataFreshness: components["schemas"]["AirbnbDataFreshness"];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    update_airbnb_listing_cancellation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Repull listing id (numeric string), not the Airbnb listing id. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "shortStayPolicy": "moderate",
+                 *       "nonRefundable": {
+                 *         "enabled": true,
+                 *         "discountPercent": 10
+                 *       }
+                 *     }
+                 */
+                "application/json": {
+                    /** @enum {string|null} */
+                    shortStayPolicy?: "flexible" | "moderate" | "firm" | "strict" | "super_strict" | null;
+                    longStayPolicy?: string | null;
+                    nonRefundable?: {
+                        enabled?: boolean | null;
+                        discountPercent?: number | null;
+                    };
+                };
+            };
+        };
+        responses: {
+            /** @description Saved on Airbnb */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data?: {
+                            applied?: string[];
+                            cancellation?: {
+                                /**
+                                 * @description Policy for stays under 28 nights.
+                                 * @enum {string|null}
+                                 */
+                                shortStayPolicy?: "flexible" | "moderate" | "firm" | "strict" | "super_strict" | null;
+                                /** @description Airbnb's long-term-stay policy id (28+ nights). */
+                                longStayPolicy?: string | null;
+                                nonRefundable?: {
+                                    enabled?: boolean | null;
+                                    discountPercent?: number | null;
+                                    priceFactor?: number | null;
+                                };
+                            };
+                        };
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["AirbnbWriteForbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["AirbnbWriteRejected"];
+            429: components["responses"]["AirbnbRateLimited"];
+            502: components["responses"]["AirbnbUpstreamError"];
+        };
+    };
+    get_airbnb_listing_fees: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Repull listing id (numeric string), not the Airbnb listing id. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Fees */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: ({
+                            /** @example PASS_THROUGH_CLEANING_FEE */
+                            fee_type?: string;
+                            amount?: number | null;
+                            /** @enum {string} */
+                            amount_type?: "flat" | "percent";
+                            /** @enum {string} */
+                            charge_type?: "PER_GROUP" | "PER_PERSON" | "PER_PET";
+                            /** @enum {string} */
+                            charge_period?: "PER_BOOKING" | "PER_NIGHT";
+                            offline?: boolean;
+                        } & {
+                            [key: string]: unknown;
+                        })[];
+                        dataFreshness: components["schemas"]["AirbnbDataFreshness"];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    update_airbnb_listing_fees: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Repull listing id (numeric string), not the Airbnb listing id. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "fees": [
+                 *         {
+                 *           "fee_type": "PASS_THROUGH_CLEANING_FEE",
+                 *           "amount": 90,
+                 *           "amount_type": "flat"
+                 *         }
+                 *       ]
+                 *     }
+                 */
+                "application/json": {
+                    fees: ({
+                        /** @example PASS_THROUGH_CLEANING_FEE */
+                        fee_type?: string;
+                        amount?: number | null;
+                        /** @enum {string} */
+                        amount_type?: "flat" | "percent";
+                        /** @enum {string} */
+                        charge_type?: "PER_GROUP" | "PER_PERSON" | "PER_PET";
+                        /** @enum {string} */
+                        charge_period?: "PER_BOOKING" | "PER_NIGHT";
+                        offline?: boolean;
+                    } & {
+                        [key: string]: unknown;
+                    })[];
+                };
+            };
+        };
+        responses: {
+            /** @description Saved on Airbnb */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @description Airbnb's pricing settings after the write. */
+                        data?: {
+                            [key: string]: unknown;
+                        };
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["AirbnbWriteForbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["AirbnbWriteRejected"];
+            429: components["responses"]["AirbnbRateLimited"];
+            502: components["responses"]["AirbnbUpstreamError"];
+        };
+    };
+    get_airbnb_house_rules: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Repull listing id (numeric string), not the Airbnb listing id. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description House rules */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            /**
+                             * @description Earliest check-in, `HH:00` or `FLEXIBLE`.
+                             * @example 16:00
+                             */
+                            checkInTime?: string | null;
+                            /**
+                             * @description Latest check-in (Airbnb only).
+                             * @example 22:00
+                             */
+                            checkInTimeEnd?: string | null;
+                            /** @example 11:00 */
+                            checkOutTime?: string | null;
+                            maxGuests?: number | null;
+                            children?: {
+                                allowed?: boolean | null;
+                            };
+                            infants?: {
+                                allowed?: boolean | null;
+                            };
+                            pets?: {
+                                allowed?: boolean | null;
+                            };
+                            smoking?: {
+                                allowed?: boolean | null;
+                            };
+                            events?: {
+                                allowed?: boolean | null;
+                            };
+                            expectations?: {
+                                [key: string]: unknown;
+                            }[];
+                            houseRules?: {
+                                locale?: string | null;
+                                text?: string | null;
+                                additionalRules?: unknown;
+                            }[];
+                        };
+                        dataFreshness: components["schemas"]["AirbnbDataFreshness"];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    update_airbnb_house_rules: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Repull listing id (numeric string), not the Airbnb listing id. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "locale": "en",
+                 *       "houseRules": "No parties. Quiet hours 22:00–08:00."
+                 *     }
+                 */
+                "application/json": {
+                    /** @example en */
+                    locale: string;
+                    houseRules: string | null;
+                };
+            };
+        };
+        responses: {
+            /** @description Saved on Airbnb */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        listingId?: string;
+                        airbnbListingId?: string;
+                        locale?: string;
+                        written?: string[];
+                        blockedFields?: string[];
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["AirbnbWriteForbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["AirbnbWriteRejected"];
+            429: components["responses"]["AirbnbRateLimited"];
+            502: components["responses"]["AirbnbUpstreamError"];
+        };
+    };
+    get_airbnb_location: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Repull listing id (numeric string), not the Airbnb listing id. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Location */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            address?: {
+                                apt?: string | null;
+                                street?: string | null;
+                                city?: string | null;
+                                state?: string | null;
+                                postalCode?: string | null;
+                                countryCode?: string | null;
+                            } | null;
+                            addressEditable?: boolean;
+                            lat?: number | null;
+                            lng?: number | null;
+                            showExactLocation?: boolean | null;
+                            directions?: string | null;
+                        };
+                        dataFreshness: components["schemas"]["AirbnbDataFreshness"];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    get_airbnb_listing_taxes: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Repull listing id (numeric string), not the Airbnb listing id. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Taxes */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: ({
+                            /** @enum {string} */
+                            source?: "pass_through" | "airbnb_collected";
+                        } & {
+                            [key: string]: unknown;
+                        })[];
+                        dataFreshness: components["schemas"]["AirbnbDataFreshness"];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    getVrboListingSettings: {
+        parameters: {
+            query?: {
+                /** @description Which settings to return. `all` returns `{ locales }`. */
+                type?: "all" | "locales" | "permits";
+                /** @description `stored` (default): Repull's copy, in milliseconds. `live`: read Vrbo now (seconds) and refresh the copy. */
+                source?: "stored" | "live";
+                /** @description The Vrbo listing number to work on, when the listing is linked to more than one Vrbo unit. */
+                vrboListingNumber?: string;
+            };
+            header?: never;
+            path: {
+                /** @description Repull listing id (numeric string) of a listing linked to Vrbo. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The settings */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @description The section as Vrbo has it. */
+                        data: {
+                            locales?: string[];
+                        } | string[] | {
+                            status?: string | null;
+                            fields?: {
+                                name?: string;
+                                label?: string | null;
+                                value?: unknown;
+                                options?: {
+                                    value?: string;
+                                    label?: string | null;
+                                }[];
+                            }[];
+                        };
+                        dataFreshness: {
+                            /**
+                             * Format: date-time
+                             * @description When this data was read from Vrbo.
+                             */
+                            lastSyncedAt: string;
+                            stale: boolean;
+                            /**
+                             * @description `refreshing`: the copy is over 24 h old and is being refreshed now — the next read has the new one. `reconnect_required`: Vrbo signed the account out; reconnect it (`fixUrl`).
+                             * @enum {string}
+                             */
+                            reason: "ok" | "refreshing" | "reconnect_required";
+                            fixUrl?: string;
+                            /**
+                             * @description `stored`: Repull's copy. `live`: read from Vrbo for this request.
+                             * @enum {string}
+                             */
+                            source: "stored" | "live";
+                            accounts: {
+                                accountId?: string | null;
+                                accountName?: string | null;
+                                lastSyncedAt?: string;
+                                stale?: boolean;
+                                reason?: string;
+                                fixUrl?: string;
+                            }[];
+                        };
+                        /** @description The Vrbo listing number this is about. */
+                        vrboListingNumber: string;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
+            404: components["responses"]["NotFound"];
+            /** @description The listing is linked to several Vrbo units (name one), the property is not on the account any more, or the account was signed out. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            422: components["responses"]["UnprocessableEntity"];
+            500: components["responses"]["InternalError"];
+            /** @description Vrbo did not complete the request. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Vrbo asked us to slow down for this account (`retry_after` seconds). Calendar and messages keep working. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Vrbo did not answer in time. A write may still have landed: read the section first. */
+            504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    list_vrbo_threads: {
+        parameters: {
+            query?: {
+                /** @description One connected Vrbo account (`vrbo:…`). Omitted: every account. Unknown: `404` with your accounts in `valid_values`. */
+                account_id?: string;
+                /** @description Repull listing id. */
+                listing_id?: string;
+                /** @description Repull reservation id. */
+                reservation_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Vrbo message threads */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data?: ({
+                            /** @description Repull conversation id — the `{id}` of `/v1/conversations/{id}`. */
+                            id?: string;
+                            /** @description The Vrbo conversation id (`vrbo:<uuid>`), the `{threadId}` of these routes. */
+                            externalThreadId?: string;
+                            listingId?: string | null;
+                            reservationId?: string | null;
+                            /** @description The Vrbo account the conversation belongs to (`vrbo:…`). */
+                            accountId?: string | null;
+                            accountName?: string | null;
+                            /** Format: date-time */
+                            createdAt?: string | null;
+                            /** Format: date-time */
+                            updatedAt?: string | null;
+                        } & {
+                            [key: string]: unknown;
+                        })[];
+                        pagination?: {
+                            [key: string]: unknown;
+                        };
+                        /** @description When this workspace's Vrbo data was last synced (`lastSyncedAt`, `stale`, `accounts[]`). */
+                        dataFreshness?: {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["UnprocessableEntity"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    get_vrbo_thread: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The Vrbo conversation id — `externalThreadId` on `GET /v1/channels/vrbo/messaging` (`vrbo:<uuid>`; the bare uuid works too). */
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The thread */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data?: {
+                            /** @description Repull conversation id — the `{id}` of `/v1/conversations/{id}`. */
+                            id?: string;
+                            /** @description The Vrbo conversation id (`vrbo:<uuid>`), the `{threadId}` of these routes. */
+                            externalThreadId?: string;
+                            listingId?: string | null;
+                            reservationId?: string | null;
+                            /** @description The Vrbo account the conversation belongs to (`vrbo:…`). */
+                            accountId?: string | null;
+                            accountName?: string | null;
+                            /** Format: date-time */
+                            createdAt?: string | null;
+                            /** Format: date-time */
+                            updatedAt?: string | null;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                        /** @description When this workspace's Vrbo data was last synced (`lastSyncedAt`, `stale`, `accounts[]`). */
+                        dataFreshness?: {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
+            /** @description No Vrbo conversation with this id in the workspace. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            500: components["responses"]["InternalError"];
+        };
+    };
+    list_vrbo_thread_messages: {
+        parameters: {
+            query?: {
+                /** @description `pagination.nextCursor` from the previous page. */
+                cursor?: string;
+                /** @description `true` returns up to 1000 messages oldest first in one response. */
+                all?: boolean;
+            };
+            header?: never;
+            path: {
+                /** @description The Vrbo conversation id — `externalThreadId` on `GET /v1/channels/vrbo/messaging` (`vrbo:<uuid>`; the bare uuid works too). */
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Messages */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data?: ({
+                            /** @description Repull message id. */
+                            id?: string;
+                            externalMessageId?: string | null;
+                            /** @description The Vrbo conversation id. */
+                            threadId?: string;
+                            message?: string | null;
+                            /** @example vrbo */
+                            channel?: string | null;
+                            /** @description `guest`, `host`, `system`, … */
+                            senderType?: string | null;
+                            reservationId?: string | null;
+                            /** Format: date-time */
+                            createdAt?: string | null;
+                            /** Format: date-time */
+                            externalCreatedAt?: string | null;
+                            attachments?: components["schemas"]["ConversationMessageAttachment"][];
+                        } & {
+                            [key: string]: unknown;
+                        })[];
+                        /** @description Absent when `?all=true`. */
+                        pagination?: {
+                            nextCursor?: string | null;
+                            hasMore?: boolean;
+                        };
+                        /** @description When this workspace's Vrbo data was last synced (`lastSyncedAt`, `stale`, `accounts[]`). */
+                        dataFreshness?: {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
+            /** @description No Vrbo conversation with this id in the workspace. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            500: components["responses"]["InternalError"];
+        };
+    };
+    send_vrbo_message: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The Vrbo conversation id — `externalThreadId` on `GET /v1/channels/vrbo/messaging` (`vrbo:<uuid>`; the bare uuid works too). */
+                threadId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "message": "Hi Anna — the hot tub is ready for your arrival."
+                 *     }
+                 */
+                "application/json": {
+                    /** @description The text to send to the guest. */
+                    message: string;
+                    /**
+                     * Format: uri
+                     * @description Accepted for the same body as Airbnb; Vrbo carries no files, so a send with one is refused (`attachments_not_supported`).
+                     */
+                    mediaUrl?: string | null;
+                    mediaType?: string | null;
+                };
+            };
+        };
+        responses: {
+            /** @description Sent */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SendMessageResponse"];
+                };
+            };
+            /** @description Queued: Vrbo was slow; the send finishes in the background */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SendMessageResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
+            /** @description No Vrbo conversation with this id in the workspace. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            422: components["responses"]["UnprocessableEntity"];
+            500: components["responses"]["InternalError"];
+            /** @description Vrbo did not take the message. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    get_vrbo_offer: {
+        parameters: {
+            query: {
+                /** @description The Vrbo conversation (`externalThreadId` on `GET /v1/channels/vrbo/messaging`). */
+                thread_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The quote */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /**
+                         * @description Vrbo keeps one live quote per conversation: always `current`.
+                         * @example current
+                         */
+                        id?: string;
+                        conversationId?: string;
+                        /** @example vrbo */
+                        channel?: string;
+                        /** @example sent */
+                        status?: string;
+                        checkIn?: string | null;
+                        checkOut?: string | null;
+                        nights?: number | null;
+                        guests?: {
+                            [key: string]: unknown;
+                        } | null;
+                        /** @description Vrbo's guest total (with its taxes and service fee). */
+                        totalPrice?: number | null;
+                        currency?: string | null;
+                        rentalAmount?: number | null;
+                        fees?: {
+                            type?: string;
+                            value?: number;
+                            label?: string | null;
+                        }[];
+                        damageDeposit?: number | null;
+                        lines?: {
+                            [key: string]: unknown;
+                        }[];
+                        message?: string | null;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
+            /** @description No Vrbo conversation with this id in the workspace. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            422: components["responses"]["UnprocessableEntity"];
+            502: components["responses"]["InternalError"];
+        };
+    };
+    create_vrbo_offer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @enum {string} */
+                    type: "preapproval" | "offer";
+                    /** @description The Vrbo conversation (`vrbo:<uuid>`). `threadId` is accepted too. */
+                    thread_id: string;
+                    /** @description A note Vrbo shows the guest with the pre-approval or quote. */
+                    message?: string;
+                    /**
+                     * Format: date
+                     * @description Offer: first night. With `nights`.
+                     */
+                    start_date?: string;
+                    /** @description Offer: number of nights. With `start_date`. */
+                    nights?: number;
+                    guest_details?: {
+                        number_of_adults?: number;
+                        number_of_guests?: number;
+                        number_of_children?: number;
+                        number_of_infants?: number;
+                        number_of_pets?: number;
+                    };
+                    /** @description Offer: the rent for the stay, before fees and taxes. */
+                    rental_amount?: number;
+                    fees?: {
+                        /** @example CLEANING */
+                        type: string;
+                        value: number;
+                    }[];
+                    /** @description Offer: refundable damage deposit; `null` for none. */
+                    damage_deposit?: number | null;
+                };
+            };
+        };
+        responses: {
+            /** @description Pre-approved, or the quote sent */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": ({
+                        conversationId?: string;
+                        channel?: string;
+                        /** @example pre_approved */
+                        status?: string;
+                        message?: string | null;
+                    } & {
+                        [key: string]: unknown;
+                    }) | ({
+                        /**
+                         * @description Vrbo keeps one live quote per conversation: always `current`.
+                         * @example current
+                         */
+                        id?: string;
+                        conversationId?: string;
+                        /** @example vrbo */
+                        channel?: string;
+                        /** @example sent */
+                        status?: string;
+                        checkIn?: string | null;
+                        checkOut?: string | null;
+                        nights?: number | null;
+                        guests?: {
+                            [key: string]: unknown;
+                        } | null;
+                        /** @description Vrbo's guest total (with its taxes and service fee). */
+                        totalPrice?: number | null;
+                        currency?: string | null;
+                        rentalAmount?: number | null;
+                        fees?: {
+                            type?: string;
+                            value?: number;
+                            label?: string | null;
+                        }[];
+                        damageDeposit?: number | null;
+                        lines?: {
+                            [key: string]: unknown;
+                        }[];
+                        message?: string | null;
+                    } & {
+                        [key: string]: unknown;
+                    });
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
+            /** @description No Vrbo conversation with this id in the workspace. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The inquiry moved on (booked, expired, withdrawn): do not retry. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            422: components["responses"]["UnprocessableEntity"];
+            502: components["responses"]["InternalError"];
+        };
+    };
+    withdraw_vrbo_offer: {
+        parameters: {
+            query: {
+                /** @description The Vrbo conversation (`externalThreadId` on `GET /v1/channels/vrbo/messaging`). */
+                thread_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Withdrawn */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        conversationId?: string;
+                        channel?: string;
+                        /** @example withdrawn */
+                        status?: string;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
+            /** @description No Vrbo conversation with this id in the workspace. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The inquiry moved on (booked, expired, withdrawn): do not retry. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            422: components["responses"]["UnprocessableEntity"];
+            502: components["responses"]["InternalError"];
+        };
+    };
+    list_vrbo_reviews: {
+        parameters: {
+            query?: {
+                /** @description `pagination.nextCursor` from the previous page. */
+                cursor?: string;
+                limit?: number;
+                /** @description Repull listing id. */
+                listingId?: string;
+                status?: "responded" | "unanswered" | "all";
+                reviewerRole?: "guest" | "host" | "all";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Vrbo reviews */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReviewListResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
+            422: components["responses"]["UnprocessableEntity"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    submit_vrbo_guest_review: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The review `id`. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "rating": 5,
+                 *       "categoryRatings": [
+                 *         {
+                 *           "category": "cleanliness",
+                 *           "rating": 5
+                 *         }
+                 *       ],
+                 *       "isRevieweeRecommended": true
+                 *     }
+                 */
+                "application/json": {
+                    rating?: number;
+                    categoryRatings?: {
+                        /** @enum {string} */
+                        category?: "cleanliness" | "communication" | "respect_house_rules";
+                        rating?: number;
+                    }[];
+                    isRevieweeRecommended?: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Rated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        id?: string;
+                        submitted?: boolean;
+                        /** @example vrbo */
+                        platform?: string;
+                        rating?: {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["UnprocessableEntity"];
+            502: components["responses"]["InternalError"];
+        };
+    };
+    pullListingFromVrbo: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Repull listing id (numeric string) of a listing linked to Vrbo. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @description The Vrbo listing number to pull, when the listing is linked to more than one Vrbo unit. */
+                    vrboListingNumber?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Refreshed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        listingId?: string;
+                        /** @enum {string} */
+                        channel?: "vrbo";
+                        /** @description The Vrbo account the values came from. */
+                        connectionId?: string | null;
+                        /** @description The Vrbo listing number. */
+                        externalId?: string;
+                        /** @description True when Vrbo answered and at least one section was refreshed. */
+                        refreshedFromChannel?: boolean;
+                        /**
+                         * @description Sections refreshed from Vrbo.
+                         * @example [
+                         *       "descriptions",
+                         *       "house-rules",
+                         *       "fees"
+                         *     ]
+                         */
+                        sections?: string[];
+                        /** @description Sections Vrbo did not return this time; their stored copy is unchanged. */
+                        failedSections?: string[];
+                        /** Format: date-time */
+                        pulledAt?: string;
+                        /**
+                         * Format: date-time
+                         * @description Earliest time another pull of this listing is accepted.
+                         */
+                        nextPullAvailableAt?: string;
+                        /** @example 900 */
+                        minIntervalSeconds?: number;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["ListingInactive"];
+            404: components["responses"]["NotFound"];
+            /** @description The listing is linked to several Vrbo units (name one), the property is not on the account any more, or the account was signed out. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            422: components["responses"]["UnprocessableEntity"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["InternalError"];
+            /** @description Vrbo did not complete the request. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Vrbo asked us to slow down for this account (`retry_after` seconds). Calendar and messages keep working. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Vrbo did not answer in time. A write may still have landed: read the section first. */
+            504: {
                 headers: {
                     [name: string]: unknown;
                 };
