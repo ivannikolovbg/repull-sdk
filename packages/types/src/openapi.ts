@@ -4581,7 +4581,7 @@ export interface paths {
         put?: never;
         /**
          * Sign in with a Vrbo host account
-         * @description `action: login` checks the email and password and answers in seconds: `connected`, `otp_required` (Vrbo sent a code to `destination`) or `failed` with a `reason` (`bad_credentials`, `blocked`, …). `action: otp` submits the code; a refused code comes back as `otp_required` with `reason: bad_code`. `action: resend` (with `accountId`) signs in again with the details already given, so Vrbo sends a new code.
+         * @description `action: login` checks the email and password and answers in seconds: `connected`, `otp_required` (Vrbo sent a code to `destination`) or `failed` with a `reason` (`bad_credentials`, `blocked`, …). `action: otp` submits the code; a refused code comes back as `otp_required` with `reason: bad_code`. `action: resend` (with `accountId`) signs in again with the details already given, so Vrbo sends a new code. `phone_required` means Vrbo accepted the login and its "complete your profile" step wants a contact phone: `action: phone` (with `accountId` and `phone`, international format with the country code, any country) fills it in, then answers like the others (`otp_required` when Vrbo texts a code to that number; `phone_required` with `reason: bad_phone` when Vrbo refuses it).
          *
          *     Signing in imports nothing. `accessType` (`full_access` or `messaging`, when the session did not lock it) is the host's choice of whether mapped listings push the calendar. The import starts when the mapping is confirmed.
          *
@@ -25983,11 +25983,13 @@ export interface operations {
                 "application/json": {
                     sessionId: string;
                     /** @enum {string} */
-                    action: "login" | "otp" | "resend";
+                    action: "login" | "otp" | "resend" | "phone";
                     email?: string;
                     password?: string;
                     accountId?: number;
                     code?: string;
+                    /** @description `action: phone` — the contact phone with its country code, e.g. `+373 69 123 456`. */
+                    phone?: string;
                     /** @enum {string} */
                     accessType?: "full_access" | "messaging";
                 };
@@ -26003,7 +26005,7 @@ export interface operations {
                     "application/json": {
                         accountId?: number;
                         /** @enum {string} */
-                        status?: "connected" | "otp_required" | "pending" | "failed";
+                        status?: "connected" | "otp_required" | "phone_required" | "pending" | "failed";
                         reason?: string;
                         error?: string;
                         destination?: string;
