@@ -573,6 +573,8 @@ export interface paths {
          * @description Returns the current connection status for a provider, including host metadata (display name + avatar) for Airbnb so clients can render an account-level confirmation UI.
          *
          *     **Access level.** `accessType` says what the connection may do: `read_only`, `messaging` or `full_access` (`null` when unknown). Airbnb reports it per host on `accounts[]` (the tier each host's token was granted with) and at the top level for the host in `externalAccountId`; Vrbo (`vrbo-login`) per account; Booking.com is always `full_access`, the Booking.com Extranet always `messaging`; a PMS is `read_only` when every `writePolicy` switch is off, else `full_access`. See the `ConnectionAccessType` schema for the meaning per provider.
+         *
+         *     **PriceLabs (an app).** `accounts[]` lists every PriceLabs connection of the workspace (each one key), with `scope`, `listingCount`, `keyMasked` and `health`: `status` (`active`, `idle`, `failing`, `never_connected`), last request, last successful price push, pushes per day for 7 days, error rates and the latest errors. Revoked ones stay listed as `disconnected` with `health: null`. `externalAccountId` is `null` (PriceLabs has no account id to give us); `id` is the connection.
          */
         get: operations["get_connect_status"];
         put?: never;
@@ -585,6 +587,8 @@ export interface paths {
          *     Booking.com: pass `redirectUrl` (no `accessType`). The response returns a hosted `url` — send the user there to select our connectivity provider in their Booking.com Extranet and paste their Hotel ID. Same response shape as Airbnb (`url`, `sessionId`, `expiresAt`).
          *
          *     PMS providers are not connected by this call: send their credentials to `POST /v1/connect/{provider}/credentials`, or start a hosted session with `POST /v1/connect`.
+         *
+         *     **PriceLabs (an app).** Pass `redirectUrl` (and optionally `state`, `locale`, `workspace`). The response returns a hosted `url` for the session's workspace: yours, the one `X-Workspace-Id` names, or a new sub-workspace when you send `workspace.name` (its id comes back as `workspaceId`). The page shows the host a key for **every listing of that workspace, including listings added later**, with the steps to paste it into PriceLabs, then waits for PriceLabs' first call and completes like every provider: redirect to `redirectUrl` (`status=connected&connectionId=…`) or the `repull:connect:completed` popup message, and `connect.session.completed`. When PriceLabs first uses the key, `account.created` is sent. To keep PriceLabs away from the rest of an account, put the listings it should price in a sub-workspace and connect PriceLabs there. To issue the key yourself (no hosted page, or only some listings) use `POST /v1/connect/pricelabs/key`.
          */
         post: operations["create_connection"];
         /**
@@ -600,6 +604,8 @@ export interface paths {
          *     **PMS.** A workspace has one connection per PMS, so no `accountId` is needed. Disconnecting stops syncing, clears the stored credentials and deactivates the connection's listings; nothing is deleted, and reservations and messages stay. The response also carries `connectionId`. The PMS's own webhook subscription is left in place, because the same PMS account can be connected to another workspace (such as a Repull Migrate workspace). Reconnect with a new Connect session.
          *
          *     Other providers return `501 not_implemented` with instructions for disconnecting on the provider's side. That answer depends only on the provider, not on your workspace: an unsupported provider returns `501` whether or not you have a connection to it. `404 not_found` on a supported provider means this workspace has no connection to it (or, with `accountId`, that the account is not connected here).
+         *
+         *     **PriceLabs (an app).** Revokes one PriceLabs connection (its key): PriceLabs loses access at once; nothing it already pushed changes and no listing is deactivated. Pass `id` (an `accounts[].id` from `GET /v1/connect/pricelabs`); it is optional only when the workspace has one connected. Sends `account.disconnected` with reason `manual_disconnect`.
          */
         delete: operations["delete_connection"];
         options?: never;
@@ -6804,6 +6810,51 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/connect/pricelabs/key": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create a PriceLabs key (headless)
+         * @description Issue a PriceLabs key without the hosted page, for platforms that show it in their own app. The key is for this workspace, or the one `X-Workspace-Id` names; it is returned once, in `key`, and the host pastes it into PriceLabs (add an integration, choose Repull).
+         *
+         *     - No `listingIds`: every listing of the workspace, including listings added later. Recommended, with the listings PriceLabs should price in their own sub-workspace.
+         *     - `listingIds`: only those listings (they must belong to the workspace). Listings added later are not included.
+         *
+         *     The key works only inside PriceLabs; it is refused on every Repull API endpoint. The connection appears on `GET /v1/connect/pricelabs` with its `health`; `account.created` is sent when PriceLabs first uses the key. Revoke it with `DELETE /v1/connect/pricelabs?id=`.
+         */
+        post: operations["createPriceLabsKey"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/connect/pricelabs/session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * PriceLabs session status
+         * @description Where a hosted PriceLabs session stands: `pending` (no key issued yet), `waiting` (the key is shown, PriceLabs has not called yet), `connected` (PriceLabs has called with the key; the session is complete) or `expired`. Called by the hosted Connect page while it waits. No API key — the session ID is the capability token.
+         */
+        get: operations["getPriceLabsSessionStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -7781,6 +7832,79 @@ export interface components {
             fixUrl?: string | null;
             /** @description The account's latest import — `status: running` while the first sync (or a later one) is going, then `completed` or `failed`. `null` when no import has been recorded. The same run is announced by the `account.import.*` webhooks; the history is on `GET /v1/connections/{id}/imports`. */
             import?: components["schemas"]["AccountImport"] | null;
+            /**
+             * @description Apps (`pricelabs`) only. `workspace`: every listing of the workspace, including listings added later. `listings`: only `listingIds`.
+             * @enum {string}
+             */
+            scope?: "workspace" | "listings";
+            /** @description Apps only: the listings a `listings`-scoped connection covers; `null` for `workspace`. */
+            listingIds?: string[] | null;
+            /**
+             * @description Apps only: listings the connection covers now.
+             * @example 12
+             */
+            listingCount?: number;
+            /**
+             * @description Apps only: the key the app uses, masked. The key itself is shown once, when created.
+             * @example sk_live_4eB3...XYZw
+             */
+            keyMasked?: string;
+            /** @description Apps only: the name given to the key. */
+            label?: string | null;
+            /**
+             * Format: date-time
+             * @description Apps only: when the connection was revoked.
+             */
+            disconnectedAt?: string | null;
+            /** @description Apps only: how the app is doing on this connection. `null` once disconnected. */
+            health?: components["schemas"]["AppConnectionHealth"] | null;
+        };
+        /** @description How an app (PriceLabs) is doing on one connection, from its calls with the key. */
+        AppConnectionHealth: {
+            /**
+             * @description `active`: a successful price or minimum-stay push in the last 24 hours. `idle`: the app connected before but has not pushed in the last 24 hours. `failing`: more than 25% of the last 24 hours' requests failed (at least 5 requests); read `recentErrors`. `never_connected`: the app has not used the key yet.
+             * @enum {string}
+             */
+            status: "active" | "idle" | "failing" | "never_connected";
+            /**
+             * Format: date-time
+             * @description The app's last request with the key, of any kind.
+             */
+            lastRequestAt?: string | null;
+            /**
+             * Format: date-time
+             * @description The app's last successful price or minimum-stay push.
+             */
+            lastSuccessfulWriteAt?: string | null;
+            /** @description Successful price and minimum-stay pushes per UTC day, the last 7 days, oldest first. */
+            writesPerDay: {
+                /** Format: date */
+                date?: string;
+                writes?: number;
+            }[];
+            requests24h?: number;
+            errors24h?: number;
+            /**
+             * @description `errors24h / requests24h`; 0 when there were no requests.
+             * @example 0.02
+             */
+            errorRate24h?: number;
+            requests7d?: number;
+            errors7d?: number;
+            /** @example 0.01 */
+            errorRate7d?: number;
+            /** @description The 10 most recent failed requests, newest first. */
+            recentErrors: {
+                /** Format: date-time */
+                at?: string;
+                /** @example PUT */
+                method?: string;
+                /** @example /calendar/batch/4118 */
+                endpoint?: string;
+                /** @example 404 */
+                statusCode?: number;
+                message?: string | null;
+            }[];
         };
         /**
          * @description What the connection may do on the platform, read from what we store. `null` when we do not know (e.g. an OTA we do not grade, or an Airbnb token from before the tiers existed). `read_only`: reads only, never writes. Airbnb: the read-only OAuth tier (no replies to guests, no writes). PMS: every `writePolicy` switch is off. `messaging`: reads reservations and messages and replies to guests; never writes prices or availability. Airbnb: the messaging OAuth tier ("Messaging & reviews": messages and review replies, no property management). Vrbo: bookings and messages, no calendar push. Booking.com Extranet (`booking_extranet`): always — it reads reservations, messages and reviews and replies, and never writes rates or availability. `full_access`: reads and writes, including prices and availability. Airbnb: the full OAuth tier. Vrbo: also pushes prices and availability. Booking.com (`booking`, the official connection): always. PMS: at least one `writePolicy` switch is on (`writePolicy` on `GET /v1/connect/{provider}` says which). Airbnb's tier is set when the host connects (`accessType` on `POST /v1/connect`); reconnect to change it.
@@ -7838,15 +7962,15 @@ export interface components {
             /** @example Airbnb */
             displayName: string;
             /**
-             * @description Channel category — OTAs are listing marketplaces; PMSes are property management systems.
+             * @description Category — OTAs are listing marketplaces; PMSes are property management systems; apps are tools that work on the workspace's data (PriceLabs).
              * @enum {string}
              */
-            category: "ota" | "pms";
+            category: "ota" | "pms" | "app";
             /**
-             * @description How the host is connected. `oauth`: provider-side consent screen. `credentials`: hosted form collects API keys. `activation`: push-only handshake. `claim`: connectivity-provider designation in the channel's Extranet (Booking.com). `extranet`: the host signs in with their Booking.com Extranet user.
+             * @description How the host is connected. `oauth`: provider-side consent screen. `credentials`: hosted form collects API keys. `activation`: push-only handshake. `claim`: connectivity-provider designation in the channel's Extranet (Booking.com). `extranet`: the host signs in with their Booking.com Extranet user. `key`: an app — the hosted page shows a key the host pastes into the app, and the session completes on the app's first call.
              * @enum {string}
              */
-            connectPattern: "oauth" | "credentials" | "activation" | "claim" | "extranet";
+            connectPattern: "oauth" | "credentials" | "activation" | "claim" | "extranet" | "key";
             /**
              * @description Pickers should hide / disable `coming-soon` cards. `beta` cards are clickable but show a Beta pill. `request-only` is a PMS Repull doesn't connect yet, listed only with `includeRequestOnly`: picking it collects the host's access details for the Repull team, and the session ends as `requested` instead of connecting.
              * @enum {string}
@@ -8108,7 +8232,7 @@ export interface components {
             accessType?: components["schemas"]["ConnectionAccessType"] | null;
             /** @description Host metadata, populated for Airbnb when the host row exists. Null for other providers (per-provider enrichment is incremental). */
             host?: components["schemas"]["ConnectHost"] | null;
-            /** @description One entry per connected account, for every provider: Airbnb, every host account connected (including ones since disconnected), each with its own `accessType`; Booking.com, every hotel (`externalAccountId` is the hotel id); Vrbo, every sign-in; Booking.com Extranet, every hotel login; a PMS, its one account. Pass `externalAccountId` as `accountId` to `DELETE /v1/connect/{provider}` to disconnect one. The top-level fields describe one record and stay for existing integrations; show `accounts[]` to list what is connected. Vrbo sign-ins also carry `accessType` and `import` (a `VrboImportStatus`), with a top-level `dataFreshness` on `GET /v1/connect/vrbo-login`. */
+            /** @description One entry per connected account, for every provider: Airbnb, every host account connected (including ones since disconnected), each with its own `accessType`; Booking.com, every hotel (`externalAccountId` is the hotel id); Vrbo, every sign-in; Booking.com Extranet, every hotel login; a PMS, its one account; PriceLabs (an app), every key, each a connection with its `health` (see `Connection`). Pass `externalAccountId` as `accountId` to `DELETE /v1/connect/{provider}` to disconnect one. The top-level fields describe one record and stay for existing integrations; show `accounts[]` to list what is connected. Vrbo sign-ins also carry `accessType` and `import` (a `VrboImportStatus`), with a top-level `dataFreshness` on `GET /v1/connect/vrbo-login`. */
             accounts?: {
                 /**
                  * @description Airbnb: the host id, as a string (it can exceed 2^53). Booking.com: the hotel id. Vrbo: Vrbo's own account id; `null` until it is captured at sign-in. Extranet: the Booking.com account id. PMS: the PMS account id.
@@ -17249,6 +17373,12 @@ export interface operations {
                     reservationHistoryMonths?: number;
                     /** @description Airbnb + Booking.com — your own correlation token, e.g. your user id (at most 500 characters). Echoed on the redirect back (`&state=`) and in the `connect.session.completed` webhook. */
                     state?: string;
+                    /** @description PriceLabs only: open a new sub-workspace for this host and connect PriceLabs there (its id is returned as `workspaceId`). Don't send it together with `X-Workspace-Id`. */
+                    workspace?: {
+                        name: string;
+                        /** @description Your own id for this host. */
+                        externalRef?: string;
+                    };
                     /**
                      * @description Airbnb and Booking.com — optional UI language for the hosted Connect pages. Accepts any supported locale code (currently `en`, `fr`, `de`, `es`, `it`, `nl`); unknown codes are ignored and resolution falls back to the workspace `default_language`, then `Accept-Language`, then `en`.
                      * @example fr
@@ -17274,6 +17404,8 @@ export interface operations {
             query?: {
                 /** @description The account to disconnect: the Airbnb host id (`accounts[].externalAccountId` on `GET /v1/connect/airbnb`) or the Booking.com hotel id. Required when the workspace has more than one connected account for the provider. Not the same as the `X-Account-Id` header. */
                 accountId?: string;
+                /** @description PriceLabs only: the connection to revoke (`accounts[].id` on `GET /v1/connect/pricelabs`). Required when the workspace has more than one. */
+                id?: string;
             };
             header?: never;
             path: {
@@ -38956,6 +39088,99 @@ export interface operations {
             };
             /** @description Vrbo did not answer in time. A write may still have landed: read the section first. */
             504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    createPriceLabsKey: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /**
+                     * @description Only these listings of the workspace (`GET /v1/properties`). Omit for every listing, new ones included.
+                     * @example [
+                     *       "4118",
+                     *       "4119"
+                     *     ]
+                     */
+                    listingIds?: string[];
+                    /**
+                     * @description A name for the connection.
+                     * @example PriceLabs — beach houses
+                     */
+                    label?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Created. `key` is shown only in this response. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Connection"] & {
+                        /**
+                         * @description The key to paste into PriceLabs. Returned only here.
+                         * @example sk_live_YOUR_PRICELABS_KEY
+                         */
+                        key: string;
+                        /** @description What to tell the host, ready to show. */
+                        instructions: {
+                            steps?: string[];
+                            scope?: string;
+                        };
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["UnprocessableEntity"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    getPriceLabsSessionStatus: {
+        parameters: {
+            query: {
+                sessionId: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Session status */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        status?: "pending" | "waiting" | "connected" | "expired";
+                        /** @description The PriceLabs connection once the session holds a key. */
+                        connectionId?: string | null;
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            /** @description The session expired */
+            410: {
                 headers: {
                     [name: string]: unknown;
                 };
