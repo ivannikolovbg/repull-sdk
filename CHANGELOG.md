@@ -3,6 +3,12 @@
 All notable changes to `@repull/sdk` and `@repull/types` are recorded here.
 This project follows [Semantic Versioning](https://semver.org/).
 
+## 0.2.61 — 2026-11-23
+
+- New: `GET /v1/connect/pricelabs/session`
+- New: `POST /v1/connect/pricelabs/key`
+- Regenerated from the live spec (automated spec refresh).
+
 ## 0.2.60 — 2026-11-22
 
 - New: `DELETE /v1/channels/vrbo/offers`
