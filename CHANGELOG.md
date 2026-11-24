@@ -3,6 +3,10 @@
 All notable changes to `@repull/sdk` and `@repull/types` are recorded here.
 This project follows [Semantic Versioning](https://semver.org/).
 
+## 0.2.64 — 2026-11-24
+
+- Regenerated from the live spec (automated spec refresh).
+
 ## 0.2.63 — 2026-11-24
 
 - New: `HospitableWebhook` schema and a `webhook` field on `Connection`, `ConnectStatus` and the `POST /v1/connect/hospitable/credentials` response: the URL the host adds in Hospitable for instant updates (vanio-repull-api#612).
