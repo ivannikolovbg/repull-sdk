@@ -586,7 +586,9 @@ export interface paths {
          *
          *     Airbnb-specific: pass `redirectUrl` (where to send the user after consent) and optionally `accessType`. Three tiers: `read_only` grants read-only scopes; `messaging` (shown to hosts as "Messaging & reviews") grants read scopes plus message read/send and review writes (reply to guest reviews, submit host reviews — Airbnb's `reviews_write`) but NOT property management, so it can coexist with another app (e.g. an existing PMS) that already holds property management on the same Airbnb account; `full_access` — the default — grants full host scopes including the exclusive property management (only one app per Airbnb account can hold it). The response returns a hosted `url` to redirect the user to.
          *
-         *     Booking.com: pass `redirectUrl` (no `accessType`). The response returns a hosted `url` — send the user there to select our connectivity provider in their Booking.com Extranet and paste their Hotel ID. Same response shape as Airbnb (`url`, `sessionId`, `expiresAt`).
+         *     Booking.com: pass `redirectUrl` (no `accessType`). The response returns a hosted `url` — send the user there to select our connectivity provider in their Booking.com Extranet and paste their Hotel ID. Same response shape as Airbnb (`url`, `sessionId`, `expiresAt`, `state`).
+         *
+         *     **Returning to your app.** Every return to `redirectUrl` carries `status`, `sessionId` and your `state`, whether the host connected, cancelled, hit an error or let the session expire, so you can always tie it back to the call that started it.
          *
          *     PMS providers are not connected by this call: send their credentials to `POST /v1/connect/{provider}/credentials`, or start a hosted session with `POST /v1/connect`.
          *
@@ -1659,6 +1661,8 @@ export interface paths {
         /**
          * List Airbnb reservations
          * @description Cursor-paginated list of reservations sourced directly from Airbnb. Use this when you need Airbnb-specific fields (guest payout split, cancellation policy snapshot) that the unified `/v1/reservations` endpoint flattens away.
+         *
+         *     Each row has the Airbnb `confirmationCode`, the `reservationId` of the same stay on `GET /v1/reservations/{id}`, the Repull `listingId` and Airbnb `airbnbListingId`, a normalised `status`, `checkIn`/`checkOut` dates, `totalPrice` + `currency` (what the guest paid) and `payout` + `payoutCurrency` (what the host receives). Airbnb's own record follows (`airbnbStatus`, `totalPaidAmount`, `expectedPayoutAmount`, …) for integrations already reading it.
          *
          *     **Real time.** Airbnb notifies Repull of every new booking, change and cancellation as it happens, on every access level (read-only included): it is here within seconds and fires `reservation.created` / `reservation.updated` / `reservation.cancelled` within about a minute. `dataFreshness.lastSyncedAt` is the last full re-read of the account, not the age of these rows. To re-read an account now, `POST /v1/connections/{id}/imports` with `{"scope": "reservations"}`.
          *
@@ -5097,18 +5101,22 @@ export interface paths {
         get: operations["listConnectionImports"];
         put?: never;
         /**
-         * Refresh a connection's listings or reservations
-         * @description Two scopes: `listings` (the default) and `reservations`.
+         * Start an import of a connection
+         * @description Start an import of a connected Airbnb account now. Three scopes:
          *
-         *     **`listings`** — picks up listings you've added on Airbnb since you connected. Re-reads the connected account's listings now: a new property comes in as a new listing, together with its calendar (pricing and availability), and existing listings are refreshed. On a full-access connection Repull is the source of your calendars, so the calendars of listings already in Repull are not re-read from Airbnb; on read-only and messaging connections they are. Nothing else is re-imported: no reservations, conversations, reviews or payouts. The same import runs on its own once a day for every connected Airbnb account, and when the host reconnects. Call this when you know a property was just added and do not want to wait.
+         *     **`full`** — the import that runs when an account is first connected, again: listings with their calendars (pricing and availability), reservations, then payouts, reviews and conversations. For an account that has never fully imported, e.g. a first import that never started or stalled. Returns `409 conflict` once the account has been fully imported (everything keeps syncing on its own after that).
+         *
+         *     **`listings`** — picks up listings you've added on Airbnb since you connected. Re-reads the connected account's listings now: a new property comes in as a new listing, together with its calendar (pricing and availability), and existing listings are refreshed. On a full-access connection Repull is the source of your calendars, so the calendars of listings already in Repull are not re-read from Airbnb; on read-only and messaging connections they are. Nothing else is re-imported. The same import runs on its own once a day for every connected Airbnb account, and when the host reconnects.
          *
          *     **`reservations`** — re-reads the account's reservations from Airbnb (stays from the last month and every future one) and applies anything that differs, firing the usual `reservation.*` webhooks for it. You do not need it to stay current: Airbnb notifies Repull of every new booking, change and cancellation as it happens, on every access level (read-only included), and Repull fires `reservation.created` / `reservation.updated` / `reservation.cancelled` within about a minute. Use it as a catch-up — for example after your own webhook endpoint was down — or to confirm a stay right now.
          *
+         *     With no body, Repull chooses: `full` for an account that has never fully imported, `listings` otherwise.
+         *
          *     New listings obey your plan's active-listing limit: past it, and when the property is unlisted on Airbnb, they arrive inactive. Existing listings keep their status.
          *
-         *     Both run in the background (`202`) and are recorded like any other import (trigger `resync`, one `listings` or `reservations` stage): follow it on `GET /v1/connections/{id}/imports` or wait for `account.import.completed`, then read the result with `GET /v1/listings` or `GET /v1/reservations`.
+         *     Every scope runs in the background (`202`) and is recorded like any other import: follow it on `GET /v1/connections/{id}/imports` (`importId`, when returned, is its id there) or wait for `account.import.completed`. An import no worker picks up within 10 minutes ends `failed` with reason `did_not_start` (and `account.import.failed`); call this again. A `full` request also replaces such an import itself (`replacedImportId`).
          *
-         *     Airbnb connections only for now. Returns `409 conflict` while a listings import of the account is already running, and `409 connection_reauth_required` when the account is disconnected. Two reservations refreshes of one account in the same minute are one refresh.
+         *     Airbnb connections only for now. Returns `409 conflict` while an import of the account is already running, and `409 connection_reauth_required` when the account is disconnected. Two reservations refreshes of one account in the same minute are one refresh.
          */
         post: operations["startConnectionImport"];
         delete?: never;
@@ -7458,9 +7466,17 @@ export interface components {
              * @example 14250.00
              */
             totalRevenue?: string;
-            /** Format: date-time */
+            /**
+             * Format: date
+             * @description Check-out date of the guest's most recent stay (YYYY-MM-DD).
+             * @example 2026-12-06
+             */
             lastStayedAt?: string | null;
-            /** Format: date-time */
+            /**
+             * Format: date
+             * @description Check-in date of the guest's first stay (YYYY-MM-DD).
+             * @example 2024-01-22
+             */
             firstStayedAt?: string | null;
             /** Format: date-time */
             createdAt?: string;
@@ -8225,6 +8241,31 @@ export interface components {
             includeRequestOnly?: boolean;
             /**
              * @description Present when the session lands on a sub-workspace (`workspace` or `X-Workspace-Id` on the request): the workspace the connection lands in. Read and write it with `X-Workspace-Id`; on a migrate session, track the import with `GET /v1/migrations/{workspaceId}`.
+             * @example 1204
+             */
+            workspaceId?: string;
+        };
+        /** @description A hosted Connect session for one provider (`POST /v1/connect/{provider}`). Send the user to `url`; every return to your `redirectUrl` carries `status`, `sessionId` and your `state`. */
+        ConnectProviderSession: {
+            /**
+             * Format: uri
+             * @description The hosted page to send the user to.
+             * @example https://connect.repull.dev/cs_8gQrT2v9k3M4nLp7wJxYzAbCdEfGhIjKlMnOp
+             */
+            url: string;
+            /** @example airbnb */
+            provider: string;
+            /**
+             * @description Also sent back on the redirect (`sessionId=`), in the popup message and in `connect.session.completed`.
+             * @example cs_8gQrT2v9k3M4nLp7wJxYzAbCdEfGhIjKlMnOp
+             */
+            sessionId: string;
+            /** Format: date-time */
+            expiresAt: string;
+            /** @description Your `state` from the request, echoed; `null` when you sent none. */
+            state?: string | null;
+            /**
+             * @description PriceLabs only, when the request opened a sub-workspace (`workspace.name`).
              * @example 1204
              */
             workspaceId?: string;
@@ -10493,7 +10534,7 @@ export interface components {
              * @enum {string|null}
              */
             outcome?: "complete" | "partial" | null;
-            /** @description `failed` imports only: why it stopped — e.g. `needs_permissions`, `duplicate_account`, `stalled`. */
+            /** @description `failed` imports only: why it stopped — e.g. `needs_permissions`, `duplicate_account`, `stalled` (stopped reporting progress), `did_not_start` (queued, but no worker picked it up within 10 minutes: start it again with `POST /v1/connections/{id}/imports`), `queue_failed` (could not be queued). */
             reason?: string | null;
             /** Format: date-time */
             startedAt?: string;
@@ -11412,34 +11453,229 @@ export interface components {
             name?: string;
             status?: string | null;
         };
-        /** @description An Airbnb reservation as returned by the channel API. Use `confirmationCode` to address it in Airbnb operations. */
+        /** @description An Airbnb reservation as returned by the channel API. Use `confirmationCode` to address it in Airbnb operations, and `reservationId` to open the same stay on `GET /v1/reservations/{id}`. The fields after `payoutCurrency` are the Airbnb record as stored (Airbnb's raw status, amounts as decimal strings, stay datetimes); they are kept for existing integrations. */
         AirbnbReservation: {
-            /** @example HMABC12345 */
-            confirmationCode?: string;
-            listingId?: string;
+            /**
+             * @description This Airbnb record's id in Repull.
+             * @example 307200
+             */
+            id: string;
+            /**
+             * @description Airbnb confirmation code.
+             * @example HMABC12345
+             */
+            confirmationCode: string | null;
+            /**
+             * @description The same stay on the unified reservations API: `GET /v1/reservations/{id}`. Null only while that record is still being created.
+             * @example 667929
+             */
+            reservationId: string | null;
+            /**
+             * @description The Repull listing id (`GET /v1/listings/{id}`).
+             * @example 42343
+             */
+            listingId: string | null;
+            /**
+             * @description Airbnb's own listing id — the value `?listing_id=` takes.
+             * @example 53866721
+             */
+            airbnbListingId: string | null;
             /**
              * @description Which connected Airbnb account this row belongs to — the Airbnb host id, as a string (they exceed 2^53). The same value `?account_id=` accepts and `GET /v1/connect/airbnb` returns as `accounts[].externalAccountId`.
              * @example 1772489413932732258
              */
-            accountId?: string | null;
+            accountId: string | null;
             /**
              * @description Display name of that connected Airbnb account.
              * @example Seaside Stays
              */
-            accountName?: string | null;
+            accountName: string | null;
             /**
+             * @description Normalised status. Airbnb's own value is in `airbnbStatus`.
              * @example accepted
-             * @enum {string}
+             * @enum {string|null}
              */
-            status?: "accepted" | "pending" | "cancelled" | "denied" | "inquiry";
+            status: "accepted" | "pending" | "cancelled" | "denied" | "failed_verification" | "request_voided" | "expired" | "error" | null;
+            /**
+             * Format: date
+             * @example 2026-12-05
+             */
+            checkIn: string | null;
+            /**
+             * Format: date
+             * @example 2026-12-08
+             */
+            checkOut: string | null;
+            guestName: string | null;
+            guestCount: number | null;
+            /**
+             * @description What the guest paid, in `currency`.
+             * @example 233.51
+             */
+            totalPrice: number | null;
+            /** @example USD */
+            currency: string | null;
+            /**
+             * @description What the host is expected to receive, in `payoutCurrency`.
+             * @example 190.32
+             */
+            payout: number | null;
+            /** @example USD */
+            payoutCurrency: string | null;
+            /**
+             * @deprecated
+             * @description Internal link id of the Airbnb listing. Use `airbnbListingId` or `listingId` instead.
+             */
+            listingAirbnbId?: string | null;
+            /**
+             * @deprecated
+             * @description Same as `confirmationCode`.
+             */
+            airbnbReservationId?: string | null;
+            /**
+             * @deprecated
+             * @description Same as `accountId`.
+             */
+            hostId?: string | null;
+            /** @description The guest's Airbnb user id. */
+            guestAirbnbId?: string | null;
+            guestFirstName?: string | null;
+            guestLastName?: string | null;
+            guestProfilePicture?: string | null;
+            /**
+             * @description Airbnb's raw status: `accept`, `pending`, `cancelled_by_guest`, `cancelled_by_host`, `cancelled_by_admin`, `deny`, `failed_verification`, `pending_voided`, `checkpoint_voided`, `timeout`, …
+             * @example accept
+             */
+            airbnbStatus?: string | null;
+            /** @example moderate */
+            cancellationPolicy?: string | null;
+            cancellationReason?: string | null;
+            /**
+             * @description `totalPrice` as a decimal string.
+             * @example 233.51
+             */
+            totalPaidAmount?: string | null;
+            /** @example USD */
+            totalPaidCurrency?: string | null;
+            /**
+             * @description `payout` as a decimal string.
+             * @example 190.32
+             */
+            expectedPayoutAmount?: string | null;
+            /** @example USD */
+            expectedPayoutCurrency?: string | null;
+            /** Format: date-time */
+            canceledAt?: string | null;
+            /** Format: date-time */
+            createdAt?: string | null;
+            /** Format: date-time */
+            updatedAt?: string | null;
+            /**
+             * Format: date-time
+             * @description Check-in date at 00:00 UTC. Prefer `checkIn`.
+             */
+            checkInDatetime?: string | null;
+            /**
+             * Format: date-time
+             * @description Check-out date at 00:00 UTC. Prefer `checkOut`.
+             */
+            checkOutDatetime?: string | null;
+            /** @example America/Costa_Rica */
+            timeZone?: string | null;
+            /** @description Your workspace id. */
+            customerId?: string | null;
+            /** @description The guest on `GET /v1/guests/{id}`. */
+            guestId?: string | null;
+        };
+        /** @description One Airbnb reservation: the unified reservation (the same record as `GET /v1/reservations/{reservationId}`, as stored), the connected account and payout, and `airbnb` — the row `GET /v1/channels/airbnb/reservations` returns for it. */
+        AirbnbReservationDetail: {
+            /**
+             * @description The unified reservation id (same as `reservationId`).
+             * @example 667929
+             */
+            id: string;
+            /**
+             * @description The unified reservation id: `GET /v1/reservations/{id}`.
+             * @example 667929
+             */
+            reservationId: string;
+            /** @example HMAS8FEPJM */
+            confirmationCode: string;
+            /**
+             * @description The Repull listing id.
+             * @example 42343
+             */
+            listingId: string;
+            /** @description Airbnb's own listing id. */
+            airbnbListingId: string | null;
+            /** @description The connected Airbnb account (host id, as a string). */
+            accountId: string | null;
+            accountName: string | null;
+            guestId?: string | null;
+            /** @example airbnb */
+            platform?: string | null;
+            pmsSource?: string | null;
+            bookingReservationNumber?: string | null;
+            unitExternalId?: string | null;
+            unitName?: string | null;
+            /**
+             * @description Airbnb's status as stored on the reservation (`accept`, `cancelled`, `decline`, `pending_voided`, …). The normalised value is `airbnb.status`.
+             * @example accept
+             */
+            status: string;
+            /** @example paid */
+            paymentStatus?: string | null;
             /** Format: date */
-            checkIn?: string;
+            checkIn: string;
             /** Format: date */
-            checkOut?: string;
-            guestName?: string | null;
-            guestCount?: number | null;
-            totalPrice?: number | null;
-            currency?: string | null;
+            checkOut: string;
+            /** @description Guest counts: `numberOfGuests`, `numberOfAdults`, `numberOfChildren`, `numberOfInfants`, `numberOfPets`. */
+            guestDetails?: {
+                [key: string]: unknown;
+            } | null;
+            guestName: string | null;
+            guestCount: number | null;
+            /**
+             * @description Total as a decimal string, in `currency`.
+             * @example 245.03
+             */
+            totalPrice: string | null;
+            /** @example EUR */
+            currency: string | null;
+            /** @description What the host is expected to receive, in `payoutCurrency`. */
+            payout: number | null;
+            payoutCurrency: string | null;
+            /** @description Nightly rates, fees, taxes, discounts, `hostPayout`. */
+            priceBreakdown?: {
+                [key: string]: unknown;
+            } | null;
+            customFields?: {
+                [key: string]: unknown;
+            } | null;
+            cancellationPolicy?: string | null;
+            cancellationReason?: string | null;
+            /** Format: date-time */
+            cancellationDate?: string | null;
+            hostNotes?: string | null;
+            guestNotes?: string | null;
+            internalNotes?: string | null;
+            timeZone?: string | null;
+            checkInTime?: string | null;
+            checkOutTime?: string | null;
+            customerId?: string | null;
+            /**
+             * @deprecated
+             * @description Use `accountId`.
+             */
+            airbnbHostId?: string | null;
+            /** Format: date-time */
+            bookedAt?: string | null;
+            /** @description The Airbnb record, in the list endpoint's shape. Null only while it is still being imported. */
+            airbnb: components["schemas"]["AirbnbReservation"] | null;
+        };
+        AirbnbReservationDetailResponse: {
+            data: components["schemas"]["AirbnbReservationDetail"];
+            dataFreshness?: components["schemas"]["AirbnbDataFreshness"];
         };
         /** @description A VRBO reservation. */
         VrboReservation: {
@@ -17454,10 +17690,10 @@ export interface operations {
                 "application/json": {
                     /**
                      * Format: uri
-                     * @description Where to send the user after they finish (or cancel). Status query params are appended.
+                     * @description Where to send the user after they finish (or cancel). Every return to it carries `status` (`connected`, `cancelled`, `error` with a `code`, `expired`, `pending` when the host chose to finish later, or `requested` for a request-only PMS), `sessionId` (the id this call returns) and `state` when you sent one; a connected return adds `connectionId` and `externalAccountId` (and `hostId` for Airbnb). Your existing query string is kept.
                      */
                     redirectUrl: string;
-                    /** @description Your own correlation token, e.g. your user id (at most 500 characters). Echoed in this response, on the redirect back (`&state=`), in the popup message, and in the `connect.session.completed` webhook. */
+                    /** @description Your own correlation token, e.g. your user id (at most 500 characters). Echoed in this response, on every redirect back (`&state=`, whatever the outcome), in the popup message, and in the `connect.session.completed` webhook. Without it, match the return by `sessionId`. */
                     state?: string | null;
                     /**
                      * @description Airbnb — how many months of past reservations the first import pulls (1–60). Omit it for the default window. Upcoming stays are always imported. A wider window takes longer to import, because every extra month is more stays to fetch.
@@ -17621,7 +17857,7 @@ export interface operations {
                 "application/json": {
                     /**
                      * Format: uri
-                     * @description Airbnb + Booking.com — where to redirect the user after they finish the hosted connect flow.
+                     * @description Airbnb, Booking.com and PriceLabs — where to send the user after they finish (or cancel) the hosted connect flow. Every return to it carries `status` (`connected`, `cancelled`, `error` with a `code`, `expired`, `pending` when the host chose to finish later, or `requested` for a request-only PMS), `sessionId` (the id this call returns) and `state` when you sent one; a connected return adds `connectionId` and `externalAccountId` (and `hostId` for Airbnb). Your existing query string is kept.
                      */
                     redirectUrl?: string;
                     /**
@@ -17635,8 +17871,8 @@ export interface operations {
                      * @example 24
                      */
                     reservationHistoryMonths?: number;
-                    /** @description Airbnb + Booking.com — your own correlation token, e.g. your user id (at most 500 characters). Echoed on the redirect back (`&state=`) and in the `connect.session.completed` webhook. */
-                    state?: string;
+                    /** @description Your own correlation token, e.g. your user id (at most 500 characters), for every hosted flow (Airbnb, Booking.com, PriceLabs). Echoed in this response, on every redirect back (`&state=`, whatever the outcome), in the popup message, and in the `connect.session.completed` webhook. Without it, match the return by `sessionId`. */
+                    state?: string | null;
                     /** @description PriceLabs only: open a new sub-workspace for this host and connect PriceLabs there (its id is returned as `workspaceId`). Don't send it together with `X-Workspace-Id`. */
                     workspace?: {
                         name: string;
@@ -17652,13 +17888,13 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Connected */
+            /** @description Hosted session created (Airbnb, Booking.com, PriceLabs): send the user to `url`. */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Connection"];
+                    "application/json": components["schemas"]["ConnectProviderSession"];
                 };
             };
         };
@@ -19489,8 +19725,8 @@ export interface operations {
                 limit?: number;
                 /** @description Filter to one Airbnb listing id (numeric string). */
                 listing_id?: string;
-                /** @description Filter by reservation status. Omit to receive all statuses. */
-                status?: "pending" | "accepted" | "denied" | "cancelled" | "completed" | "failed_verification" | "request_voided";
+                /** @description Filter by the normalised `status`. `completed` = accepted and already checked out. Airbnb's raw values (`accept`, `cancelled_by_guest`, …) are accepted too. Omit to receive all statuses; an unknown value returns `400 invalid_params`. */
+                status?: "pending" | "accepted" | "denied" | "cancelled" | "completed" | "failed_verification" | "request_voided" | "expired" | "error";
                 /** @description ISO 8601 (YYYY-MM-DD) lower bound on Airbnb's date range filter. */
                 start_date?: string;
                 /** @description ISO 8601 (YYYY-MM-DD) upper bound on Airbnb's date range filter. */
@@ -19513,6 +19749,7 @@ export interface operations {
                     "application/json": components["schemas"]["AirbnbReservationListResponse"];
                 };
             };
+            400: components["responses"]["BadRequest"];
             403: components["responses"]["ListingInactive"];
             404: components["responses"]["AirbnbAccountNotFound"];
         };
@@ -19534,7 +19771,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AirbnbReservation"];
+                    "application/json": components["schemas"]["AirbnbReservationDetailResponse"];
                 };
             };
             403: components["responses"]["ListingInactive"];
@@ -27844,11 +28081,10 @@ export interface operations {
             content: {
                 "application/json": {
                     /**
-                     * @description What to import. `listings` = the account's listings; new listings come in with their calendar (pricing and availability); on a full-access connection, calendars of listings already in Repull are not re-read. `reservations` = the account's reservations, stays from the last month and every future one. The full import runs when an account is connected.
-                     * @default listings
+                     * @description What to import. `full` = the first-connect import again (listings, calendars, reservations, payouts, reviews, conversations), for an account that has never fully imported. `listings` = the account's listings with their calendars. `reservations` = the account's reservations, stays from the last month and every future one. Omit to let Repull choose: `full` for an account that has never fully imported, else `listings`.
                      * @enum {string}
                      */
-                    scope?: "listings" | "reservations";
+                    scope?: "listings" | "reservations" | "full";
                 };
             };
         };
@@ -27864,11 +28100,15 @@ export interface operations {
                             /** @description The connection handle, e.g. `airbnb:1234567`. */
                             connection: string;
                             /** @enum {string} */
-                            scope: "listings" | "reservations";
+                            scope: "listings" | "reservations" | "full";
                             /** @enum {string} */
                             status: "queued";
                             /** Format: date-time */
                             queuedAt: string;
+                            /** @description The import's id on `GET /v1/connections/{id}/imports` and in the `account.import.*` webhooks. */
+                            importId: string | null;
+                            /** @description `full` only: an earlier import of this account that no worker had picked up, closed as `failed` (`did_not_start`) and replaced by this one. */
+                            replacedImportId: string | null;
                         };
                     };
                 };
