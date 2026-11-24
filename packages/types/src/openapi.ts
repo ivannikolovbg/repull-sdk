@@ -445,6 +445,8 @@ export interface paths {
          *
          *     `?offset=` is also accepted as a first-class alias for shallow paging (0..10000) — see the `offset` parameter below. Mutually exclusive with `cursor`.
          *
+         *     **Reviews from a connected PMS** (Guesty, Hostaway, Hospitable) are in the same stream, with `pms` naming the PMS and `platform` the channel the guest wrote on (so `platform=airbnb` includes Airbnb reviews relayed by a PMS). They arrive with the PMS's first import and then within 30 minutes of the PMS receiving them. When the same stay's review comes both from a channel you connected directly and from a PMS, it is returned once: the channel's copy wins.
+         *
          *     Filters: `platform` (`airbnb`|`booking`|`vrbo`), `listing_id` (internal Repull listing id), `rating_min` / `rating_max` (inclusive bounds, 0..5), `status` (`responded`|`unanswered`|`all`), `reviewer_role` (`guest` (default) | `host` | `all`).
          *
          *     **Inactive listings:** reviews of inactive listings are left out of the page and of `pagination.total`. Filtering by an inactive `listing_id` returns `403 listing_inactive`. Inactive listings keep syncing; activate the listing to use it here.
@@ -1024,7 +1026,7 @@ export interface paths {
          *
          *     Replies work on Airbnb, Booking.com and VRBO. Each channel accepts one reply per review (VRBO: a second is `409 already_replied`; a review VRBO no longer takes a response to is `409 reply_not_allowed`). On VRBO the response is signed with a name — the connected account's host name, or `name` if you send it. A review from a channel without a reply API returns `422 unsupported_channel` naming the channels that do work.
          *
-         *     **Reviews read from a PMS** (`pms` set on the review — Guesty, Hostaway, …) are answered through that PMS. A PMS whose API has no reply returns `422 pms_write_unsupported` naming it (Hostaway today); `GET /v1/connect/{provider}` → `capabilities.pms.reviews.reply` says so beforehand. A revoked PMS connection is `403 connection_reauth_required`.
+         *     **Reviews read from a PMS** (`pms` set on the review — Guesty, Hostaway, Hospitable, …) are answered through that PMS. Guesty and Hospitable reply on Airbnb and Booking.com reviews; Hospitable takes one response per review while the channel's window is open, and refuses otherwise with `422 pms_rejected` carrying its reason. A PMS whose API has no reply returns `422 pms_write_unsupported` naming it (Hostaway today); `GET /v1/connect/{provider}` → `capabilities.pms.reviews.reply` says so beforehand. A revoked PMS connection is `403 connection_reauth_required`.
          *
          *     To review a guest (Airbnb and Vrbo), use `POST /v1/reviews/{id}/guest-review`.
          *
@@ -1658,6 +1660,8 @@ export interface paths {
          * List Airbnb reservations
          * @description Cursor-paginated list of reservations sourced directly from Airbnb. Use this when you need Airbnb-specific fields (guest payout split, cancellation policy snapshot) that the unified `/v1/reservations` endpoint flattens away.
          *
+         *     **Real time.** Airbnb notifies Repull of every new booking, change and cancellation as it happens, on every access level (read-only included): it is here within seconds and fires `reservation.created` / `reservation.updated` / `reservation.cancelled` within about a minute. `dataFreshness.lastSyncedAt` is the last full re-read of the account, not the age of these rows. To re-read an account now, `POST /v1/connections/{id}/imports` with `{"scope": "reservations"}`.
+         *
          *     Walk pages with `?cursor=<pagination.nextCursor>` until `pagination.hasMore` is `false`. The cursor is opaque — never construct or parse it client-side.
          *
          *     `?offset=` is also accepted as a first-class alias for shallow paging (0..10000) — see the `offset` parameter below. Mutually exclusive with `cursor`. Internally this walks upstream Airbnb cursor pages to skip rows, so deep offsets cost N/limit upstream round-trips; cursor remains the better choice for deep pagination.
@@ -1919,7 +1923,7 @@ export interface paths {
         };
         /**
          * List Airbnb transactions (settlement ledger)
-         * @description The Airbnb settlement ledger for this workspace: every payout Airbnb sent to the host, each followed by the lines it paid — reservations and their installments, adjustments, resolution payouts and adjustments, cancellation fees. A payout's lines' signed `amount`s sum to its `payout.paidOutAmount` exactly, negative lines included (an adjustment offset against a later payout appears under that payout). `status: UPCOMING` lines are expected earnings not paid out yet; they belong to no payout.
+         * @description The Airbnb settlement ledger for this workspace: every payout Airbnb sent to the host, each followed by the lines it paid — reservations and their installments, adjustments, resolution payouts and adjustments, cancellation fees. A payout's lines' signed `amount`s sum to its `payout.paidOutAmount` exactly, negative lines included (an adjustment offset against a later payout appears under that payout). Lines not paid out yet belong to no payout: `status: RELEASED` lines were released by Airbnb (their date has passed) and are waiting for a payout — a held payout, or one accumulating toward the host's payout threshold or schedule; `status: UPCOMING` lines are not released yet. When a line is paid it appears as `COMPLETED` under its payout and its unpaid line goes away.
          *
          *     **Ids are stable.** Airbnb sends no line id and no payout id on lines, so Repull derives them deterministically: a Payout row's id is Airbnb's payout id; a line's is `<payoutId>:<type>:<confirmationCode>:<n>`. The same line has the same id on every refresh and every page, so you can upsert on `transactionId`. A payout that nets to $0.00 has no Airbnb id; it gets a derived `Z-<date>-<hash>` id with `payout.payoutIdSynthetic: true`.
          *
@@ -1937,7 +1941,7 @@ export interface paths {
         put?: never;
         /**
          * Refresh Airbnb transactions
-         * @description Pull the transaction history from Airbnb into the ledger `GET` serves. Every connected Airbnb account is refreshed, or only `?account_id=`. Without dates: settled lines from the last 12 months and the forecast for the next 12. Safe to repeat: settled lines are upserted on their stable ids, never duplicated or removed; the UPCOMING forecast inside the fetched window is replaced, so a line that has since been paid out moves to its payout. Each account reports its own outcome in `accounts[]`: one account Airbnb refuses (a revoked host, a listing Airbnb no longer serves) is reported there with Airbnb's reason and does not stop the others. When every account fails, the response is Airbnb's answer with its usual code.
+         * @description Pull the transaction history from Airbnb into the ledger `GET` serves. Every connected Airbnb account is refreshed, or only `?account_id=`. Without dates: settled lines from the last 12 months, and every line not paid out yet from 12 months back to 12 months ahead — released lines that are held or accumulating keep their past release date, so the window reaches back for them. Safe to repeat: settled lines are upserted on their stable ids, never duplicated or removed; the unpaid lines inside the fetched window are replaced, so a line that has since been paid out moves to its payout. Each account reports its own outcome in `accounts[]`: one account Airbnb refuses (a revoked host, a listing Airbnb no longer serves) is reported there with Airbnb's reason and does not stop the others. When every account fails, the response is Airbnb's answer with its usual code.
          */
         post: operations["sync_airbnb_transactions"];
         delete?: never;
@@ -5093,16 +5097,18 @@ export interface paths {
         get: operations["listConnectionImports"];
         put?: never;
         /**
-         * Refresh a connection's listings
-         * @description Refresh listings: picks up listings you've added on Airbnb since you connected. Re-reads the connected account's listings now: a new property comes in as a new listing, together with its calendar (pricing and availability), and existing listings are refreshed. On a full-access connection Repull is the source of your calendars, so the calendars of listings already in Repull are not re-read from Airbnb; on read-only and messaging connections they are. Nothing else is re-imported: no reservations, conversations, reviews or payouts.
+         * Refresh a connection's listings or reservations
+         * @description Two scopes: `listings` (the default) and `reservations`.
          *
-         *     The same import runs on its own once a day for every connected Airbnb account, and when the host reconnects. Call this when you know a property was just added and do not want to wait.
+         *     **`listings`** — picks up listings you've added on Airbnb since you connected. Re-reads the connected account's listings now: a new property comes in as a new listing, together with its calendar (pricing and availability), and existing listings are refreshed. On a full-access connection Repull is the source of your calendars, so the calendars of listings already in Repull are not re-read from Airbnb; on read-only and messaging connections they are. Nothing else is re-imported: no reservations, conversations, reviews or payouts. The same import runs on its own once a day for every connected Airbnb account, and when the host reconnects. Call this when you know a property was just added and do not want to wait.
+         *
+         *     **`reservations`** — re-reads the account's reservations from Airbnb (stays from the last month and every future one) and applies anything that differs, firing the usual `reservation.*` webhooks for it. You do not need it to stay current: Airbnb notifies Repull of every new booking, change and cancellation as it happens, on every access level (read-only included), and Repull fires `reservation.created` / `reservation.updated` / `reservation.cancelled` within about a minute. Use it as a catch-up — for example after your own webhook endpoint was down — or to confirm a stay right now.
          *
          *     New listings obey your plan's active-listing limit: past it, and when the property is unlisted on Airbnb, they arrive inactive. Existing listings keep their status.
          *
-         *     The import runs in the background (`202`). It is recorded like any other import (trigger `resync`, one `listings` stage): follow it on `GET /v1/connections/{id}/imports` or wait for `account.import.completed`, then read the new listings with `GET /v1/listings`.
+         *     Both run in the background (`202`) and are recorded like any other import (trigger `resync`, one `listings` or `reservations` stage): follow it on `GET /v1/connections/{id}/imports` or wait for `account.import.completed`, then read the result with `GET /v1/listings` or `GET /v1/reservations`.
          *
-         *     Airbnb connections only for now. Returns `409 conflict` while a listings import of the account is already running, and `409 connection_reauth_required` when the account is disconnected.
+         *     Airbnb connections only for now. Returns `409 conflict` while a listings import of the account is already running, and `409 connection_reauth_required` when the account is disconnected. Two reservations refreshes of one account in the same minute are one refresh.
          */
         post: operations["startConnectionImport"];
         delete?: never;
@@ -7759,7 +7765,7 @@ export interface components {
             /** @enum {string|null} */
             platform?: "airbnb" | "booking" | "vrbo" | null;
             /**
-             * @description The PMS this review was read from (`guesty`, `hostaway`, …) when it came through one — `platform` is still the channel the guest wrote it on. A reply (`POST /v1/reviews/{id}/reply`) goes through this PMS; `GET /v1/connect/{provider}` → `capabilities.pms.reviews.reply` says whether it can. `null` for a review from a directly connected channel.
+             * @description The PMS this review was read from (`guesty`, `hostaway`, `hospitable`, …) when it came through one — `platform` is still the channel the guest wrote it on, and `reservationId` / `reservationConfirmationCode` point at the stay. A review that also arrives from a directly connected channel is returned once, as the channel's copy (`pms: null`). A reply (`POST /v1/reviews/{id}/reply`) goes through this PMS; `GET /v1/connect/{provider}` → `capabilities.pms.reviews.reply` says whether it can. `null` for a review from a directly connected channel.
              * @example guesty
              */
             pms?: string | null;
@@ -12081,7 +12087,7 @@ export interface components {
         AirbnbDataFreshness: {
             /**
              * Format: date-time
-             * @description The most recent Airbnb import COMPLETED by any account in scope. `null` when none of them ever has. A run that failed or was rate-limited does not move it.
+             * @description The most recent Airbnb import COMPLETED by any account in scope — a full re-read of the account, which runs on connect, about once a day, and on `POST /v1/connections/{id}/imports`. `null` when none of them ever has. A run that failed or was rate-limited does not move it. It is not how current reservations and messages are: Airbnb notifies Repull of every new booking, change, cancellation and message as it happens, and those land within seconds between imports, on every access level.
              */
             lastSyncedAt: string | null;
             /** @description `true` only when EVERY connected Airbnb account is stale — nothing in this response can be trusted to be current. With one account (the common case) that is the same as it has always been. With several, one disconnected host no longer condemns the other's rows: `stale` stays `false` and `reason` becomes `partial_account_staleness`. Read `accounts[]` for which is which. */
@@ -12116,10 +12122,10 @@ export interface components {
             /** @example Seaside Stays */
             accountName?: string | null;
             /**
-             * @description `COMPLETED`: settled in a payout. `UPCOMING`: expected, not paid out yet.
+             * @description `COMPLETED`: settled in a payout. `RELEASED`: Airbnb released it (its date has passed) but has not paid it out yet — the payout is held, or accumulating toward the host's next one; it becomes `COMPLETED` under its payout when paid. `UPCOMING`: expected, not released yet.
              * @enum {string}
              */
-            status: "COMPLETED" | "UPCOMING";
+            status: "COMPLETED" | "RELEASED" | "UPCOMING";
             /**
              * @description Airbnb's line type, verbatim: `Payout`, `Reservation`, `Adjustment`, `Resolution Payout`, `Resolution Adjustment`, `Cancellation Fee`, `Pass Through Tot`, …
              * @example Reservation
@@ -12158,7 +12164,7 @@ export interface components {
             };
             payout: {
                 /**
-                 * @description The payout this line was settled in (its own id on a Payout row). `null` on an UPCOMING line.
+                 * @description The payout this line was settled in (its own id on a Payout row). `null` on an unpaid (`RELEASED` / `UPCOMING`) line.
                  * @example M-HQLLNSWKUWK7R
                  */
                 payoutId: string | null;
@@ -12166,7 +12172,7 @@ export interface components {
                 payoutIdSynthetic: boolean;
                 /** Format: date */
                 payoutDate: string | null;
-                /** @description Position within the payout, from 1. `null` on the Payout row and on UPCOMING lines. */
+                /** @description Position within the payout, from 1. `null` on the Payout row and on unpaid lines. */
                 lineIndex: number | null;
                 /** @description On the Payout row only: the amount paid out. Its lines sum to it. */
                 paidOutAmount: number | null;
@@ -19911,12 +19917,12 @@ export interface operations {
                  *     Note this is NOT the `X-Account-Id` header, which carries a connection id and cannot tell two Airbnb hosts apart.
                  */
                 account_id?: components["parameters"]["AirbnbAccountId"];
-                /** @description Inclusive lower bound on the payout's date (the line's own date for UPCOMING lines). YYYY-MM-DD. */
+                /** @description Inclusive lower bound on the payout's date (the line's own date for unpaid `RELEASED` / `UPCOMING` lines). YYYY-MM-DD. */
                 start_date?: string;
                 /** @description Inclusive upper bound, as `start_date`. */
                 end_date?: string;
-                /** @description `COMPLETED` (settled) or `UPCOMING` (expected). */
-                status?: "COMPLETED" | "UPCOMING";
+                /** @description `COMPLETED` (paid out), `RELEASED` (released by Airbnb, not paid out yet) or `UPCOMING` (not released yet). */
+                status?: "COMPLETED" | "RELEASED" | "UPCOMING";
                 /** @description Airbnb's line type, exact match ignoring case — e.g. `Payout`, `Reservation`, `Adjustment`, `Resolution Payout`. */
                 type?: string;
                 /** @description One payout: its Payout row and all its lines. */
@@ -19949,7 +19955,7 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["AirbnbAccountNotFound"];
-            /** @description A filter or body field is malformed (dates are YYYY-MM-DD; status is COMPLETED or UPCOMING). */
+            /** @description A filter or body field is malformed (dates are YYYY-MM-DD; status is COMPLETED, RELEASED or UPCOMING). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -19993,7 +19999,7 @@ export interface operations {
                      */
                     end_date?: string;
                     /**
-                     * @description Refresh only settled or only upcoming lines. Both when omitted.
+                     * @description Airbnb's two buckets: `COMPLETED` refreshes paid-out lines only, `UPCOMING` every unpaid line (`RELEASED` and `UPCOMING`). Both when omitted.
                      * @enum {string}
                      */
                     transaction_type?: "COMPLETED" | "UPCOMING";
@@ -20017,7 +20023,7 @@ export interface operations {
                             count: number;
                             /** @description Payouts in the refreshed window. */
                             payouts: number;
-                            /** @description UPCOMING lines Airbnb no longer lists (paid out or cancelled) and were removed. */
+                            /** @description Unpaid (RELEASED / UPCOMING) lines Airbnb no longer lists (paid out or cancelled) and were removed. */
                             upcomingRemoved: number;
                             /** @description Present only when this account was not refreshed. `code` is `connection_reauth_required`, `airbnb_rejected`, `airbnb_rate_limited`, `airbnb_error`, or `time_budget` (the request ran out of time before reaching it: refresh it alone with `?account_id=`). */
                             error?: {
@@ -27798,11 +27804,11 @@ export interface operations {
             content: {
                 "application/json": {
                     /**
-                     * @description What to import. `listings` = the account's listings. New listings come in with their calendar (pricing and availability); on a full-access connection, calendars of listings already in Repull are not re-read. The only scope; the full import runs when an account is connected.
+                     * @description What to import. `listings` = the account's listings; new listings come in with their calendar (pricing and availability); on a full-access connection, calendars of listings already in Repull are not re-read. `reservations` = the account's reservations, stays from the last month and every future one. The full import runs when an account is connected.
                      * @default listings
                      * @enum {string}
                      */
-                    scope?: "listings";
+                    scope?: "listings" | "reservations";
                 };
             };
         };
@@ -27818,7 +27824,7 @@ export interface operations {
                             /** @description The connection handle, e.g. `airbnb:1234567`. */
                             connection: string;
                             /** @enum {string} */
-                            scope: "listings";
+                            scope: "listings" | "reservations";
                             /** @enum {string} */
                             status: "queued";
                             /** Format: date-time */
