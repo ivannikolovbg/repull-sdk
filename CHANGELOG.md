@@ -3,6 +3,10 @@
 All notable changes to `@repull/sdk` and `@repull/types` are recorded here.
 This project follows [Semantic Versioning](https://semver.org/).
 
+## 0.2.62 — 2026-11-24
+
+- Regenerated from the live spec (automated spec refresh).
+
 ## 0.2.61 — 2026-11-23
 
 - New: `GET /v1/connect/pricelabs/session`
