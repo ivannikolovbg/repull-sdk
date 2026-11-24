@@ -3,6 +3,12 @@
 All notable changes to `@repull/sdk` and `@repull/types` are recorded here.
 This project follows [Semantic Versioning](https://semver.org/).
 
+## 0.2.65 — 2026-11-24
+
+- New: tiket.com channel — 16 operations: properties and room types, rates / availability / restrictions read and write (by property or by listing, read back after every write), reservations as tiket.com sent them, content, room mapping, full calendar sync and property setup; `POST /v1/listings/{id}/publish/tiket`; and the tiket.com Connect steps (claim a Hotel ID, list rooms, map rooms). SDK: `repull.channels.tiket` (`properties.list/get/rooms`, `availability.get/update`, `listings.map/getPricing/updatePricing`, `reservations.list`, `content`, `sync`, `setup`), `repull.listings.publishToTiket`, `repull.connect.tiket.create/status`. Types: `TiketProperty`, `TiketAriDay`, `TiketAriUpdate`, `TiketAriWriteResponse`, `TiketReservation`, … from `@repull/types`.
+- `Reservation.source` / `platform` and `GET /v1/properties?channel=` accept `tiket`.
+- tiket.com children rates are paused at tiket.com's request: a rates write that includes `childPrices` returns 422 and nothing is sent.
+
 ## 0.2.64 — 2026-11-24
 
 - Regenerated from the live spec (automated spec refresh).

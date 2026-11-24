@@ -136,13 +136,29 @@ import type {
   VrboPublishJob,
   VrboPublishJobStarted,
   VrboPublishRequest,
+  TiketProperty,
+  TiketPropertyListResponse,
+  TiketPropertyRoomsResponse,
+  TiketAvailabilityResponse,
+  TiketAvailabilityUpdateRequest,
+  TiketListingPricingResponse,
+  TiketListingPricingUpdateRequest,
+  TiketAriWriteResponse,
+  TiketReservationListResponse,
+  TiketContentResponse,
+  TiketMapListingsRequest,
+  TiketMapListingsResponse,
+  TiketSetupRequest,
+  TiketSetupResponse,
+  TiketSyncResponse,
+  ListingPublishTiketResponse,
   operations,
 } from '@repull/types';
 import { RepullError } from './errors.js';
 import { KvNamespace } from './kv.js';
 
 const DEFAULT_BASE_URL = 'https://api.repull.dev';
-const DEFAULT_USER_AGENT = '@repull/sdk/0.2.28';
+const DEFAULT_USER_AGENT = '@repull/sdk/0.2.65';
 
 export type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
@@ -448,6 +464,8 @@ class ConnectNamespace {
   readonly cloudbeds: HotelPmsConnectNamespace<CloudbedsCredentialsRequest>;
   /** Track (TRACK Hospitality Software). New in v0.2.29. */
   readonly track: TrackConnectNamespace;
+  /** tiket.com (hosted claim flow). New in v0.2.65. */
+  readonly tiket: TiketConnectNamespace;
 
   constructor(private readonly client: Repull) {
     this.airbnb = new AirbnbConnectNamespace(client);
@@ -457,6 +475,7 @@ class ConnectNamespace {
     this.mews = new HotelPmsConnectNamespace(client, 'mews');
     this.cloudbeds = new HotelPmsConnectNamespace(client, 'cloudbeds');
     this.track = new TrackConnectNamespace(client);
+    this.tiket = new TiketConnectNamespace(this);
   }
 
   /** GET /v1/connect — list every connection on this workspace. */
@@ -653,6 +672,31 @@ class BookingConnectNamespace {
    */
   disconnect(opts: DisconnectOptions = {}): Promise<ConnectDisconnectResponse> {
     return disconnectProvider(this.client, 'booking', opts);
+  }
+}
+
+/**
+ * tiket.com — the host activates Repull as channel manager in the tiket.com
+ * extranet, then enters their Hotel ID on the hosted Connect page, which
+ * imports the room types for mapping. New in v0.2.65.
+ *
+ * To detach a property use `repull.channels.tiket.setup({ action: 'disconnect', property_id })`;
+ * `repull.channels.tiket.properties.list()` lists every connected property.
+ */
+class TiketConnectNamespace {
+  constructor(private readonly connect: ConnectNamespace) {}
+
+  /**
+   * POST /v1/connect with `allowedProviders: ['tiket']` — a hosted session
+   * that opens straight on tiket.com. Send the host to `url`.
+   */
+  create(opts: { redirectUrl: string; state?: string; locale?: string }) {
+    return this.connect.createSession({ ...opts, allowedProviders: ['tiket'] });
+  }
+
+  /** GET /v1/connect/tiket — connection status. */
+  status(): Promise<ConnectStatus> {
+    return this.connect.status('tiket');
   }
 }
 
@@ -1314,11 +1358,166 @@ class ChannelsNamespace {
   readonly booking: BookingChannelNamespace;
   /** Vrbo listings and their content, section by section. New in v0.2.56. */
   readonly vrbo: VrboChannelNamespace;
+  /** tiket.com properties, rates and availability, reservations, content and setup. New in v0.2.65. */
+  readonly tiket: TiketChannelNamespace;
 
   constructor(private readonly client: Repull) {
     this.airbnb = new AirbnbChannelNamespace(client);
     this.booking = new BookingChannelNamespace(client);
     this.vrbo = new VrboChannelNamespace(client);
+    this.tiket = new TiketChannelNamespace(client);
+  }
+}
+
+/**
+ * tiket.com — `/v1/channels/tiket/*`. New in v0.2.65.
+ *
+ * A tiket.com property is a hotel or building; its room types are what guests
+ * book, and each room type maps to one Repull listing. Properties are named by
+ * their tiket.com Hotel ID (`propertyId`).
+ *
+ * Every rates / availability / restrictions write is read back from tiket.com:
+ * check `applied` (`verified`, `mismatch` or `unverified`). Children rates are
+ * paused at tiket.com's request — a write with `childPrices` returns 422.
+ */
+class TiketChannelNamespace {
+  readonly properties: TiketPropertiesNamespace;
+  readonly availability: TiketAvailabilityNamespace;
+  readonly listings: TiketListingsNamespace;
+  readonly reservations: TiketReservationsNamespace;
+
+  constructor(private readonly client: Repull) {
+    this.properties = new TiketPropertiesNamespace(client);
+    this.availability = new TiketAvailabilityNamespace(client);
+    this.listings = new TiketListingsNamespace(client);
+    this.reservations = new TiketReservationsNamespace(client);
+  }
+
+  /** GET /v1/channels/tiket/content — the content Repull last sent tiket.com for a property. */
+  content(query: { property_id?: string; partner_hotel_code?: string }): Promise<TiketContentResponse> {
+    return this.client.request<TiketContentResponse>('GET', '/v1/channels/tiket/content', { query });
+  }
+
+  /**
+   * POST /v1/channels/tiket/sync — send the full calendar (today to 500 days
+   * ahead) of every mapped listing of one property, or of every active
+   * property when `property_id` is omitted.
+   */
+  sync(body: { property_id?: string; refresh_products?: boolean } = {}): Promise<TiketSyncResponse> {
+    return this.client.request<TiketSyncResponse>('POST', '/v1/channels/tiket/sync', { body });
+  }
+
+  /**
+   * POST /v1/channels/tiket/setup — onboarding and maintenance actions:
+   * `request-activation`, `check-activation`, `create-property`,
+   * `request-content-mapping`, `set-push-rate-plans`, `set-sync`,
+   * `disconnect`, …
+   */
+  setup(body: TiketSetupRequest): Promise<TiketSetupResponse> {
+    return this.client.request<TiketSetupResponse>('POST', '/v1/channels/tiket/setup', { body });
+  }
+}
+
+class TiketPropertiesNamespace {
+  constructor(private readonly client: Repull) {}
+
+  /** GET /v1/channels/tiket/properties — every connected tiket.com property. */
+  list(query: { status?: 'active' | 'inactive' | 'all' } = {}): Promise<TiketPropertyListResponse> {
+    return this.client.request<TiketPropertyListResponse>('GET', '/v1/channels/tiket/properties', { query });
+  }
+
+  /** GET /v1/channels/tiket/properties/{id} — one property by tiket.com Hotel ID. */
+  get(hotelId: string | number, query: { status?: 'active' | 'inactive' | 'all' } = {}): Promise<TiketProperty> {
+    return this.client.request<TiketProperty>(
+      'GET',
+      `/v1/channels/tiket/properties/${encodeURIComponent(String(hotelId))}`,
+      { query },
+    );
+  }
+
+  /** GET /v1/channels/tiket/properties/{id}/rooms — room types with rate plans and mapped listings. */
+  rooms(hotelId: string | number): Promise<TiketPropertyRoomsResponse> {
+    return this.client.request<TiketPropertyRoomsResponse>(
+      'GET',
+      `/v1/channels/tiket/properties/${encodeURIComponent(String(hotelId))}/rooms`,
+    );
+  }
+}
+
+class TiketAvailabilityNamespace {
+  constructor(private readonly client: Repull) {}
+
+  /** GET /v1/channels/tiket/availability — what tiket.com holds for a property, read live. */
+  get(query: {
+    property_id: string;
+    start_date?: string;
+    end_date?: string;
+    number_of_days?: number;
+    room_type_code?: string;
+    rate_plan_code?: string;
+  }): Promise<TiketAvailabilityResponse> {
+    return this.client.request<TiketAvailabilityResponse>('GET', '/v1/channels/tiket/availability', { query });
+  }
+
+  /** PUT /v1/channels/tiket/availability — write rates, rooms to sell or restrictions, then read them back. */
+  update(body: TiketAvailabilityUpdateRequest): Promise<TiketAriWriteResponse> {
+    return this.client.request<TiketAriWriteResponse>('PUT', '/v1/channels/tiket/availability', { body });
+  }
+}
+
+class TiketListingsNamespace {
+  constructor(private readonly client: Repull) {}
+
+  /**
+   * POST /v1/channels/tiket/listings/map — map room types to listings
+   * (`{ roomTypeCode, listingId }`, `listingId: null` to unmap, or
+   * `{ roomTypeCode, create: true }` to create a listing from the room).
+   */
+  map(body: TiketMapListingsRequest): Promise<TiketMapListingsResponse> {
+    return this.client.request<TiketMapListingsResponse>('POST', '/v1/channels/tiket/listings/map', { body });
+  }
+
+  /** GET /v1/channels/tiket/listings/{id}/pricing — tiket.com rates, availability and restrictions for a listing. */
+  getPricing(
+    listingId: string | number,
+    query: { hotel_id?: string; start_date?: string; end_date?: string; number_of_days?: number } = {},
+  ): Promise<TiketListingPricingResponse> {
+    return this.client.request<TiketListingPricingResponse>(
+      'GET',
+      `/v1/channels/tiket/listings/${encodeURIComponent(String(listingId))}/pricing`,
+      { query },
+    );
+  }
+
+  /** PUT /v1/channels/tiket/listings/{id}/pricing — write by listing; `type` defaults to `rates`. */
+  updatePricing(listingId: string | number, body: TiketListingPricingUpdateRequest): Promise<TiketAriWriteResponse> {
+    return this.client.request<TiketAriWriteResponse>(
+      'PUT',
+      `/v1/channels/tiket/listings/${encodeURIComponent(String(listingId))}/pricing`,
+      { body },
+    );
+  }
+}
+
+class TiketReservationsNamespace {
+  constructor(private readonly client: Repull) {}
+
+  /**
+   * GET /v1/channels/tiket/reservations — bookings as tiket.com sent them, one
+   * row per booked room. The same bookings, normalized, are on
+   * `repull.reservations.list({ platform: 'tiket' })`. Card details are never returned.
+   */
+  list(
+    query: {
+      property_id?: string;
+      status?: 'confirmed' | 'cancelled';
+      check_in_from?: string;
+      check_in_to?: string;
+      limit?: number;
+      offset?: number;
+    } = {},
+  ): Promise<TiketReservationListResponse> {
+    return this.client.request<TiketReservationListResponse>('GET', '/v1/channels/tiket/reservations', { query });
   }
 }
 
@@ -2680,6 +2879,21 @@ class ListingsNamespace {
       'GET',
       `/v1/listings/${encodeURIComponent(String(id))}/publish/vrbo`,
       { query: { jobId } },
+    );
+  }
+
+  /**
+   * POST /v1/listings/{id}/publish/tiket — send the listing's content (room,
+   * rate-plan policies and, for a property Repull created, the property) to
+   * tiket.com. Read `result.pushed`, `result.sections` and `result.errors`.
+   * `409 tiket_content_not_mapped` until tiket.com has linked Repull's codes to
+   * the property. New in v0.2.65.
+   */
+  publishToTiket(id: string | number, body: { hotelId?: string } = {}): Promise<ListingPublishTiketResponse> {
+    return this.client.request<ListingPublishTiketResponse>(
+      'POST',
+      `/v1/listings/${encodeURIComponent(String(id))}/publish/tiket`,
+      { body },
     );
   }
 }
