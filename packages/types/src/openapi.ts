@@ -698,9 +698,9 @@ export interface paths {
         put?: never;
         /**
          * Submit Hospitable credentials for a Connect session
-         * @description Completes a credentials-pattern connection for Hospitable. Personal access token from Hospitable → Settings → API.
+         * @description Completes a credentials-pattern connection for Hospitable. Personal access token from Hospitable → Apps → API access → Access tokens.
          *
-         *     The credentials are validated against Hospitable before anything is persisted, so an invalid pair returns `invalid_credentials` rather than creating a dead connection. On success the `pms_connections` row is written and the Connect session moves to its terminal state.
+         *     The credentials are validated against Hospitable before anything is persisted, so an invalid pair returns `invalid_credentials` rather than creating a dead connection. On success the `pms_connections` row is written and the Connect session moves to its terminal state. The response carries the connection's `webhook` URL: Hospitable has no API to subscribe webhooks, so show it to the host, who adds it in Hospitable (Apps → Webhooks → + Add new) for instant updates.
          *
          *     No API key required when called with a `sessionId` — the session is the capability token.
          */
@@ -7864,6 +7864,42 @@ export interface components {
             disconnectedAt?: string | null;
             /** @description Apps only: how the app is doing on this connection. `null` once disconnected. */
             health?: components["schemas"]["AppConnectionHealth"] | null;
+            /** @description Hospitable only: the webhook URL the host pastes into Hospitable (Apps → Webhooks → + Add new) and whether deliveries are arriving. Show it in your own UI so the host can set it up. Absent for other providers. */
+            webhook?: components["schemas"]["HospitableWebhook"] | null;
+        };
+        /**
+         * @description Hospitable only. Hospitable has no API to subscribe webhooks, so the host adds one in Hospitable: **Apps → Webhooks → + Add new**, pastes `url`, ticks Reservations, Messages, Properties and Reviews, and saves (Hospitable's **Test** button sends a sample right away). Each connection has its own `url`; a reconnect keeps it. Every delivery is checked against Hospitable's signature before it is used.
+         *
+         *     **Polling.** While `status` is `receiving` the connection is updated from the webhooks alone and is not polled. When it is `not_configured` or `stale` it is polled every minute, and the first poll after going stale re-reads the whole silent window, so nothing is lost. A quiet account (no bookings or messages for a day) can read `stale` while its webhook still works; the next delivery flips it back to `receiving`.
+         */
+        HospitableWebhook: {
+            /**
+             * Format: uri
+             * @description The webhook URL to paste into Hospitable. Unique to this connection.
+             * @example https://api.repull.dev/webhooks/pms/hospitable?token=4f9c2a7e1b3d5f60a8c9e2b4d6f8a0c1
+             */
+            url: string;
+            /**
+             * @description `not_configured`: no delivery yet (the host has not added the URL). `receiving`: a delivery arrived in the last 24 hours. `stale`: deliveries arrived before, none in the last 24 hours.
+             * @example receiving
+             * @enum {string}
+             */
+            status: "not_configured" | "receiving" | "stale";
+            /**
+             * Format: date-time
+             * @description When the last verified delivery arrived; `null` before the first.
+             */
+            lastReceivedAt: string | null;
+            /**
+             * @description The webhook types to tick in Hospitable.
+             * @example [
+             *       "Reservations",
+             *       "Messages",
+             *       "Properties",
+             *       "Reviews"
+             *     ]
+             */
+            events?: string[];
         };
         /** @description How an app (PriceLabs) is doing on one connection, from its calls with the key. */
         AppConnectionHealth: {
@@ -8285,6 +8321,8 @@ export interface components {
             }[];
             /** @description PMS connections only: what the app may change in the PMS. Change it with `PATCH /v1/connect/{provider}/write-policy`. */
             writePolicy?: components["schemas"]["PmsWritePolicy"];
+            /** @description Hospitable only (`GET /v1/connect/hospitable`): the webhook URL the host pastes into Hospitable (Apps → Webhooks → + Add new) and whether deliveries are arriving. */
+            webhook?: components["schemas"]["HospitableWebhook"] | null;
             /** @description PMS providers only. `reservations`: which reservation writes the API performs on this connection's listings — the connector's support combined with `writePolicy`. `pms`: everything else the API does through this PMS (review replies, request answers, listing content, guests, message channel/attachments, calendar). When `connected` is false, what the connector supports once connected. */
             capabilities?: {
                 reservations?: components["schemas"]["ReservationCapabilities"];
@@ -17825,6 +17863,8 @@ export interface operations {
                         accountInfo?: {
                             [key: string]: unknown;
                         };
+                        /** @description The webhook URL to show the host: in Hospitable, Apps → Webhooks → + Add new, paste it, tick Reservations, Messages, Properties and Reviews. Optional — without it the connection is polled every minute. `null` if it could not be set up. */
+                        webhook?: components["schemas"]["HospitableWebhook"] | null;
                     };
                 };
             };
