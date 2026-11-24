@@ -9669,6 +9669,11 @@ export interface components {
              */
             timestamp: string;
             account?: components["schemas"]["WebhookEventAccount"];
+            /**
+             * @description The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`"2042"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.
+             * @example 2042
+             */
+            workspaceId?: number;
             data: components["schemas"]["ReservationCreatedPayload"];
         };
         ReservationUpdatedEvent: {
@@ -9690,6 +9695,11 @@ export interface components {
              */
             timestamp: string;
             account?: components["schemas"]["WebhookEventAccount"];
+            /**
+             * @description The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`"2042"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.
+             * @example 2042
+             */
+            workspaceId?: number;
             data: components["schemas"]["ReservationUpdatedPayload"];
         };
         ReservationCancelledEvent: {
@@ -9711,6 +9721,11 @@ export interface components {
              */
             timestamp: string;
             account?: components["schemas"]["WebhookEventAccount"];
+            /**
+             * @description The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`"2042"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.
+             * @example 2042
+             */
+            workspaceId?: number;
             data: components["schemas"]["ReservationCancelledPayload"];
         };
         ReservationMessageReceivedEvent: {
@@ -9732,6 +9747,11 @@ export interface components {
              */
             timestamp: string;
             account?: components["schemas"]["WebhookEventAccount"];
+            /**
+             * @description The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`"2042"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.
+             * @example 2042
+             */
+            workspaceId?: number;
             data: components["schemas"]["ReservationMessageReceivedPayload"];
         };
         ReservationMessageSentEvent: {
@@ -9753,6 +9773,11 @@ export interface components {
              */
             timestamp: string;
             account?: components["schemas"]["WebhookEventAccount"];
+            /**
+             * @description The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`"2042"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.
+             * @example 2042
+             */
+            workspaceId?: number;
             data: components["schemas"]["ReservationMessageSentPayload"];
         };
         ReservationMessageUpdatedEvent: {
@@ -9774,6 +9799,11 @@ export interface components {
              */
             timestamp: string;
             account?: components["schemas"]["WebhookEventAccount"];
+            /**
+             * @description The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`"2042"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.
+             * @example 2042
+             */
+            workspaceId?: number;
             data: components["schemas"]["ReservationMessageUpdatedPayload"];
         };
         ReservationMessageReadEvent: {
@@ -9795,6 +9825,11 @@ export interface components {
              */
             timestamp: string;
             account?: components["schemas"]["WebhookEventAccount"];
+            /**
+             * @description The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`"2042"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.
+             * @example 2042
+             */
+            workspaceId?: number;
             data: components["schemas"]["ReservationMessageReadPayload"];
         };
         ReservationMessageReactionEvent: {
@@ -9816,6 +9851,11 @@ export interface components {
              */
             timestamp: string;
             account?: components["schemas"]["WebhookEventAccount"];
+            /**
+             * @description The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`"2042"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.
+             * @example 2042
+             */
+            workspaceId?: number;
             data: components["schemas"]["ReservationMessageReactionPayload"];
         };
         ReservationAlterationCreatedEvent: {
@@ -9837,6 +9877,11 @@ export interface components {
              */
             timestamp: string;
             account?: components["schemas"]["WebhookEventAccount"];
+            /**
+             * @description The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`"2042"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.
+             * @example 2042
+             */
+            workspaceId?: number;
             data: components["schemas"]["ReservationAlterationCreatedPayload"];
         };
         ReservationAlterationRespondedEvent: {
@@ -9858,6 +9903,11 @@ export interface components {
              */
             timestamp: string;
             account?: components["schemas"]["WebhookEventAccount"];
+            /**
+             * @description The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`"2042"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.
+             * @example 2042
+             */
+            workspaceId?: number;
             data: components["schemas"]["ReservationAlterationRespondedPayload"];
         };
         ReservationRequestCreatedEvent: {
@@ -9879,6 +9929,11 @@ export interface components {
              */
             timestamp: string;
             account?: components["schemas"]["WebhookEventAccount"];
+            /**
+             * @description The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`"2042"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.
+             * @example 2042
+             */
+            workspaceId?: number;
             data: components["schemas"]["ReservationRequestCreatedPayload"];
         };
         ReservationRequestUpdatedEvent: {
@@ -9900,6 +9955,11 @@ export interface components {
              */
             timestamp: string;
             account?: components["schemas"]["WebhookEventAccount"];
+            /**
+             * @description The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`"2042"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.
+             * @example 2042
+             */
+            workspaceId?: number;
             data: components["schemas"]["ReservationRequestUpdatedPayload"];
         };
         /** @description Payload for `channel.sync.failed`. A push of availability, rates or content to a connected channel did not land. */
@@ -9957,6 +10017,11 @@ export interface components {
             /** Format: date-time */
             timestamp: string;
             account?: components["schemas"]["WebhookEventAccount"];
+            /**
+             * @description The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`"2042"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.
+             * @example 2042
+             */
+            workspaceId?: number;
             data: components["schemas"]["ChannelSyncFailurePayload"];
         };
         /** @description Payload for `channel.degraded`. A connection is failing repeatedly and will stop working. Sent on the transition into degraded or down, not on every health check. */
@@ -9988,6 +10053,11 @@ export interface components {
             /** Format: date-time */
             timestamp: string;
             account?: components["schemas"]["WebhookEventAccount"];
+            /**
+             * @description The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`"2042"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.
+             * @example 2042
+             */
+            workspaceId?: number;
             data: components["schemas"]["ChannelDegradedPayload"];
         };
         /** @description Payload for `reservation.thread.assigned`. A message thread was attached to a booking. Threads are often born orphaned — a guest messages about a booking whose import has not landed — and adopted when the reservation arrives. */
@@ -10019,6 +10089,11 @@ export interface components {
             /** Format: date-time */
             timestamp: string;
             account?: components["schemas"]["WebhookEventAccount"];
+            /**
+             * @description The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`"2042"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.
+             * @example 2042
+             */
+            workspaceId?: number;
             data: components["schemas"]["ReservationThreadAssignedPayload"];
         };
         /** @description Payload for `booking.unacknowledged`. A booking changed and your system has not acknowledged the change through the revision feed. Sent once per outstanding revision — not once per check — so a booking that keeps waiting does not keep alerting. A booking that changes AGAIN mints a new revision and does alert again, because that is a new thing to acknowledge. Acknowledging the revision stops it. */
@@ -10056,6 +10131,11 @@ export interface components {
              */
             timestamp: string;
             account?: components["schemas"]["WebhookEventAccount"];
+            /**
+             * @description The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`"2042"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.
+             * @example 2042
+             */
+            workspaceId?: number;
             data: components["schemas"]["BookingUnacknowledgedPayload"];
         };
         InquiryCreatedEvent: {
@@ -10077,6 +10157,11 @@ export interface components {
              */
             timestamp: string;
             account?: components["schemas"]["WebhookEventAccount"];
+            /**
+             * @description The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`"2042"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.
+             * @example 2042
+             */
+            workspaceId?: number;
             data: components["schemas"]["InquiryCreatedPayload"];
         };
         InquiryUpdatedEvent: {
@@ -10098,6 +10183,11 @@ export interface components {
              */
             timestamp: string;
             account?: components["schemas"]["WebhookEventAccount"];
+            /**
+             * @description The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`"2042"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.
+             * @example 2042
+             */
+            workspaceId?: number;
             data: components["schemas"]["InquiryUpdatedPayload"];
         };
         ListingCreatedEvent: {
@@ -10119,6 +10209,11 @@ export interface components {
              */
             timestamp: string;
             account?: components["schemas"]["WebhookEventAccount"];
+            /**
+             * @description The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`"2042"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.
+             * @example 2042
+             */
+            workspaceId?: number;
             data: components["schemas"]["ListingCreatedPayload"];
         };
         ListingUpdatedEvent: {
@@ -10140,6 +10235,11 @@ export interface components {
              */
             timestamp: string;
             account?: components["schemas"]["WebhookEventAccount"];
+            /**
+             * @description The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`"2042"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.
+             * @example 2042
+             */
+            workspaceId?: number;
             data: components["schemas"]["ListingUpdatedPayload"];
         };
         ListingDeletedEvent: {
@@ -10161,6 +10261,11 @@ export interface components {
              */
             timestamp: string;
             account?: components["schemas"]["WebhookEventAccount"];
+            /**
+             * @description The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`"2042"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.
+             * @example 2042
+             */
+            workspaceId?: number;
             data: components["schemas"]["ListingDeletedPayload"];
         };
         /** @description Payload for `listing.ical_feed_changed`: Repull changed a Vrbo unit's imported calendars, or could not. Repull imports the listing's Repull iCal backup feed into every calendar-synced Vrbo unit, and removes other tools' imported feeds while Repull is the unit's master calendar. */
@@ -10225,6 +10330,11 @@ export interface components {
              */
             timestamp: string;
             account?: components["schemas"]["WebhookEventAccount"];
+            /**
+             * @description The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`"2042"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.
+             * @example 2042
+             */
+            workspaceId?: number;
             data: components["schemas"]["ListingIcalFeedChangedPayload"];
         };
         ListingSuspendedEvent: {
@@ -10246,6 +10356,11 @@ export interface components {
              */
             timestamp: string;
             account?: components["schemas"]["WebhookEventAccount"];
+            /**
+             * @description The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`"2042"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.
+             * @example 2042
+             */
+            workspaceId?: number;
             data: components["schemas"]["ListingSuspensionPayload"];
         };
         ListingReactivatedEvent: {
@@ -10267,6 +10382,11 @@ export interface components {
              */
             timestamp: string;
             account?: components["schemas"]["WebhookEventAccount"];
+            /**
+             * @description The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`"2042"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.
+             * @example 2042
+             */
+            workspaceId?: number;
             data: components["schemas"]["ListingSuspensionPayload"];
         };
         AccountCreatedEvent: {
@@ -10288,6 +10408,11 @@ export interface components {
              */
             timestamp: string;
             account?: components["schemas"]["WebhookEventAccount"];
+            /**
+             * @description The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`"2042"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.
+             * @example 2042
+             */
+            workspaceId?: number;
             data: components["schemas"]["AccountCreatedPayload"];
         };
         /** @description One stage of an account import (e.g. `reservations`). The stage is done when `done + failed` reaches `expected`. */
@@ -10478,6 +10603,11 @@ export interface components {
              */
             timestamp: string;
             account?: components["schemas"]["WebhookEventAccount"];
+            /**
+             * @description The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`"2042"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.
+             * @example 2042
+             */
+            workspaceId?: number;
             data: components["schemas"]["AccountCalendarAccessChangedPayload"];
         };
         /** @description Whether Vrbo's notification emails for this account reach Repull. Each one brings a new guest message or booking in within about a minute; without them Repull relies on its scheduled check, which is slower. */
@@ -10538,6 +10668,11 @@ export interface components {
              */
             timestamp: string;
             account?: components["schemas"]["WebhookEventAccount"];
+            /**
+             * @description The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`"2042"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.
+             * @example 2042
+             */
+            workspaceId?: number;
             data: components["schemas"]["ConversationMessageStatusChangedPayload"];
         };
         /** @description Payload for `account.notifications_missing`: a Vrbo account had new guest messages and no notification email arrived for them. */
@@ -10578,6 +10713,11 @@ export interface components {
              */
             timestamp: string;
             account?: components["schemas"]["WebhookEventAccount"];
+            /**
+             * @description The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`"2042"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.
+             * @example 2042
+             */
+            workspaceId?: number;
             data: components["schemas"]["AccountNotificationsMissingPayload"];
         };
         /** @description A connected login gained a property or room. Map the new units to listings to import their bookings. */
@@ -10600,6 +10740,11 @@ export interface components {
              */
             timestamp: string;
             account?: components["schemas"]["WebhookEventAccount"];
+            /**
+             * @description The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`"2042"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.
+             * @example 2042
+             */
+            workspaceId?: number;
             data: components["schemas"]["AccountUnitsAddedPayload"];
         };
         /** @description An account import began. */
@@ -10622,6 +10767,11 @@ export interface components {
              */
             timestamp: string;
             account?: components["schemas"]["WebhookEventAccount"];
+            /**
+             * @description The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`"2042"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.
+             * @example 2042
+             */
+            workspaceId?: number;
             data: components["schemas"]["AccountImportStartedPayload"];
         };
         /** @description Every stage of an account import finished. Its data is readable through the API. */
@@ -10644,6 +10794,11 @@ export interface components {
              */
             timestamp: string;
             account?: components["schemas"]["WebhookEventAccount"];
+            /**
+             * @description The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`"2042"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.
+             * @example 2042
+             */
+            workspaceId?: number;
             data: components["schemas"]["AccountImportFinishedPayload"];
         };
         /** @description An account import stopped before finishing; `data.reason` says why. */
@@ -10666,6 +10821,11 @@ export interface components {
              */
             timestamp: string;
             account?: components["schemas"]["WebhookEventAccount"];
+            /**
+             * @description The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`"2042"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.
+             * @example 2042
+             */
+            workspaceId?: number;
             data: components["schemas"]["AccountImportFinishedPayload"];
         };
         ConnectSessionCompletedEvent: {
@@ -10687,6 +10847,11 @@ export interface components {
              */
             timestamp: string;
             account?: components["schemas"]["WebhookEventAccount"];
+            /**
+             * @description The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`"2042"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.
+             * @example 2042
+             */
+            workspaceId?: number;
             data: components["schemas"]["ConnectSessionCompletedPayload"];
         };
         ConnectSessionAbandonedEvent: {
@@ -10708,6 +10873,11 @@ export interface components {
              */
             timestamp: string;
             account?: components["schemas"]["WebhookEventAccount"];
+            /**
+             * @description The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`"2042"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.
+             * @example 2042
+             */
+            workspaceId?: number;
             data: components["schemas"]["ConnectSessionAbandonedPayload"];
         };
         AccountDisconnectedEvent: {
@@ -10729,6 +10899,11 @@ export interface components {
              */
             timestamp: string;
             account?: components["schemas"]["WebhookEventAccount"];
+            /**
+             * @description The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`"2042"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.
+             * @example 2042
+             */
+            workspaceId?: number;
             data: components["schemas"]["AccountDisconnectedPayload"];
         };
         ReviewCreatedEvent: {
@@ -10750,6 +10925,11 @@ export interface components {
              */
             timestamp: string;
             account?: components["schemas"]["WebhookEventAccount"];
+            /**
+             * @description The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`"2042"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.
+             * @example 2042
+             */
+            workspaceId?: number;
             data: components["schemas"]["ReviewCreatedPayload"];
         };
         ReviewRespondedEvent: {
@@ -10771,6 +10951,11 @@ export interface components {
              */
             timestamp: string;
             account?: components["schemas"]["WebhookEventAccount"];
+            /**
+             * @description The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`"2042"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.
+             * @example 2042
+             */
+            workspaceId?: number;
             data: components["schemas"]["ReviewRespondedPayload"];
         };
         AiOperationCompletedEvent: {
@@ -10792,6 +10977,11 @@ export interface components {
              */
             timestamp: string;
             account?: components["schemas"]["WebhookEventAccount"];
+            /**
+             * @description The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`"2042"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.
+             * @example 2042
+             */
+            workspaceId?: number;
             data: components["schemas"]["AiOperationCompletedPayload"];
         };
         AiOperationFailedEvent: {
@@ -10813,6 +11003,11 @@ export interface components {
              */
             timestamp: string;
             account?: components["schemas"]["WebhookEventAccount"];
+            /**
+             * @description The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`"2042"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.
+             * @example 2042
+             */
+            workspaceId?: number;
             data: components["schemas"]["AiOperationFailedPayload"];
         };
         PaymentCompletedEvent: {
@@ -10834,6 +11029,11 @@ export interface components {
              */
             timestamp: string;
             account?: components["schemas"]["WebhookEventAccount"];
+            /**
+             * @description The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`"2042"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.
+             * @example 2042
+             */
+            workspaceId?: number;
             data: components["schemas"]["PaymentCompletedPayload"];
         };
         PayoutCompletedEvent: {
@@ -10855,6 +11055,11 @@ export interface components {
              */
             timestamp: string;
             account?: components["schemas"]["WebhookEventAccount"];
+            /**
+             * @description The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`"2042"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.
+             * @example 2042
+             */
+            workspaceId?: number;
             data: components["schemas"]["PayoutCompletedPayload"];
         };
         PaymentRefundedEvent: {
@@ -10876,6 +11081,11 @@ export interface components {
              */
             timestamp: string;
             account?: components["schemas"]["WebhookEventAccount"];
+            /**
+             * @description The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`"2042"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.
+             * @example 2042
+             */
+            workspaceId?: number;
             data: components["schemas"]["PaymentRefundedPayload"];
         };
         RepullPingEvent: {
@@ -10897,6 +11107,11 @@ export interface components {
              */
             timestamp: string;
             account?: components["schemas"]["WebhookEventAccount"];
+            /**
+             * @description The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`"2042"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.
+             * @example 2042
+             */
+            workspaceId?: number;
             data: components["schemas"]["RepullPingPayload"];
         };
         UsageQuotaWarningEvent: {
@@ -10918,6 +11133,11 @@ export interface components {
              */
             timestamp: string;
             account?: components["schemas"]["WebhookEventAccount"];
+            /**
+             * @description The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`"2042"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.
+             * @example 2042
+             */
+            workspaceId?: number;
             data: components["schemas"]["UsageQuotaWarningPayload"];
         };
         /** @description One import run into a migration workspace. */
@@ -10961,7 +11181,7 @@ export interface components {
              */
             timestamp: string;
             account?: components["schemas"]["WebhookEventAccount"];
-            /** @description The migration's workspace — pass it as `X-Workspace-Id`, or to `GET /v1/migrations/{workspaceId}`. */
+            /** @description The migration's workspace — pass it as `X-Workspace-Id`, or to `GET /v1/migrations/{workspaceId}`. Always present on migration events. A JSON number here; `POST /v1/connect` and `GET /v1/workspaces` return the same id as a string, so compare as strings. */
             workspaceId: number;
             data: components["schemas"]["MigrationImportPayload"];
         };
@@ -10985,7 +11205,7 @@ export interface components {
              */
             timestamp: string;
             account?: components["schemas"]["WebhookEventAccount"];
-            /** @description The migration's workspace — pass it as `X-Workspace-Id`, or to `GET /v1/migrations/{workspaceId}`. */
+            /** @description The migration's workspace — pass it as `X-Workspace-Id`, or to `GET /v1/migrations/{workspaceId}`. Always present on migration events. A JSON number here; `POST /v1/connect` and `GET /v1/workspaces` return the same id as a string, so compare as strings. */
             workspaceId: number;
             data: components["schemas"]["MigrationImportPayload"];
         };

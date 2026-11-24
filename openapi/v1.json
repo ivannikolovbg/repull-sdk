@@ -5533,6 +5533,11 @@
           "account": {
             "$ref": "#/components/schemas/WebhookEventAccount"
           },
+          "workspaceId": {
+            "type": "integer",
+            "description": "The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`\"2042\"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.",
+            "example": 2042
+          },
           "data": {
             "$ref": "#/components/schemas/ReservationCreatedPayload"
           }
@@ -5571,6 +5576,11 @@
           },
           "account": {
             "$ref": "#/components/schemas/WebhookEventAccount"
+          },
+          "workspaceId": {
+            "type": "integer",
+            "description": "The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`\"2042\"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.",
+            "example": 2042
           },
           "data": {
             "$ref": "#/components/schemas/ReservationUpdatedPayload"
@@ -5611,6 +5621,11 @@
           "account": {
             "$ref": "#/components/schemas/WebhookEventAccount"
           },
+          "workspaceId": {
+            "type": "integer",
+            "description": "The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`\"2042\"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.",
+            "example": 2042
+          },
           "data": {
             "$ref": "#/components/schemas/ReservationCancelledPayload"
           }
@@ -5649,6 +5664,11 @@
           },
           "account": {
             "$ref": "#/components/schemas/WebhookEventAccount"
+          },
+          "workspaceId": {
+            "type": "integer",
+            "description": "The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`\"2042\"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.",
+            "example": 2042
           },
           "data": {
             "$ref": "#/components/schemas/ReservationMessageReceivedPayload"
@@ -5689,6 +5709,11 @@
           "account": {
             "$ref": "#/components/schemas/WebhookEventAccount"
           },
+          "workspaceId": {
+            "type": "integer",
+            "description": "The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`\"2042\"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.",
+            "example": 2042
+          },
           "data": {
             "$ref": "#/components/schemas/ReservationMessageSentPayload"
           }
@@ -5727,6 +5752,11 @@
           },
           "account": {
             "$ref": "#/components/schemas/WebhookEventAccount"
+          },
+          "workspaceId": {
+            "type": "integer",
+            "description": "The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`\"2042\"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.",
+            "example": 2042
           },
           "data": {
             "$ref": "#/components/schemas/ReservationMessageUpdatedPayload"
@@ -5767,6 +5797,11 @@
           "account": {
             "$ref": "#/components/schemas/WebhookEventAccount"
           },
+          "workspaceId": {
+            "type": "integer",
+            "description": "The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`\"2042\"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.",
+            "example": 2042
+          },
           "data": {
             "$ref": "#/components/schemas/ReservationMessageReadPayload"
           }
@@ -5805,6 +5840,11 @@
           },
           "account": {
             "$ref": "#/components/schemas/WebhookEventAccount"
+          },
+          "workspaceId": {
+            "type": "integer",
+            "description": "The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`\"2042\"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.",
+            "example": 2042
           },
           "data": {
             "$ref": "#/components/schemas/ReservationMessageReactionPayload"
@@ -5845,6 +5885,11 @@
           "account": {
             "$ref": "#/components/schemas/WebhookEventAccount"
           },
+          "workspaceId": {
+            "type": "integer",
+            "description": "The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`\"2042\"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.",
+            "example": 2042
+          },
           "data": {
             "$ref": "#/components/schemas/ReservationAlterationCreatedPayload"
           }
@@ -5883,6 +5928,11 @@
           },
           "account": {
             "$ref": "#/components/schemas/WebhookEventAccount"
+          },
+          "workspaceId": {
+            "type": "integer",
+            "description": "The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`\"2042\"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.",
+            "example": 2042
           },
           "data": {
             "$ref": "#/components/schemas/ReservationAlterationRespondedPayload"
@@ -5923,6 +5973,11 @@
           "account": {
             "$ref": "#/components/schemas/WebhookEventAccount"
           },
+          "workspaceId": {
+            "type": "integer",
+            "description": "The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`\"2042\"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.",
+            "example": 2042
+          },
           "data": {
             "$ref": "#/components/schemas/ReservationRequestCreatedPayload"
           }
@@ -5961,6 +6016,11 @@
           },
           "account": {
             "$ref": "#/components/schemas/WebhookEventAccount"
+          },
+          "workspaceId": {
+            "type": "integer",
+            "description": "The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`\"2042\"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.",
+            "example": 2042
           },
           "data": {
             "$ref": "#/components/schemas/ReservationRequestUpdatedPayload"
@@ -6096,6 +6156,11 @@
           "account": {
             "$ref": "#/components/schemas/WebhookEventAccount"
           },
+          "workspaceId": {
+            "type": "integer",
+            "description": "The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`\"2042\"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.",
+            "example": 2042
+          },
           "data": {
             "$ref": "#/components/schemas/ChannelSyncFailurePayload"
           }
@@ -6179,6 +6244,11 @@
           },
           "account": {
             "$ref": "#/components/schemas/WebhookEventAccount"
+          },
+          "workspaceId": {
+            "type": "integer",
+            "description": "The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`\"2042\"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.",
+            "example": 2042
           },
           "data": {
             "$ref": "#/components/schemas/ChannelDegradedPayload"
@@ -6264,6 +6334,11 @@
           "account": {
             "$ref": "#/components/schemas/WebhookEventAccount"
           },
+          "workspaceId": {
+            "type": "integer",
+            "description": "The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`\"2042\"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.",
+            "example": 2042
+          },
           "data": {
             "$ref": "#/components/schemas/ReservationThreadAssignedPayload"
           }
@@ -6331,6 +6406,11 @@
           "account": {
             "$ref": "#/components/schemas/WebhookEventAccount"
           },
+          "workspaceId": {
+            "type": "integer",
+            "description": "The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`\"2042\"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.",
+            "example": 2042
+          },
           "data": {
             "$ref": "#/components/schemas/BookingUnacknowledgedPayload"
           }
@@ -6369,6 +6449,11 @@
           },
           "account": {
             "$ref": "#/components/schemas/WebhookEventAccount"
+          },
+          "workspaceId": {
+            "type": "integer",
+            "description": "The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`\"2042\"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.",
+            "example": 2042
           },
           "data": {
             "$ref": "#/components/schemas/InquiryCreatedPayload"
@@ -6409,6 +6494,11 @@
           "account": {
             "$ref": "#/components/schemas/WebhookEventAccount"
           },
+          "workspaceId": {
+            "type": "integer",
+            "description": "The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`\"2042\"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.",
+            "example": 2042
+          },
           "data": {
             "$ref": "#/components/schemas/InquiryUpdatedPayload"
           }
@@ -6447,6 +6537,11 @@
           },
           "account": {
             "$ref": "#/components/schemas/WebhookEventAccount"
+          },
+          "workspaceId": {
+            "type": "integer",
+            "description": "The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`\"2042\"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.",
+            "example": 2042
           },
           "data": {
             "$ref": "#/components/schemas/ListingCreatedPayload"
@@ -6487,6 +6582,11 @@
           "account": {
             "$ref": "#/components/schemas/WebhookEventAccount"
           },
+          "workspaceId": {
+            "type": "integer",
+            "description": "The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`\"2042\"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.",
+            "example": 2042
+          },
           "data": {
             "$ref": "#/components/schemas/ListingUpdatedPayload"
           }
@@ -6525,6 +6625,11 @@
           },
           "account": {
             "$ref": "#/components/schemas/WebhookEventAccount"
+          },
+          "workspaceId": {
+            "type": "integer",
+            "description": "The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`\"2042\"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.",
+            "example": 2042
           },
           "data": {
             "$ref": "#/components/schemas/ListingDeletedPayload"
@@ -6652,6 +6757,11 @@
           "account": {
             "$ref": "#/components/schemas/WebhookEventAccount"
           },
+          "workspaceId": {
+            "type": "integer",
+            "description": "The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`\"2042\"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.",
+            "example": 2042
+          },
           "data": {
             "$ref": "#/components/schemas/ListingIcalFeedChangedPayload"
           }
@@ -6692,6 +6802,11 @@
           "account": {
             "$ref": "#/components/schemas/WebhookEventAccount"
           },
+          "workspaceId": {
+            "type": "integer",
+            "description": "The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`\"2042\"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.",
+            "example": 2042
+          },
           "data": {
             "$ref": "#/components/schemas/ListingSuspensionPayload"
           }
@@ -6731,6 +6846,11 @@
           "account": {
             "$ref": "#/components/schemas/WebhookEventAccount"
           },
+          "workspaceId": {
+            "type": "integer",
+            "description": "The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`\"2042\"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.",
+            "example": 2042
+          },
           "data": {
             "$ref": "#/components/schemas/ListingSuspensionPayload"
           }
@@ -6769,6 +6889,11 @@
           },
           "account": {
             "$ref": "#/components/schemas/WebhookEventAccount"
+          },
+          "workspaceId": {
+            "type": "integer",
+            "description": "The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`\"2042\"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.",
+            "example": 2042
           },
           "data": {
             "$ref": "#/components/schemas/AccountCreatedPayload"
@@ -7224,6 +7349,11 @@
           "account": {
             "$ref": "#/components/schemas/WebhookEventAccount"
           },
+          "workspaceId": {
+            "type": "integer",
+            "description": "The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`\"2042\"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.",
+            "example": 2042
+          },
           "data": {
             "$ref": "#/components/schemas/AccountCalendarAccessChangedPayload"
           }
@@ -7331,6 +7461,11 @@
           "account": {
             "$ref": "#/components/schemas/WebhookEventAccount"
           },
+          "workspaceId": {
+            "type": "integer",
+            "description": "The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`\"2042\"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.",
+            "example": 2042
+          },
           "data": {
             "$ref": "#/components/schemas/ConversationMessageStatusChangedPayload"
           }
@@ -7416,6 +7551,11 @@
           "account": {
             "$ref": "#/components/schemas/WebhookEventAccount"
           },
+          "workspaceId": {
+            "type": "integer",
+            "description": "The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`\"2042\"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.",
+            "example": 2042
+          },
           "data": {
             "$ref": "#/components/schemas/AccountNotificationsMissingPayload"
           }
@@ -7455,6 +7595,11 @@
           },
           "account": {
             "$ref": "#/components/schemas/WebhookEventAccount"
+          },
+          "workspaceId": {
+            "type": "integer",
+            "description": "The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`\"2042\"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.",
+            "example": 2042
           },
           "data": {
             "$ref": "#/components/schemas/AccountUnitsAddedPayload"
@@ -7496,6 +7641,11 @@
           "account": {
             "$ref": "#/components/schemas/WebhookEventAccount"
           },
+          "workspaceId": {
+            "type": "integer",
+            "description": "The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`\"2042\"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.",
+            "example": 2042
+          },
           "data": {
             "$ref": "#/components/schemas/AccountImportStartedPayload"
           }
@@ -7535,6 +7685,11 @@
           },
           "account": {
             "$ref": "#/components/schemas/WebhookEventAccount"
+          },
+          "workspaceId": {
+            "type": "integer",
+            "description": "The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`\"2042\"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.",
+            "example": 2042
           },
           "data": {
             "$ref": "#/components/schemas/AccountImportFinishedPayload"
@@ -7576,6 +7731,11 @@
           "account": {
             "$ref": "#/components/schemas/WebhookEventAccount"
           },
+          "workspaceId": {
+            "type": "integer",
+            "description": "The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`\"2042\"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.",
+            "example": 2042
+          },
           "data": {
             "$ref": "#/components/schemas/AccountImportFinishedPayload"
           }
@@ -7616,6 +7776,11 @@
           "account": {
             "$ref": "#/components/schemas/WebhookEventAccount"
           },
+          "workspaceId": {
+            "type": "integer",
+            "description": "The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`\"2042\"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.",
+            "example": 2042
+          },
           "data": {
             "$ref": "#/components/schemas/ConnectSessionCompletedPayload"
           }
@@ -7654,6 +7819,11 @@
           },
           "account": {
             "$ref": "#/components/schemas/WebhookEventAccount"
+          },
+          "workspaceId": {
+            "type": "integer",
+            "description": "The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`\"2042\"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.",
+            "example": 2042
           },
           "data": {
             "$ref": "#/components/schemas/ConnectSessionAbandonedPayload"
@@ -7694,6 +7864,11 @@
           "account": {
             "$ref": "#/components/schemas/WebhookEventAccount"
           },
+          "workspaceId": {
+            "type": "integer",
+            "description": "The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`\"2042\"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.",
+            "example": 2042
+          },
           "data": {
             "$ref": "#/components/schemas/AccountDisconnectedPayload"
           }
@@ -7732,6 +7907,11 @@
           },
           "account": {
             "$ref": "#/components/schemas/WebhookEventAccount"
+          },
+          "workspaceId": {
+            "type": "integer",
+            "description": "The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`\"2042\"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.",
+            "example": 2042
           },
           "data": {
             "$ref": "#/components/schemas/ReviewCreatedPayload"
@@ -7772,6 +7952,11 @@
           "account": {
             "$ref": "#/components/schemas/WebhookEventAccount"
           },
+          "workspaceId": {
+            "type": "integer",
+            "description": "The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`\"2042\"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.",
+            "example": 2042
+          },
           "data": {
             "$ref": "#/components/schemas/ReviewRespondedPayload"
           }
@@ -7810,6 +7995,11 @@
           },
           "account": {
             "$ref": "#/components/schemas/WebhookEventAccount"
+          },
+          "workspaceId": {
+            "type": "integer",
+            "description": "The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`\"2042\"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.",
+            "example": 2042
           },
           "data": {
             "$ref": "#/components/schemas/AiOperationCompletedPayload"
@@ -7850,6 +8040,11 @@
           "account": {
             "$ref": "#/components/schemas/WebhookEventAccount"
           },
+          "workspaceId": {
+            "type": "integer",
+            "description": "The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`\"2042\"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.",
+            "example": 2042
+          },
           "data": {
             "$ref": "#/components/schemas/AiOperationFailedPayload"
           }
@@ -7888,6 +8083,11 @@
           },
           "account": {
             "$ref": "#/components/schemas/WebhookEventAccount"
+          },
+          "workspaceId": {
+            "type": "integer",
+            "description": "The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`\"2042\"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.",
+            "example": 2042
           },
           "data": {
             "$ref": "#/components/schemas/PaymentCompletedPayload"
@@ -7928,6 +8128,11 @@
           "account": {
             "$ref": "#/components/schemas/WebhookEventAccount"
           },
+          "workspaceId": {
+            "type": "integer",
+            "description": "The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`\"2042\"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.",
+            "example": 2042
+          },
           "data": {
             "$ref": "#/components/schemas/PayoutCompletedPayload"
           }
@@ -7966,6 +8171,11 @@
           },
           "account": {
             "$ref": "#/components/schemas/WebhookEventAccount"
+          },
+          "workspaceId": {
+            "type": "integer",
+            "description": "The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`\"2042\"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.",
+            "example": 2042
           },
           "data": {
             "$ref": "#/components/schemas/PaymentRefundedPayload"
@@ -8006,6 +8216,11 @@
           "account": {
             "$ref": "#/components/schemas/WebhookEventAccount"
           },
+          "workspaceId": {
+            "type": "integer",
+            "description": "The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`\"2042\"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.",
+            "example": 2042
+          },
           "data": {
             "$ref": "#/components/schemas/RepullPingPayload"
           }
@@ -8044,6 +8259,11 @@
           },
           "account": {
             "$ref": "#/components/schemas/WebhookEventAccount"
+          },
+          "workspaceId": {
+            "type": "integer",
+            "description": "The sub-workspace this event happened in. Present only on events from a sub-workspace your workspace opened (`POST /v1/connect` with `workspace`, or Repull Migrate); omitted on your own workspace's events. It is the same workspace as `workspaceId` on `POST /v1/connect` and `GET /v1/workspaces` and the `X-Workspace-Id` header, but those return it as a string (`\"2042\"`) while the event carries a JSON number (`2042`): compare as strings, e.g. `String(event.workspaceId) === workspace.workspaceId`. The UUID `data.workspaceId` on `account.created` / `account.disconnected` is a different identifier.",
+            "example": 2042
           },
           "data": {
             "$ref": "#/components/schemas/UsageQuotaWarningPayload"
@@ -8145,7 +8365,7 @@
           },
           "workspaceId": {
             "type": "integer",
-            "description": "The migration's workspace — pass it as `X-Workspace-Id`, or to `GET /v1/migrations/{workspaceId}`."
+            "description": "The migration's workspace — pass it as `X-Workspace-Id`, or to `GET /v1/migrations/{workspaceId}`. Always present on migration events. A JSON number here; `POST /v1/connect` and `GET /v1/workspaces` return the same id as a string, so compare as strings."
           },
           "data": {
             "$ref": "#/components/schemas/MigrationImportPayload"
@@ -8190,7 +8410,7 @@
           },
           "workspaceId": {
             "type": "integer",
-            "description": "The migration's workspace — pass it as `X-Workspace-Id`, or to `GET /v1/migrations/{workspaceId}`."
+            "description": "The migration's workspace — pass it as `X-Workspace-Id`, or to `GET /v1/migrations/{workspaceId}`. Always present on migration events. A JSON number here; `POST /v1/connect` and `GET /v1/workspaces` return the same id as a string, so compare as strings."
           },
           "data": {
             "$ref": "#/components/schemas/MigrationImportPayload"
