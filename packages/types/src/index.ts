@@ -729,5 +729,36 @@ export type VrboPublishJobStarted = OperationResponse<'publishListingToVrbo', 20
 /** `GET /v1/listings/{id}/publish/vrbo?jobId=` — job progress; poll until `linked` is true. */
 export type VrboPublishJob = OperationResponse<'getVrboPublishJob'>;
 
+// ─── tiket.com ─────────────────────────────────────────────────────────
+// `/v1/channels/tiket/*`, `/v1/listings/{id}/publish/tiket`. New in v0.2.65.
+
+/** A tiket.com property with its room types, rate plans and mapped listings. */
+export type TiketProperty = components['schemas']['TiketProperty'];
+/** A tiket.com room type and the listing it is mapped to. */
+export type TiketRoom = components['schemas']['TiketRoom'];
+export type TiketRatePlan = components['schemas']['TiketRatePlan'];
+export type TiketPropertyListResponse = components['schemas']['TiketPropertyListResponse'];
+export type TiketPropertyRoomsResponse = components['schemas']['TiketPropertyRoomsResponse'];
+/** One night of one room type and rate plan, as tiket.com holds it. */
+export type TiketAriDay = components['schemas']['TiketAriDay'];
+export type TiketAvailabilityResponse = components['schemas']['TiketAvailabilityResponse'];
+export type TiketListingPricingResponse = components['schemas']['TiketListingPricingResponse'];
+/** One date range of a rates / availability / restrictions write. */
+export type TiketAriUpdate = components['schemas']['TiketAriUpdate'];
+export type TiketAvailabilityUpdateRequest = components['schemas']['TiketAvailabilityUpdateRequest'];
+export type TiketListingPricingUpdateRequest = components['schemas']['TiketListingPricingUpdateRequest'];
+/** Result of a write, read back from tiket.com (`applied`). */
+export type TiketAriWriteResponse = components['schemas']['TiketAriWriteResponse'];
+/** One booked room of a tiket.com reservation, as tiket.com sent it. */
+export type TiketReservation = components['schemas']['TiketReservation'];
+export type TiketReservationListResponse = components['schemas']['TiketReservationListResponse'];
+export type TiketContentResponse = components['schemas']['TiketContentResponse'];
+export type TiketMapListingsRequest = components['schemas']['TiketMapListingsRequest'];
+export type TiketMapListingsResponse = components['schemas']['TiketMapListingsResponse'];
+export type TiketSetupRequest = components['schemas']['TiketSetupRequest'];
+export type TiketSetupResponse = components['schemas']['TiketSetupResponse'];
+export type TiketSyncResponse = components['schemas']['TiketSyncResponse'];
+export type ListingPublishTiketResponse = components['schemas']['ListingPublishTiketResponse'];
+
 // Force types-only namespace
 export type Paths = paths;
