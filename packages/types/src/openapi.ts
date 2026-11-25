@@ -7700,18 +7700,18 @@ export interface components {
              */
             respondBy?: string;
             /**
-             * @description Booking source / channel. Lowercase. May be null on legacy rows. Canonical name as of 2026-05; `platform` is kept as an alias.
+             * @description Booking source / channel. Lowercase. May be null on legacy rows. Booking.com reservations are `booking`. Canonical name as of 2026-05; `platform` is kept as an alias.
              * @example airbnb
              * @enum {string|null}
              */
-            source?: "airbnb" | "booking.com" | "vrbo" | "tiket" | "direct" | "website" | "owner" | "other" | null;
+            source?: "airbnb" | "booking" | "vrbo" | "tiket" | "direct" | "website" | "owner" | "other" | null;
             /**
              * @deprecated
              * @description DEPRECATED alias for `source`. Same value, kept for back-compat.
              * @example airbnb
              * @enum {string|null}
              */
-            platform?: "airbnb" | "booking.com" | "vrbo" | "tiket" | "direct" | "website" | "owner" | "other" | null;
+            platform?: "airbnb" | "booking" | "vrbo" | "tiket" | "direct" | "website" | "owner" | "other" | null;
             /**
              * @description Channel-side confirmation code (Airbnb HMxxx, Booking.com numeric, etc.).
              * @example HMXYZ123
@@ -17270,7 +17270,7 @@ export interface components {
                 maxGuests?: number | null;
                 numberOfRooms?: number | null;
                 currentListingId?: string | null;
-                /** @description tiket.com room type id. */
+                /** @description tiket.com room type code (`roomTypeCode` on `GET /v1/channels/tiket/properties/{id}/rooms`), exactly as tiket.com sends it. Free-form text such as `DLX-KING`, so always a string — never parse it as a number. */
                 roomBookingId?: string | null;
             }[];
             listingOptions: components["schemas"]["BookingConnectListingOption"][];

@@ -8,6 +8,8 @@ This project follows [Semantic Versioning](https://semver.org/).
 - New: tiket.com channel — 16 operations: properties and room types, rates / availability / restrictions read and write (by property or by listing, read back after every write), reservations as tiket.com sent them, content, room mapping, full calendar sync and property setup; `POST /v1/listings/{id}/publish/tiket`; and the tiket.com Connect steps (claim a Hotel ID, list rooms, map rooms). SDK: `repull.channels.tiket` (`properties.list/get/rooms`, `availability.get/update`, `listings.map/getPricing/updatePricing`, `reservations.list`, `content`, `sync`, `setup`), `repull.listings.publishToTiket`, `repull.connect.tiket.create/status`. Types: `TiketProperty`, `TiketAriDay`, `TiketAriUpdate`, `TiketAriWriteResponse`, `TiketReservation`, … from `@repull/types`.
 - `Reservation.source` / `platform` and `GET /v1/properties?channel=` accept `tiket`.
 - tiket.com children rates are paused at tiket.com's request: a rates write that includes `childPrices` returns 422 and nothing is sent.
+- Fix: the `Reservation.source` / `platform` type lists `'booking'` for Booking.com (was `'booking.com'`, which the API never returns).
+- Docs: tiket.com room type codes (`roomBookingId` from `GET /v1/connect/tiket/rooms`, `roomTypeCode` elsewhere) are free-form strings, kept exactly as tiket.com sends them.
 
 ## 0.2.64 — 2026-11-24
 
