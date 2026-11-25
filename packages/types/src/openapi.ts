@@ -1734,6 +1734,8 @@ export interface paths {
          * List Airbnb reviews
          * @description List reviews left by guests on Airbnb listings in this workspace. Includes both reviews of the host and reviews of the guest (where the host has not yet submitted theirs).
          *
+         *     Newest first, with reviews not yet submitted ahead of them. Walk pages with `?cursor=<pagination.nextCursor>` until `pagination.hasMore` is `false`; `pagination.total` is the number of reviews matching the filters. The cursor is opaque — never construct or parse it client-side.
+         *
          *     Reviews of inactive listings are left out; they keep syncing and reappear once the listing is activated. Filtering by an inactive listing (`listing_id`) returns `403 listing_inactive`.
          *
          *     **Several Airbnb accounts?** A workspace can connect more than one. By default this returns every connected account's rows; pass `?account_id=<airbnb host id>` to scope to one. Every row carries `accountId` + `accountName` either way, and `dataFreshness.accounts[]` reports each account's freshness separately, so one disconnected host no longer marks the whole response stale.
@@ -20826,6 +20828,14 @@ export interface operations {
                  *     Note this is NOT the `X-Account-Id` header, which carries a connection id and cannot tell two Airbnb hosts apart.
                  */
                 account_id?: components["parameters"]["AirbnbAccountId"];
+                /** @description Opaque cursor returned by the previous response's `pagination.nextCursor`. Omit to fetch the first page. */
+                cursor?: string;
+                /** @description First-class alias for cursor-based pagination. Mutually exclusive with `cursor` — passing both returns 422. Accepts integers in `[0, 10000]`; deeper walks must use `cursor` (constant per-page cost). The response always includes `pagination.nextCursor` so consumers can switch from offset → cursor mid-walk for deep pagination without re-keying. */
+                offset?: components["parameters"]["Offset"];
+                /** @description Max items per page — max 200 per page. A larger value returns 200 per page; follow `pagination.nextCursor` for the rest. */
+                limit?: number;
+                /** @description Filter to one listing: its Airbnb listing id (`airbnbListingId` on each review) or its Repull listing id. */
+                listing_id?: string;
             };
             header?: never;
             path?: never;
@@ -27274,6 +27284,10 @@ export interface operations {
                         id?: string;
                         externalReviewId?: string;
                         submitted?: boolean;
+                        /** @description Airbnb: the review as stored after the submission — the same object `GET /v1/reviews/{id}` returns, with `publicReview`, `rating`, `categories` and `submittedAt` set. It can stay `hidden` until the guest reviews too. */
+                        review?: {
+                            [key: string]: unknown;
+                        } | null;
                         /** @description `vrbo` for a Vrbo rating. */
                         platform?: string;
                         /** @description Vrbo: the rating as sent to Vrbo. */
