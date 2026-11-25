@@ -4296,7 +4296,7 @@ export interface paths {
          *
          *     On Vrbo the markup belongs to the connected Vrbo account, so setting it reprices every listing linked on that account (`affectedListingIds`). A listing linked on more than one account names one with `accountId`, else `409 ambiguous_vrbo_account`; a listing not linked to Vrbo is `409 listing_not_on_vrbo`.
          *
-         *     `markupPercent` is a percentage — `15` for 15%. A value between 0 and 1 is refused as a probable fraction, with the number to send instead.
+         *     `markupPercent` is a percentage above -100 and below 100 — `15` for +15%, `-2` for 2% below the listing's price (a $200 night is sent to the channel as $196). A value is kept to a whole percent, so one that rounds to -100 or less (it would send a price of zero or less) or to 100 or more is refused. A value between -1 and 1 other than 0 is refused as a probable fraction, with the number to send instead.
          */
         put: operations["set_listing_markup"];
         post?: never;
@@ -26867,7 +26867,7 @@ export interface operations {
                             /** @description Airbnb listing id. */
                             airbnbId?: string;
                             /**
-                             * @description Percent added to the listing's price on Airbnb. 35 = +35%. `null` = none.
+                             * @description Percent added to the listing's price on Airbnb. 35 = +35%; negative = below the listing's price. `null` = none.
                              * @example 35
                              */
                             markupPercent?: number | null;
@@ -26925,7 +26925,7 @@ export interface operations {
                 "application/json": {
                     /** @enum {string} */
                     channel: "airbnb" | "booking" | "vrbo";
-                    /** @description 15 = +15%. `null` removes the markup. */
+                    /** @description 15 = +15%; -2 = 2% below the listing's price. Above -100 and below 100. `null` removes the markup. */
                     markupPercent: number | null;
                     /** @description Booking.com property — required when the listing is on more than one. */
                     hotelId?: string;
