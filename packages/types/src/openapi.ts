@@ -4274,8 +4274,8 @@ export interface paths {
          *     A listing's price on a channel is its own nightly price plus the channel's markup: a $200 night with a 35% Airbnb markup is sent to Airbnb as $270. The calendar keeps the listing's own price (`GET /v1/availability/{propertyId}` returns it); the markup is added only when a price is sent to the channel.
          *
          *     - **Airbnb** — one markup per listing.
+         *     - **Vrbo** — one markup per listing, like Airbnb. Listings on the same Vrbo account each keep their own (one can be -2% and another +5%). Prices reach Vrbo through its calendar queue.
          *     - **Booking.com** — one markup per **property**, shared by every listing priced through it (`listingIds` names them).
-         *     - **Vrbo** — one markup per connected **Vrbo account**, shared by every listing linked on it (`listingIds` names them). Prices reach Vrbo through its calendar queue.
          *
          *     Returns `404 not_found` for a listing that does not exist or is not in this workspace, and `403 listing_inactive` for an inactive one.
          */
@@ -4287,14 +4287,14 @@ export interface paths {
          *     A listing's price on a channel is its own nightly price plus the channel's markup: a $200 night with a 35% Airbnb markup is sent to Airbnb as $270. The calendar keeps the listing's own price (`GET /v1/availability/{propertyId}` returns it); the markup is added only when a price is sent to the channel.
          *
          *     - **Airbnb** — one markup per listing.
+         *     - **Vrbo** — one markup per listing, like Airbnb. Listings on the same Vrbo account each keep their own (one can be -2% and another +5%). Prices reach Vrbo through its calendar queue.
          *     - **Booking.com** — one markup per **property**, shared by every listing priced through it (`listingIds` names them).
-         *     - **Vrbo** — one markup per connected **Vrbo account**, shared by every listing linked on it (`listingIds` names them). Prices reach Vrbo through its calendar queue.
          *
          *     Returns `404 not_found` for a listing that does not exist or is not in this workspace, and `403 listing_inactive` for an inactive one.
          *
          *     On Booking.com the markup belongs to the property, so setting it reprices every listing on that property (`affectedListingIds`). A listing on more than one property must name one with `hotelId`; without it the request is refused with `409 ambiguous_booking_mapping` listing the candidates, rather than repricing a property it guessed.
          *
-         *     On Vrbo the markup belongs to the connected Vrbo account, so setting it reprices every listing linked on that account (`affectedListingIds`). A listing linked on more than one account names one with `accountId`, else `409 ambiguous_vrbo_account`; a listing not linked to Vrbo is `409 listing_not_on_vrbo`.
+         *     On Airbnb and Vrbo the markup belongs to the listing: setting it reprices this listing only (`affectedListingIds`), and other listings on the same Airbnb or Vrbo account keep their own. A listing not linked to Vrbo is `409 listing_not_on_vrbo`.
          *
          *     `markupPercent` is a percentage above -100 and below 100 — `15` for +15%, `-2` for 2% below the listing's price (a $200 night is sent to the channel as $196). A value is kept to a whole percent, so one that rounds to -100 or less (it would send a price of zero or less) or to 100 or more is refused. A value between -1 and 1 other than 0 is refused as a probable fraction, with the number to send instead.
          */
@@ -26884,16 +26884,16 @@ export interface operations {
                             listingIds?: string[];
                         }[];
                         vrbo?: {
-                            /** @description The Vrbo account, as its handle `vrbo:{Vrbo account id}`. `null` until Vrbo's account id is captured for the sign-in. */
+                            /** @description The Vrbo account this listing's Vrbo unit is on, as its handle `vrbo:{Vrbo account id}`. `null` until Vrbo's account id is captured for the sign-in. */
                             accountId?: string | null;
                             /** @description The Vrbo listing number this listing is linked to. */
                             vrboListingNumber?: string;
                             /**
-                             * @description Percent added on Vrbo, for every listing linked on this account.
-                             * @example 20
+                             * @description Percent added to this listing's price on Vrbo. 5 = +5%; negative = below the listing's price. `null` = none. Other listings on the same Vrbo account have their own.
+                             * @example 5
                              */
                             markupPercent?: number | null;
-                            /** @description Listings in this workspace linked on this Vrbo account — all share this markup. */
+                            /** @description The listing this markup applies to — always just this listing, since a Vrbo markup is per listing. */
                             listingIds?: string[];
                         }[];
                     };
@@ -26929,13 +26929,16 @@ export interface operations {
                     markupPercent: number | null;
                     /** @description Booking.com property — required when the listing is on more than one. */
                     hotelId?: string;
-                    /** @description Vrbo account (`vrbo:7001234`, Vrbo's own account id) — required when the listing is linked on more than one. The old sign-in ids (`vrbo:13`) still resolve until 2027-02-12. */
+                    /**
+                     * @deprecated
+                     * @description Ignored. The Vrbo markup is per listing, so there is no account to name; accepted so existing calls keep working.
+                     */
                     accountId?: string;
                 };
             };
         };
         responses: {
-            /** @description Saved. `{ id, channel, markupPercent, changed, hotelId? | accountId?, affectedListingIds, pricesResent }`. */
+            /** @description Saved. `{ id, channel, markupPercent, changed, hotelId? | accountId? + vrboListingNumbers?, affectedListingIds, pricesResent }`. On Vrbo, `accountId` is the Vrbo account this listing's unit is on and `affectedListingIds` is just this listing. */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -26945,7 +26948,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["ListingInactive"];
             404: components["responses"]["NotFound"];
-            /** @description `ambiguous_booking_mapping` — the listing is on several Booking.com properties; `valid_values` lists them. `ambiguous_vrbo_account` — the same for Vrbo accounts. `listing_not_on_vrbo` — `channel: "vrbo"` on a listing with no Vrbo unit linked. */
+            /** @description `ambiguous_booking_mapping` — the listing is on several Booking.com properties; `valid_values` lists them. `listing_not_on_vrbo` — `channel: "vrbo"` on a listing with no Vrbo unit linked. */
             409: {
                 headers: {
                     [name: string]: unknown;
