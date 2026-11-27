@@ -12909,6 +12909,100 @@ export interface components {
             listingId?: number | null;
             /** Format: date-time */
             syncedAt?: string | null;
+            /** @description Booking.com only: the booking's payout and price breakdown as Booking.com's Payments API reports it (read when Booking.com notifies a payout change). Null on other channels and for bookings not read yet. Money is in `currency`. */
+            bookingPaymentsApi?: {
+                /** @enum {string} */
+                source?: "payments_api";
+                /**
+                 * @description `PAYMENTS_BY_BOOKING`, `PAYMENT_AT_PROPERTY` or `SMART_PAYMENT_AT_PROPERTY`.
+                 * @example [
+                 *       "PAYMENTS_BY_BOOKING"
+                 *     ]
+                 */
+                paymentTags?: string[];
+                /**
+                 * @description `GROSS`, `NET` or `UNKNOWN`; null when the property collects the payment.
+                 * @example NET
+                 */
+                payoutType?: string | null;
+                /**
+                 * @description `PENDING`, `PAID`, `CANCELLED` or `UNKNOWN`.
+                 * @example PAID
+                 */
+                payoutStatus?: string | null;
+                /** @example EUR */
+                currency?: string | null;
+                /**
+                 * @description What the guest paid Booking.com.
+                 * @example 120
+                 */
+                grossAmount?: number | null;
+                /** @example 18 */
+                commission?: number | null;
+                /**
+                 * @description Payments service charge.
+                 * @example 2
+                 */
+                paymentCharge?: number | null;
+                /** @example 10 */
+                vat?: number | null;
+                /**
+                 * @description VAT on commission and on the payment charge.
+                 * @example 2
+                 */
+                vatOnFees?: number | null;
+                /**
+                 * @description City tax, withheld and other taxes.
+                 * @example 6.26
+                 */
+                taxes?: number | null;
+                /**
+                 * @description Estimated payout to the property.
+                 * @example 96.74
+                 */
+                netAmount?: number | null;
+                /**
+                 * @description Estimated amount the property collects itself (e.g. city tax, or the whole stay when the property collects the payment).
+                 * @example 5
+                 */
+                amountToCollectAtProperty?: number | null;
+                bankTransfer?: {
+                    /**
+                     * @description Booking.com bank-transfer reference; matches the payout on your bank statement.
+                     * @example ST-D0L8H1W4W9I5
+                     */
+                    reference?: string | null;
+                    /** @example PAID */
+                    status?: string | null;
+                    /** @example 2026-05-04 */
+                    date?: string | null;
+                } | null;
+                /** @description Per-room price lines as Booking.com reports them. */
+                charges?: {
+                    /**
+                     * @description Booking.com's label, e.g. `VAT`, `City tax`, `COMMISSION`, `PAYMENT CHARGE`.
+                     * @example VAT
+                     */
+                    type?: string;
+                    /** @enum {string} */
+                    category?: "commission" | "payment_charge" | "vat_on_fees" | "vat" | "tax" | "fee" | "other";
+                    /** @example 10 */
+                    amount?: number | null;
+                    currency?: string | null;
+                    rate?: {
+                        /** @example PERCENTAGE */
+                        type?: string | null;
+                        /** @example 10 */
+                        value?: number | null;
+                    } | null;
+                    /** @description e.g. `PER_PERSON`, `PER_NIGHT`. */
+                    applicableType?: string | null;
+                    alreadyCollectedFromGuest?: boolean | null;
+                    includedInPayout?: boolean | null;
+                }[];
+                /** Format: date-time */
+                fetchedAt?: string | null;
+            } | null;
         };
         /** @description An Airbnb Resolution Center case (AirCover / damage, extra-guest, refund or change request). Read-only — Airbnb exposes no create/evidence/status API. The money a resolution moved rides in the transactions ledger as `Resolution Payout` / `Resolution Adjustment` rows sharing the same reference; join on `resolutionId`. */
         Resolution: {
