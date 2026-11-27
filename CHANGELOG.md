@@ -3,6 +3,10 @@
 All notable changes to `@repull/sdk` and `@repull/types` are recorded here.
 This project follows [Semantic Versioning](https://semver.org/).
 
+## 0.2.67 — 2026-11-27
+
+- Regenerated from the live spec (automated spec refresh).
+
 ## 0.2.66 — 2026-11-26
 
 - Regenerated from the live spec (automated spec refresh).
